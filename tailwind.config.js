@@ -1,0 +1,66 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        background: 'var(--color-background)',
+        surface: 'var(--color-surface)',
+        'surface-dim': 'var(--color-surface-dim)',
+        'surface-bright': 'var(--color-surface-bright)',
+        'surface-variant': 'var(--color-surface-variant)',
+        'surface-container-lowest': 'var(--color-surface-container-lowest)',
+        'surface-container-low': 'var(--color-surface-container-low)',
+        'surface-container': 'var(--color-surface-container)',
+        'surface-container-high': 'var(--color-surface-container-high)',
+        'surface-container-highest': 'var(--color-surface-container-highest)',
+        
+        primary: 'var(--color-primary)',
+        'primary-container': 'var(--color-primary-container)',
+        'on-primary': 'var(--color-on-primary)',
+        'on-primary-container': 'var(--color-on-primary-container)',
+        'primary-fixed': 'var(--color-primary-fixed)',
+        'primary-fixed-dim': 'var(--color-primary-fixed-dim)',
+        
+        secondary: 'var(--color-secondary)',
+        'secondary-container': 'var(--color-secondary-container)',
+        'on-secondary': 'var(--color-on-secondary)',
+        'on-secondary-container': 'var(--color-on-secondary-container)',
+        
+        tertiary: 'var(--color-tertiary)',
+        'tertiary-container': 'var(--color-tertiary-container)',
+        'on-tertiary': 'var(--color-on-tertiary)',
+        'on-tertiary-container': 'var(--color-on-tertiary-container)',
+        
+        error: 'var(--color-error)',
+        'error-container': 'var(--color-error-container)',
+        'on-error': 'var(--color-on-error)',
+        'on-error-container': 'var(--color-on-error-container)',
+        
+        'on-surface': 'var(--color-on-surface)',
+        'on-surface-variant': 'var(--color-on-surface-variant)',
+        'on-background': 'var(--color-on-background)',
+        'inverse-surface': 'var(--color-inverse-surface)',
+        'inverse-on-surface': 'var(--color-inverse-on-surface)',
+        
+        outline: 'var(--color-outline)',
+        'outline-variant': 'var(--color-outline-variant)',
+        'surface-tint': 'var(--color-surface-tint)',
+      },
+      fontFamily: {
+        sans: ['Hanken Grotesk', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
+      borderRadius: {
+        DEFAULT: '0.5rem',
+        lg: '1rem',
+        xl: '1.5rem',
+        full: '9999px',
+      },
+    },
+  },
+  plugins: [],
+}
