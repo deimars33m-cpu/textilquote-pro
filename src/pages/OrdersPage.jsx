@@ -60,6 +60,7 @@ export default function OrdersPage() {
 
   // Estado de datos
   const [orders, setOrders] = useState([])
+  const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [dbError, setDbError] = useState(null)
   
@@ -97,6 +98,12 @@ export default function OrdersPage() {
   })
   const [formErrors, setFormErrors] = useState({})
 
+  const clientSuggestions = useMemo(() => {
+    const query = orderForm.clientName?.trim().toLowerCase()
+    if (!query || query.length < 2) return []
+    return clients.filter(c => c.name.toLowerCase().includes(query) && c.name.toLowerCase() !== query)
+  }, [clients, orderForm.clientName])
+
   // Update flatUnitPrice automatically when subcategory changes (if service)
   useEffect(() => {
     if (orderForm.category && orderForm.category !== 'produccion_textil' && orderForm.subcategory !== 'sublimacion_localizada' && currentStep === 4) {
@@ -109,8 +116,24 @@ export default function OrdersPage() {
   useEffect(() => {
     if (user) {
       fetchOrders()
+      fetchClients()
     }
   }, [user])
+
+  async function fetchClients() {
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('name', { ascending: true })
+      if (!error && data) {
+        setClients(data)
+      }
+    } catch (e) {
+      console.error('Error fetching clients:', e)
+    }
+  }
 
   // Si viene una cotización para convertir en el URL, abre el panel/modal
   useEffect(() => {
@@ -505,6 +528,7 @@ export default function OrdersPage() {
 
       // 5. Recargar lista y limpiar
       await fetchOrders()
+      await fetchClients()
       handleCloseForm()
       alert('Pedido registrado con éxito en la Base de Datos.')
     } catch (err) {
@@ -647,14 +671,37 @@ export default function OrdersPage() {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  <Input
-                    label="Nombre o Razón Social"
-                    value={orderForm.clientName}
-                    onChange={e => updateForm('clientName', e.target.value)}
-                    placeholder="Ej. Textiles Pro-Weave S.A."
-                    error={formErrors.clientName}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      label="Nombre o Razón Social"
+                      value={orderForm.clientName}
+                      onChange={e => updateForm('clientName', e.target.value)}
+                      placeholder="Ej. Textiles Pro-Weave S.A."
+                      error={formErrors.clientName}
+                      required
+                    />
+                    {clientSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 mt-1 bg-[#0f131a] border border-white/10 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-white/5">
+                        {clientSuggestions.map(client => (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => {
+                              updateForm('clientName', client.name)
+                              updateForm('clientPhone', client.phone || '')
+                              updateForm('clientEmail', client.email || '')
+                              const nitMatch = client.notes?.match(/NIT:\s*([^\s,]+)/)
+                              updateForm('clientNit', nitMatch ? nitMatch[1] : '')
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs hover:bg-[#ff5c00]/10 hover:text-primary transition-colors flex justify-between items-center text-white"
+                          >
+                            <span className="font-semibold">{client.name}</span>
+                            {client.phone && <span className="text-[10px] text-on-surface-variant font-mono">{client.phone}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <Input
                     label="ID / NIT (Opcional)"
                     value={orderForm.clientNit}
