@@ -57,7 +57,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full min-h-screen bg-background flex flex-col items-center justify-center p-4 animate-fade-in">
+    <div className="w-full min-h-screen bg-transparent flex flex-col items-center justify-center p-4 animate-fade-in">
       <div className="w-full max-w-md min-w-[320px] sm:min-w-[400px]">
         {/* Logo / App Title */}
         <div className="text-center mb-8">

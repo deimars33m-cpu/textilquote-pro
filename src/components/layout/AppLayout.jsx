@@ -5,7 +5,7 @@ import BottomNav from './BottomNav'
 
 export default function AppLayout() {
   return (
-    <div className="min-h-screen flex flex-col bg-background w-full">
+    <div className="min-h-screen flex flex-col bg-transparent w-full">
       <Header />
       <div className="flex flex-1 w-full">
         <Sidebar />
