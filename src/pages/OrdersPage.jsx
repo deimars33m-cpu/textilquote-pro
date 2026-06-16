@@ -176,6 +176,29 @@ export default function OrdersPage() {
     }
   }
 
+  const handleDeleteOrder = async (id) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este pedido?')) {
+      try {
+        // Eliminar items primero por restricciones de llave foránea si no hay cascade delete
+        await supabase
+          .from('order_items')
+          .delete()
+          .eq('order_id', id)
+
+        const { error } = await supabase
+          .from('orders')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+        setOrders(prev => prev.filter(o => o.id !== id))
+      } catch (err) {
+        console.error('Error deleting order:', err)
+        alert('Error al eliminar el pedido: ' + err.message)
+      }
+    }
+  }
+
   // Filtrar pedidos
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
@@ -1385,8 +1408,8 @@ export default function OrdersPage() {
       {/* Grid General */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* COLUMNA IZQUIERDA: Listado y Estadísticas (Toma 8 de 12 en PC) */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* COLUMNA IZQUIERDA: Listado y Estadísticas (Toma 9 de 12 en PC) */}
+        <div className="lg:col-span-9 space-y-6">
           
           {/* Métricas Rápidas */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1497,7 +1520,7 @@ export default function OrdersPage() {
                       <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Monto</th>
                       <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Producción</th>
                       <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Pago</th>
-                      <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acción</th>
+                      <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -1592,14 +1615,24 @@ export default function OrdersPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setSelectedOrder(order)}
-                            >
-                              <span className="material-symbols-outlined text-[16px]">visibility</span>
-                              Detalle
-                            </Button>
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setSelectedOrder(order)}
+                              >
+                                <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                Detalle
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleDeleteOrder(order.id)}
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                Eliminar
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -1612,8 +1645,8 @@ export default function OrdersPage() {
 
         </div>
 
-        {/* COLUMNA DERECHA: Formulario Fijo en PC (Toma 4 de 12 en PC, oculta en móvil) */}
-        <div className="hidden lg:block lg:col-span-4">
+        {/* COLUMNA DERECHA: Formulario Fijo en PC (Toma 3 de 12 en PC, oculta en móvil) */}
+        <div className="hidden lg:block lg:col-span-3">
           <Card className="p-6 sticky top-24 border border-white/5">
             {renderNewOrderPanel(false, null)}
           </Card>

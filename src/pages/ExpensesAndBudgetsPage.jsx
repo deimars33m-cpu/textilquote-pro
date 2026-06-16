@@ -633,7 +633,7 @@ export default function ExpensesAndBudgetsPage() {
 
   return (
     <>
-    <div className="max-w-7xl mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
+    <div className="max-w-none mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
       <style dangerouslySetInnerHTML={{__html: `
         .btn-3d-raised {
           background: #f1f5f9;
@@ -779,7 +779,7 @@ export default function ExpensesAndBudgetsPage() {
             </Card>
  
             {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
-            <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 flex-col h-full max-h-full">
+            <Card className="hidden lg:flex w-full lg:w-[350px] shrink-0 flex-col h-full max-h-full">
               {renderWizardForm()}
             </Card>
           </div>
