@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
 
 const items = [
-  { path: '/', icon: 'dashboard', label: 'Dashboard' },
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
+  { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos' },
+  { path: '/terceros', icon: 'groups', label: 'Terceros' },
   { path: '/quotes/new', icon: 'calculate', label: 'Cotizar' },
-  { path: '/quotes', icon: 'description', label: 'Historial' },
-  { path: '/settings', icon: 'settings', label: 'Config' },
+  { path: '/settings/global', icon: 'admin_panel_settings', label: 'Global' },
 ]
 
 export default function BottomNav() {
@@ -15,7 +15,7 @@ export default function BottomNav() {
         <NavLink
           key={item.path}
           to={item.path}
-          end={item.path === '/'}
+          end
           className={({ isActive }) =>
             `flex flex-col items-center justify-center px-2 py-1 rounded-xl transition-all duration-200 min-w-[56px]
             ${isActive
