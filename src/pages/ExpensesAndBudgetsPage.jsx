@@ -396,7 +396,7 @@ export default function ExpensesAndBudgetsPage() {
             </Card>
  
             {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
-            <Card className="w-full lg:w-[420px] shrink-0 border-white/10 bg-[#0f131a] flex flex-col h-full max-h-full shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+            <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 border-white/10 bg-[#0f131a] flex-col h-full max-h-full shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
               {/* Header del Wizard */}
               <div className="p-5 border-b border-white/5">
                 <div className="flex items-center gap-2 mb-4">
@@ -615,26 +615,26 @@ export default function ExpensesAndBudgetsPage() {
                         <label className="text-[11px] font-bold text-on-surface-variant mb-1 ml-1 block">
                           Cantidad
                         </label>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex gap-1.5 items-center">
                           <button 
                             type="button" 
                             onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))} 
-                            className="btn-3d-raised w-12 h-11 shrink-0 flex items-center justify-center rounded-xl text-white font-bold text-xl hover:text-[#ff5c00]"
+                            className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
                           >
                             -
                           </button>
-                          <Input
+                          <input
                             type="number"
                             min="1"
                             step="0.01"
                             value={form.quantity}
                             onChange={(e) => updateForm('quantity', e.target.value)}
-                            className="font-mono text-lg text-white text-center"
+                            className="w-full bg-[#0a0d14] border border-white/10 rounded-lg py-1.5 font-mono text-sm text-white text-center focus:border-[#ff5c00] outline-none"
                           />
                           <button 
                             type="button" 
                             onClick={() => updateForm('quantity', Number(form.quantity) + 1)} 
-                            className="btn-3d-raised w-12 h-11 shrink-0 flex items-center justify-center rounded-xl text-white font-bold text-xl hover:text-emerald-400"
+                            className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
                           >
                             +
                           </button>
