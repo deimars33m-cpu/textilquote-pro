@@ -22,7 +22,7 @@ export default function Sidebar() {
   const { signOut } = useAuth()
 
   return (
-    <aside className="hidden md:flex fixed left-0 top-16 h-[calc(100vh-64px)] w-[220px] bg-[#11192d] border-r border-white/5 flex-col py-4 z-40">
+    <aside className="hidden md:flex fixed left-0 top-16 h-[calc(100vh-64px)] w-[220px] bg-surface-container border-r border-outline-variant flex-col py-4 z-40">
       <nav className="flex-1 flex flex-col gap-1 px-3">
         {navItems.map(item => (
           <NavLink
@@ -33,7 +33,7 @@ export default function Sidebar() {
               `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group nav-glow-item
               ${isActive
                 ? 'active text-primary'
-                : 'text-on-surface-variant hover:bg-white/[0.03] hover:text-white hover:translate-x-1'
+                : 'text-on-surface-variant hover:bg-white/5 hover:text-primary hover:translate-x-1'
               }`
             }
           >
@@ -43,7 +43,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-white/5 mx-3 pt-2 flex flex-col gap-1 px-3 pb-2">
+      <div className="border-t border-outline-variant mx-3 pt-2 flex flex-col gap-1 px-3 pb-2">
         {bottomItems.map(item => (
           <NavLink
             key={item.path}
@@ -52,7 +52,7 @@ export default function Sidebar() {
               `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group nav-glow-item
               ${isActive
                 ? 'active text-primary'
-                : 'text-on-surface-variant hover:bg-white/[0.03] hover:text-white hover:translate-x-1'
+                : 'text-on-surface-variant hover:bg-white/5 hover:text-primary hover:translate-x-1'
               }`
             }
           >

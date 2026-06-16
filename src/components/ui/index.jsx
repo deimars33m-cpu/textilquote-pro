@@ -16,7 +16,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className={`relative neu-surface w-full ${sizes[size]} max-h-[90vh] overflow-y-auto animate-scale-in`}>
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
-        <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#11192d]/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+        <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
           <h2 className="text-headline-sm font-semibold text-white">{title}</h2>
           <button
             onClick={onClose}
@@ -112,18 +112,18 @@ export function Select({ label, options = [], error, className = '', placeholder
             ${error ? 'ring-1 ring-error' : 'focus:ring-1 focus:ring-primary/50'}`}
           {...props}
         >
-          {placeholder && <option value="" className="bg-[#11192d]">{placeholder}</option>}
+          {placeholder && <option value="" className="bg-surface text-on-surface">{placeholder}</option>}
           {options.map(opt => (
             opt.options ? (
-              <optgroup key={opt.label} label={opt.label} className="bg-[#11192d]">
+              <optgroup key={opt.label} label={opt.label} className="bg-surface text-on-surface">
                 {opt.options.map(subOpt => (
-                  <option key={subOpt.value} value={subOpt.value} className="bg-[#11192d]">
+                  <option key={subOpt.value} value={subOpt.value} className="bg-surface text-on-surface">
                     {subOpt.label}
                   </option>
                 ))}
               </optgroup>
             ) : (
-              <option key={opt.value} value={opt.value} className="bg-[#11192d]">
+              <option key={opt.value} value={opt.value} className="bg-surface text-on-surface">
                 {opt.label}
               </option>
             )

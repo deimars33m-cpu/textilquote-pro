@@ -40,10 +40,10 @@ export default function Header() {
             <div className="neu-raised-sm p-2 rounded-xl flex items-center justify-center">
               <span className="material-symbols-outlined text-primary orange-glow text-[18px]">precision_manufacturing</span>
             </div>
-            <span className="font-sans text-headline-sm font-bold text-white hidden sm:inline tracking-tight">
+            <span className="font-sans text-headline-sm font-bold text-on-surface hidden sm:inline tracking-tight">
               TextilQuote Pro
             </span>
-            <span className="font-sans text-headline-sm font-bold text-white sm:hidden">
+            <span className="font-sans text-headline-sm font-bold text-on-surface sm:hidden">
               TQP
             </span>
           </Link>
@@ -58,7 +58,7 @@ export default function Header() {
             <span className="hidden sm:inline tracking-wider uppercase text-xs">Nueva Cotización</span>
           </Link>
 
-          <div className="flex items-center gap-2 pl-3 border-l border-white/5">
+          <div className="flex items-center gap-2 pl-3 border-l border-outline-variant">
             <div className="neu-raised-sm p-2 rounded-xl flex items-center justify-center">
               <span className="material-symbols-outlined text-primary-fixed-dim text-[18px]">person</span>
             </div>
@@ -79,16 +79,16 @@ export default function Header() {
           />
 
           {/* Drawer Content */}
-          <div className="relative flex flex-col w-[260px] max-w-xs h-full bg-[#11192d] p-6 shadow-2xl z-50 border-r border-white/5">
+          <div className="relative flex flex-col w-[260px] max-w-xs h-full bg-surface-container p-6 shadow-2xl z-50 border-r border-outline-variant">
             {/* Header del Drawer */}
-            <div className="flex items-center justify-between pb-4 border-b border-white/5 mb-4">
+            <div className="flex items-center justify-between pb-4 border-b border-outline-variant mb-4">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">precision_manufacturing</span>
-                <span className="text-sm font-bold text-white uppercase tracking-wider">Menú de Navegación</span>
+                <span className="text-sm font-bold text-on-surface uppercase tracking-wider">Menú de Navegación</span>
               </div>
               <button 
                 onClick={() => setMenuOpen(false)} 
-                className="p-1 text-on-surface-variant hover:text-white rounded-lg hover:bg-white/5 cursor-pointer"
+                className="p-1 text-on-surface-variant hover:text-primary rounded-lg hover:bg-white/5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
@@ -106,7 +106,7 @@ export default function Header() {
                     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200
                     ${isActive
                       ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_10px_rgba(255,92,0,0.1)]'
-                      : 'text-on-surface-variant hover:bg-white/[0.03] hover:text-white'
+                      : 'text-on-surface-variant hover:bg-white/5 hover:text-primary'
                     }`
                   }
                 >
@@ -117,7 +117,7 @@ export default function Header() {
             </nav>
 
             {/* Bottom Config & Logout */}
-            <div className="border-t border-white/5 pt-4 flex flex-col gap-1 mt-auto">
+            <div className="border-t border-outline-variant pt-4 flex flex-col gap-1 mt-auto">
               {bottomItems.map(item => (
                 <NavLink
                   key={item.path}
@@ -127,7 +127,7 @@ export default function Header() {
                     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200
                     ${isActive
                       ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_10px_rgba(255,92,0,0.1)]'
-                      : 'text-on-surface-variant hover:bg-white/[0.03] hover:text-white'
+                      : 'text-on-surface-variant hover:bg-white/5 hover:text-primary'
                     }`
                   }
                 >

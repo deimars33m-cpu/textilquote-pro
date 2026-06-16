@@ -635,12 +635,12 @@ export default function ExpensesAndBudgetsPage() {
     <div className="max-w-7xl mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
       <style dangerouslySetInnerHTML={{__html: `
         .btn-3d-raised {
-          background: #0f131a;
-          box-shadow: 4px 4px 10px rgba(0,0,0,0.8), -1px -1px 4px rgba(255,255,255,0.05);
-          border-top: 1px solid rgba(255,255,255,0.05);
-          border-left: 1px solid rgba(255,255,255,0.02);
-          border-bottom: 1px solid rgba(0,0,0,0.8);
-          border-right: 1px solid rgba(0,0,0,0.5);
+          background: #f1f5f9;
+          box-shadow: 3px 3px 6px rgba(148, 163, 184, 0.25), -3px -3px 6px rgba(255,255,255,0.95);
+          border-top: 1px solid rgba(255,255,255,0.8);
+          border-left: 1px solid rgba(255,255,255,0.6);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+          border-right: 1px solid rgba(148, 163, 184, 0.2);
           transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .btn-3d-raised:hover {
@@ -648,7 +648,7 @@ export default function ExpensesAndBudgetsPage() {
         }
         .btn-3d-active {
           background: rgba(255, 92, 0, 0.05) !important;
-          box-shadow: inset 4px 4px 8px rgba(0,0,0,0.8), 0 0 10px rgba(255, 92, 0, 0.2) !important;
+          box-shadow: inset 3px 3px 6px rgba(148, 163, 184, 0.3), 0 0 8px rgba(255, 92, 0, 0.15) !important;
           border: 1px solid #ff5c00 !important;
           color: #ff5c00 !important;
         }
