@@ -664,10 +664,10 @@ export default function ExpensesAndBudgetsPage() {
         </div>
         <Button 
           onClick={() => setFormOpen(true)} 
-          className="flex items-center gap-1.5 self-start sm:self-auto neu-button-primary"
+          className="flex items-center gap-1.5 neu-button-primary md:static fixed bottom-20 right-4 z-40 shadow-lg rounded-full md:rounded-xl w-12 h-12 md:w-auto md:h-auto justify-center p-0 md:px-4 md:py-2.5"
         >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          NUEVO GASTO
+          <span className="material-symbols-outlined text-[20px]">add</span>
+          <span className="md:inline hidden">NUEVO GASTO</span>
         </Button>
       </div>
 

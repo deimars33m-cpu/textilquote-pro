@@ -1370,13 +1370,13 @@ export default function OrdersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Botón visible solo en móviles que abre el panel derecho */}
+          {/* Botón visible solo en móviles/tablets que abre el panel derecho */}
           <Button
-            className="lg:hidden"
+            className="lg:hidden md:static fixed bottom-20 right-4 z-40 shadow-lg rounded-full md:rounded-xl w-12 h-12 md:w-auto md:h-auto flex items-center justify-center p-0 md:px-4 md:py-2.5 neu-button-primary"
             onClick={() => setShowMobileForm(true)}
           >
-            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-            Nuevo Pedido
+            <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
+            <span className="md:inline hidden">Nuevo Pedido</span>
           </Button>
         </div>
       </div>
