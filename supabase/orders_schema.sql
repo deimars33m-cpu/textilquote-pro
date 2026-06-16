@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity DECIMAL(10,2) NOT NULL DEFAULT 1,
   unit_price DECIMAL(12,4) NOT NULL DEFAULT 0,
   total_price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  description TEXT, -- Especificaciones particulares del pedido
   -- Parámetros de costeo recolectados (Fase 1):
   production_time_minutes DECIMAL(8,2) DEFAULT 0,
   materials_cost DECIMAL(12,4) DEFAULT 0,
