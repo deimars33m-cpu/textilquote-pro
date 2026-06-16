@@ -1344,6 +1344,7 @@ export default function OrdersPage() {
   }
 
   return (
+    <>
     <div className="animate-fade-in space-y-6">
       {/* Banner de error cuando no está creada la tabla */}
       {dbError === 'orders_table_missing' && (
@@ -1370,13 +1371,13 @@ export default function OrdersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Botón visible solo en móviles/tablets que abre el panel derecho */}
+          {/* Botón visible solo en tablets (md -> lg) que abre el panel derecho */}
           <Button
-            className="lg:hidden md:static fixed bottom-20 right-4 z-40 shadow-lg rounded-full md:rounded-xl w-12 h-12 md:w-auto md:h-auto flex items-center justify-center p-0 md:px-4 md:py-2.5 neu-button-primary"
+            className="hidden md:flex lg:hidden items-center gap-1.5 neu-button-primary"
             onClick={() => setShowMobileForm(true)}
           >
-            <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
-            <span className="md:inline hidden">Nuevo Pedido</span>
+            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+            Nuevo Pedido
           </Button>
         </div>
       </div>
@@ -1819,5 +1820,13 @@ export default function OrdersPage() {
         </Modal>
       )}
     </div>
+    {/* Botón flotante móvil de registro de pedidos, fijado fuera del contenedor de scroll/animación */}
+    <Button
+      className="md:hidden fixed bottom-[80px] right-4 z-40 shadow-lg rounded-full w-12 h-12 flex items-center justify-center p-0 neu-button-primary"
+      onClick={() => setShowMobileForm(true)}
+    >
+      <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
+    </Button>
+    </>
   )
 }

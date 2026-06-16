@@ -632,6 +632,7 @@ export default function ExpensesAndBudgetsPage() {
   }
 
   return (
+    <>
     <div className="max-w-7xl mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
       <style dangerouslySetInnerHTML={{__html: `
         .btn-3d-raised {
@@ -662,12 +663,13 @@ export default function ExpensesAndBudgetsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-white">Gastos y Presupuestos</h1>
           <p className="text-on-surface-variant text-sm mt-1">Registra, supervisa y analiza los costos indirectos de la empresa.</p>
         </div>
+        {/* Botón visible solo en tablets/escritorio (>= md) */}
         <Button 
           onClick={() => setFormOpen(true)} 
-          className="flex items-center gap-1.5 neu-button-primary md:static fixed bottom-20 right-4 z-40 shadow-lg rounded-full md:rounded-xl w-12 h-12 md:w-auto md:h-auto justify-center p-0 md:px-4 md:py-2.5"
+          className="hidden md:flex items-center gap-1.5 neu-button-primary"
         >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          <span className="md:inline hidden">NUEVO GASTO</span>
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          NUEVO GASTO
         </Button>
       </div>
 
@@ -882,5 +884,13 @@ export default function ExpensesAndBudgetsPage() {
         </div>
       </Modal>
     </div>
+    {/* Botón flotante móvil de registro de gastos, fijado fuera del contenedor de scroll/animación */}
+    <Button 
+      onClick={() => setFormOpen(true)} 
+      className="md:hidden fixed bottom-[80px] right-4 z-40 shadow-lg rounded-full w-12 h-12 flex items-center justify-center p-0 neu-button-primary"
+    >
+      <span className="material-symbols-outlined text-[20px]">add</span>
+    </Button>
+    </>
   )
 }
