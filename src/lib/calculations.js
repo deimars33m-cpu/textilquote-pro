@@ -131,39 +131,11 @@ export function calculateQuote({
   const qty = Math.max(1, parseInt(quantity) || 1)
   const margin = Math.max(0, Math.min(99.99, parseFloat(marginPct) || 0))
 
-  // Escalamiento por tallas si aplica
-  let adjustedMaterials = materials
-  let sizeMultiplier = 1.0
-
-  if (isClothing && sizeDistribution && Object.keys(sizeDistribution).length > 0) {
-    let totalSizeQty = 0
-    let weightedSum = 0
-    Object.entries(sizeDistribution).forEach(([size, sizeQtyVal]) => {
-      const sizeQty = parseFloat(sizeQtyVal) || 0
-      const multiplier = parseFloat(sizeMultipliers?.[size]) || 1.0
-      weightedSum += sizeQty * multiplier
-      totalSizeQty += sizeQty
-    })
-    
-    if (totalSizeQty > 0) {
-      sizeMultiplier = weightedSum / totalSizeQty
-      adjustedMaterials = materials.map(m => {
-        if (m.is_scalable) {
-          return {
-            ...m,
-            quantity_per_unit: (parseFloat(m.quantity_per_unit) || 0) * sizeMultiplier
-          }
-        }
-        return m
-      })
-    }
-  }
-
   // A. Costo de materiales
-  const materialsCost = calcMaterialsCost(adjustedMaterials, qty)
+  const materialsCost = calcMaterialsCost(materials, qty)
 
   // B. Merma
-  const wasteCost = calcWasteCost(adjustedMaterials, qty)
+  const wasteCost = calcWasteCost(materials, qty)
 
   // C. Costo de procesos
   const processesCost = calcProcessesCost(processes, qty)
@@ -227,112 +199,7 @@ export function calculateQuote({
     })
   }
 
-  // --- Desglose Detallado por Talla ---
-  const sizeBreakdown = {}
-  if (isClothing) {
-    const sizesToCalculate = sizeMultipliers && Object.keys(sizeMultipliers).length > 0
-      ? Object.keys(sizeMultipliers)
-      : ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
-
-    let totalCalculatedSales = 0
-
-    // Primera pasada: Calcular precios unitarios y totales sugeridos por talla
-    sizesToCalculate.forEach((size) => {
-      const sizeQty = sizeDistribution ? (parseFloat(sizeDistribution[size]) || 0) : 0
-      const multiplier = parseFloat(sizeMultipliers?.[size]) || 1.0
-
-      // 1. Costo unitario de materiales específicos para esta talla
-      const matCostUnit = materials.reduce((sum, m) => {
-        const qtyPerUnit = (parseFloat(m.quantity_per_unit) || 0) * (m.is_scalable ? multiplier : 1.0)
-        const price = parseFloat(m.unit_price) || 0
-        return sum + (qtyPerUnit * price)
-      }, 0)
-
-      // 2. Costo unitario de merma para esta talla
-      const wasteCostUnit = materials.reduce((sum, m) => {
-        const qtyPerUnit = (parseFloat(m.quantity_per_unit) || 0) * (m.is_scalable ? multiplier : 1.0)
-        const price = parseFloat(m.unit_price) || 0
-        const wastePct = parseFloat(m.waste_pct) || 0
-        return sum + (qtyPerUnit * price * wastePct / 100)
-      }, 0)
-
-      // 3. Costo unitario de procesos (prorrateado por cantidad)
-      const procCostUnit = processes.reduce((sum, p) => {
-        const cost = parseFloat(p.cost) || 0
-        const timeMin = parseFloat(p.time_minutes) || 0
-        switch (p.cost_type) {
-          case 'por_hora':
-            return sum + ((timeMin / 60) * cost)
-          case 'por_unidad':
-            return sum + cost
-          case 'fijo_por_pedido':
-            return sum + (cost / (qty > 0 ? qty : 1))
-          default:
-            return sum
-        }
-      }, 0)
-
-      // 4. Costo unitario de estampados/logos
-      const embCostUnit = (embellishments || []).reduce((sum, e) => {
-        const cost = parseFloat(e.cost) || 0
-        const embQty = parseFloat(e.quantity) || 1
-        return sum + (cost * embQty)
-      }, 0)
-
-      const unitCostSize = round(matCostUnit + wasteCostUnit + procCostUnit + embCostUnit)
-      const unitPriceSize = margin >= 100 ? unitCostSize : round(unitCostSize / (1 - margin / 100))
-
-      // Aplicar descuento e impuesto al precio unitario sugerido de la talla
-      const discAmtSize = round(unitPriceSize * (parseFloat(discountPct) || 0) / 100)
-      const afterDiscSize = round(unitPriceSize - discAmtSize)
-      const taxAmtSize = round(afterDiscSize * (parseFloat(taxPct) || 0) / 100)
-      const unitPriceFinalSize = round(afterDiscSize + taxAmtSize)
-
-      const totalPriceSize = round(unitPriceFinalSize * sizeQty)
-      totalCalculatedSales += totalPriceSize
-
-      sizeBreakdown[size] = {
-        size,
-        multiplier,
-        quantity: sizeQty,
-        matCostUnit: round(matCostUnit),
-        wasteCostUnit: round(wasteCostUnit),
-        procCostUnit: round(procCostUnit),
-        embCostUnit: round(embCostUnit),
-        unitCost: unitCostSize,
-        totalCost: round(unitCostSize * sizeQty),
-        unitPrice: unitPriceSize,               // precio base antes de impuestos y descuentos
-        unitPriceFinal: unitPriceFinalSize,     // precio sugerido final facturado por unidad
-        totalPrice: totalPriceSize,             // total sugerido facturado
-        negotiatedUnitPrice: unitPriceFinalSize, // por defecto igual al sugerido
-        negotiatedTotalPrice: totalPriceSize     // por defecto igual al sugerido
-      }
-    })
-
-    // Segunda pasada: Distribuir proporcionalmente el precio negociado global si existe (solo en las tallas activas con cantidad > 0)
-    const negPrice = parseFloat(negotiatedPrice) || 0
-    if (negPrice > 0 && totalCalculatedSales > 0) {
-      const k = negPrice / totalCalculatedSales
-      let runningNegTotal = 0
-      const activeSizeKeys = Object.keys(sizeBreakdown).filter(size => sizeBreakdown[size].quantity > 0)
-
-      activeSizeKeys.forEach((size, idx) => {
-        const item = sizeBreakdown[size]
-        if (idx === activeSizeKeys.length - 1) {
-          // Último item activo: ajustar la diferencia de redondeo decimal
-          const exactTotal = round(negPrice - runningNegTotal)
-          item.negotiatedTotalPrice = exactTotal
-          item.negotiatedUnitPrice = round(exactTotal / item.quantity)
-        } else {
-          const rawTotal = item.totalPrice * k
-          const roundedTotal = round(rawTotal)
-          item.negotiatedTotalPrice = roundedTotal
-          item.negotiatedUnitPrice = round(roundedTotal / item.quantity)
-          runningNegTotal += roundedTotal
-        }
-      })
-    }
-  }
+  const sizeBreakdown = null
 
   return {
     // Desglose
@@ -360,9 +227,7 @@ export function calculateQuote({
     marginPct: margin,
 
     // Tallas
-    sizeMultiplier,
-    adjustedMaterials,
-    sizeBreakdown, // mapa detallado por talla
+    sizeBreakdown: null,
 
     // Alertas
     alerts,

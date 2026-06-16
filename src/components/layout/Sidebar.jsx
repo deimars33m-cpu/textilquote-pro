@@ -11,6 +11,7 @@ const navItems = [
   { path: '/quotes/new', icon: 'calculate', label: 'Cotizador' },
   { path: '/quotes', icon: 'description', label: 'Historial' },
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
+  { path: '/settings/global', icon: 'admin_panel_settings', label: 'Configuración Global' },
 ]
 
 const bottomItems = [

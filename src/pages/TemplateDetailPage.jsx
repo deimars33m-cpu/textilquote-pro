@@ -186,11 +186,7 @@ export default function TemplateDetailPage() {
       category: template.category || '',
       description: template.description || '',
       suggested_margin: template.suggested_margin ?? '',
-      is_clothing: template.is_clothing || false,
-      size_multipliers: template.size_multipliers || {
-        "2": 0.50, "4": 0.58, "6": 0.66, "8": 0.74, "10": 0.82, "12": 0.88, "14": 0.94, "16": 1.00,
-        "S": 0.90, "M": 0.95, "L": 1.00, "XL": 1.10, "XXL": 1.25, "XXXL": 1.40
-      }
+
     })
     setEditErrors({})
     setEditModalOpen(true)
@@ -211,8 +207,8 @@ export default function TemplateDetailPage() {
           category: editForm.category || null,
           description: editForm.description.trim() || null,
           suggested_margin: editForm.suggested_margin ? parseFloat(editForm.suggested_margin) : null,
-          is_clothing: editForm.is_clothing || false,
-          size_multipliers: editForm.size_multipliers,
+          is_clothing: false,
+          size_multipliers: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -259,7 +255,6 @@ export default function TemplateDetailPage() {
     setMaterialSaving(true)
     try {
       const material = allMaterials.find((m) => m.id === materialId)
-      const isTextile = ['tela', 'vinil', 'papel_sublimatico', 'tintas_sublimacion', 'tinta'].includes(material?.category)
       const { data, error } = await supabase
         .from('product_template_materials')
         .insert({
@@ -267,7 +262,6 @@ export default function TemplateDetailPage() {
           material_id: materialId,
           quantity_per_unit: 1,
           waste_pct_override: material?.default_waste_pct || 0,
-          is_scalable: isTextile,
         })
         .select('*, materials(id, name, unit_price, usage_unit, default_waste_pct)')
         .single()
@@ -293,7 +287,6 @@ export default function TemplateDetailPage() {
           .update({
             quantity_per_unit: parseFloat(tm.quantity_per_unit) || 0,
             waste_pct_override: parseFloat(tm.waste_pct_override) || 0,
-            is_scalable: tm.is_scalable || false
           })
           .eq('id', tm.id)
           .select()
@@ -646,9 +639,7 @@ export default function TemplateDetailPage() {
                       <th className="text-left px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Material</th>
                       <th className="text-left px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Unidad</th>
                       <th className="text-right px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Precio Unit.</th>
-                      {template?.is_clothing && (
-                        <th className="text-center px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-24">Escalable</th>
-                      )}
+
                       <th className="text-center px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-32">Cantidad/Unidad</th>
                       <th className="text-center px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-28">Merma %</th>
                       <th className="text-center px-4 py-2 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-16"></th>
@@ -666,20 +657,7 @@ export default function TemplateDetailPage() {
                         <td className="px-4 py-2 text-sm text-right font-mono text-on-surface">
                           {formatCurrency(tm.materials?.unit_price)}
                         </td>
-                        {template?.is_clothing && (
-                          <td className="px-4 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={tm.is_scalable || false}
-                              onChange={(e) => {
-                                const val = e.target.checked
-                                setTemplateMaterials(prev => prev.map(item => item.id === tm.id ? { ...item, is_scalable: val } : item))
-                                setIsDirty(true)
-                              }}
-                              className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant rounded focus:ring-primary focus:ring-1 focus:ring-offset-0 cursor-pointer"
-                            />
-                          </td>
-                        )}
+
                         <td className="px-4 py-2">
                           <input
                             type="number"
@@ -1068,49 +1046,7 @@ export default function TemplateDetailPage() {
             placeholder="Descripción del producto..."
           />
 
-          <div className="border-t border-white/5 pt-3">
-            <Toggle
-              checked={editForm.is_clothing || false}
-              onChange={(checked) => setEditForm((f) => ({ ...f, is_clothing: checked }))}
-              label="Es prenda de vestir (Habilitar escala de tallas)"
-            />
-          </div>
 
-          {editForm.is_clothing && (
-            <div className="border-t border-white/5 pt-3">
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                Multiplicadores de Consumo por Talla (Relativo a Talla L/16 = 1.0)
-              </label>
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                {['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((size) => {
-                  const mult = editForm.size_multipliers?.[size] ?? 1.0
-                  return (
-                    <div key={size} className="flex flex-col gap-1">
-                      <span className="text-[10px] font-mono text-primary font-bold text-center">{size}</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="10"
-                        value={mult}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0
-                          setEditForm(prev => ({
-                            ...prev,
-                            size_multipliers: {
-                              ...prev.size_multipliers,
-                              [size]: val
-                            }
-                          }))
-                        }}
-                        className="w-full text-center px-1 py-1 bg-[#060a14] border border-outline-variant rounded-lg text-xs text-on-surface font-mono outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" onClick={() => setEditModalOpen(false)}>

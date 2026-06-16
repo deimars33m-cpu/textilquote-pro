@@ -14,7 +14,6 @@ const EMPTY_FORM = {
   description: '',
   suggested_margin: '',
   is_active: true,
-  is_clothing: false,
 }
 
 export default function ProductTemplatesPage() {
@@ -78,11 +77,8 @@ export default function ProductTemplatesPage() {
         description: form.description.trim() || null,
         suggested_margin: form.suggested_margin ? parseFloat(form.suggested_margin) : null,
         is_active: form.is_active,
-        is_clothing: form.is_clothing || false,
-        size_multipliers: form.is_clothing ? {
-          "2": 0.50, "4": 0.58, "6": 0.66, "8": 0.74, "10": 0.82, "12": 0.88, "14": 0.94, "16": 1.00,
-          "S": 0.90, "M": 0.95, "L": 1.00, "XL": 1.10, "XXL": 1.25, "XXXL": 1.40
-        } : null,
+        is_clothing: false,
+        size_multipliers: null,
       }
       await create(payload)
       setModalOpen(false)
@@ -291,13 +287,7 @@ export default function ProductTemplatesPage() {
             label="Plantilla activa"
           />
 
-          <div className="border-t border-white/5 pt-3">
-            <Toggle
-              checked={form.is_clothing || false}
-              onChange={(val) => updateField('is_clothing', val)}
-              label="Es prenda de vestir (Habilitar escala de tallas)"
-            />
-          </div>
+
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>

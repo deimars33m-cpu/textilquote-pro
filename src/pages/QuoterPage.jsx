@@ -5,12 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { calculateQuote, calcTotalMonthlyExpenses, roundUpPrice, formatProductionTime, parseContractDurationToMonths, VOLUME_TIERS, getVolumeTierMargin, calculatePricingTiers } from '@/lib/calculations'
 import { formatCurrency, formatPercent, processCategories } from '@/lib/formatters'
-import { Card, Input, Select, Textarea, Button, AlertBanner, LoadingSpinner, Modal, Toggle } from '@/components/ui/index.jsx'
-
-const DEFAULT_SIZE_MULTIPLIERS = {
-  "2": 0.50, "4": 0.58, "6": 0.66, "8": 0.74, "10": 0.82, "12": 0.88, "14": 0.94, "16": 1.00,
-  "S": 0.90, "M": 0.95, "L": 1.00, "XL": 1.10, "XXL": 1.25, "XXXL": 1.40
-}
+import { Card, Input, Select, Textarea, Button, AlertBanner, LoadingSpinner, Modal } from '@/components/ui/index.jsx'
 
 
 // ─── Cost Breakdown Panel (right sidebar) ──────────────────────────────────
@@ -87,35 +82,7 @@ function CostBreakdownPanel({
           </div>
         </div>
 
-        {/* Precios desglosados por talla si aplica */}
-        {calc.sizeBreakdown && Object.keys(calc.sizeBreakdown).length > 0 && (() => {
-          const sizeEntries = Object.values(calc.sizeBreakdown)
-          const hasQuantities = sizeEntries.some(item => item.quantity > 0)
-          const visibleSizes = hasQuantities 
-            ? sizeEntries.filter(item => item.quantity > 0)
-            : sizeEntries
 
-          return visibleSizes.length > 0 && (
-            <div className="space-y-2 border-t border-outline-variant/30 pt-3">
-              <h4 className="text-xs font-mono uppercase tracking-wider text-primary border-b border-outline-variant/30 pb-1 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">sell</span>
-                Precios por Talla ({isNegotiated ? 'Negociados' : 'Sugeridos'})
-              </h4>
-              <div className="bg-[#060a14] rounded-xl p-3 border border-white/5 space-y-1.5 max-h-48 overflow-y-auto">
-                {visibleSizes.map((item) => (
-                  <div key={item.size} className="flex justify-between text-xs font-mono">
-                    <span className="text-on-surface-variant font-medium">
-                      Talla {item.size} {item.quantity > 0 ? `(${item.quantity} ud)` : ''}:
-                    </span>
-                    <span className="text-white font-bold">
-                      {formatCurrency(isNegotiated ? item.negotiatedUnitPrice : item.unitPriceFinal)} /u
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
 
         <div className="space-y-2.5 border-t border-outline-variant/30 pt-3">
           <h4 className="text-xs font-mono uppercase tracking-wider text-on-surface-variant/80 border-b border-outline-variant/30 pb-1">Costos de Operación</h4>
@@ -452,9 +419,6 @@ export default function QuoterPage() {
   const [clientId, setClientId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [sizeDistribution, setSizeDistribution] = useState({})
-  const [showSizesModal, setShowSizesModal] = useState(false)
-  const [isClothing, setIsClothing] = useState(false)
   const [marginPct, setMarginPct] = useState(30)
   const [discountPct, setDiscountPct] = useState(0)
   const [applyTax, setApplyTax] = useState(false)
@@ -477,7 +441,7 @@ export default function QuoterPage() {
     try {
       const [clientsRes, templatesRes, expensesRes] = await Promise.all([
         supabase.from('clients').select('id, name').eq('user_id', user.id).order('name'),
-        supabase.from('product_templates').select('id, name, suggested_margin, is_clothing, size_multipliers').eq('user_id', user.id).order('name'),
+        supabase.from('product_templates').select('id, name, suggested_margin').eq('user_id', user.id).order('name'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id),
       ])
 
@@ -512,8 +476,6 @@ export default function QuoterPage() {
       setMaterials([])
       setProcesses([])
       setEmbellishments([])
-      setSizeDistribution({})
-      setIsClothing(false)
       return
     }
 
@@ -533,8 +495,7 @@ export default function QuoterPage() {
           .eq('template_id', tmplId),
       ])
 
-      // Reiniciar tallas
-      setSizeDistribution({})
+
 
       const tmplMaterials = (matRes.data || []).map(tm => ({
         id: crypto.randomUUID(),
@@ -547,7 +508,6 @@ export default function QuoterPage() {
         price_updated_at: tm.materials?.price_updated_at,
         purchase_quantity: tm.materials?.purchase_quantity || 1,
         purchase_unit: tm.materials?.purchase_unit || 'unidad',
-        is_scalable: tm.is_scalable || false,
       }))
 
       const tmplProcesses = (procRes.data || []).map(tp => ({
@@ -576,7 +536,6 @@ export default function QuoterPage() {
       if (tmpl?.suggested_margin) {
         setMarginPct(tmpl.suggested_margin)
       }
-      setIsClothing(tmpl?.is_clothing || false)
     } catch (err) {
       console.error('Error loading template:', err)
     }
@@ -608,7 +567,6 @@ export default function QuoterPage() {
       unit_price: 0,
       waste_pct: 0,
       usage_unit: 'unidad',
-      is_scalable: false,
     }])
   }
 
@@ -672,12 +630,9 @@ export default function QuoterPage() {
       totalMonthlyExpenses,
       monthlyCapacity: settings?.monthly_capacity_units || 1000,
       minMargin: settings?.min_margin || 15,
-      isClothing: isClothing,
-      sizeDistribution,
-      sizeMultipliers: activeTemplate?.size_multipliers || DEFAULT_SIZE_MULTIPLIERS,
       negotiatedPrice: negotiatedPrice ? (parseFloat(negotiatedPrice) * quantity) : null,
     })
-  }, [materials, processes, embellishments, quantity, marginPct, discountPct, applyTax, totalMonthlyExpenses, settings, activeTemplate, sizeDistribution, negotiatedPrice, isClothing])
+  }, [materials, processes, embellishments, quantity, marginPct, discountPct, applyTax, totalMonthlyExpenses, settings, negotiatedPrice])
 
   function handleRoundUp() {
     const roundedUnitPrice = roundUpPrice(calc.unitPrice)
@@ -761,8 +716,6 @@ export default function QuoterPage() {
           total_price: finalQuotePrice,
           profit: finalQuoteProfit,
           real_margin: finalQuoteMargin,
-          size_distribution: isClothing ? sizeDistribution : {},
-          size_multipliers: isClothing ? (activeTemplate?.size_multipliers || DEFAULT_SIZE_MULTIPLIERS) : null,
         })
         .select()
         .single()
@@ -785,7 +738,6 @@ export default function QuoterPage() {
             unit_price: price,
             waste_pct: waste,
             total_cost: materialTotalCost,
-            is_scalable: m.is_scalable || false,
           }
         })
 
@@ -893,43 +845,17 @@ export default function QuoterPage() {
                 onChange={handleTemplateChange}
               />
             </div>
-            <div className="border-t border-outline-variant/30 pt-3">
-              <Toggle
-                checked={isClothing}
-                onChange={(checked) => {
-                  setIsClothing(checked)
-                  if (!checked) {
-                    setSizeDistribution({})
-                  }
-                }}
-                label="Es prenda de vestir (Habilitar escala de tallas)"
-              />
-            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-outline-variant/30 pt-3">
-              <div className="relative">
+              <div>
                 <Input
                   label="Cantidad"
                   type="number"
                   min="1"
                   value={quantity}
                   onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  disabled={isClothing}
                   suffix="uds"
                 />
-                {isClothing && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSizesModal(true)}
-                    className="absolute right-12 top-[30px] px-2 py-1 bg-primary/20 hover:bg-primary/35 border border-primary/30 rounded-md text-[10px] text-primary font-bold transition-all"
-                  >
-                    Tallas
-                  </button>
-                )}
-                {isClothing && (
-                  <p className="text-[9px] text-primary/70 font-mono mt-1 ml-1 cursor-pointer hover:underline truncate" onClick={() => setShowSizesModal(true)}>
-                    Tallas: {Object.entries(sizeDistribution).map(([size, qty]) => `${size}(${qty})`).join(', ') || 'Sin definir (clic)'}
-                  </p>
-                )}
               </div>
               <Input
                 label="Precio Negociado"
@@ -1002,9 +928,7 @@ export default function QuoterPage() {
                       <th className="text-left px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Material</th>
                       <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-24">Cant/Ud</th>
                       <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">Precio Unit.</th>
-                      {isClothing && (
-                        <th className="text-center px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-20">Escalable</th>
-                      )}
+
                       <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-20">Merma %</th>
                       <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">Subtotal</th>
                       <th className="w-10"></th>
@@ -1056,16 +980,7 @@ export default function QuoterPage() {
                               className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1 text-sm font-mono text-on-surface outline-none focus:border-primary"
                             />
                           </td>
-                          {isClothing && (
-                            <td className="px-4 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={m.is_scalable || false}
-                                onChange={e => updateMaterial(m.id, 'is_scalable', e.target.checked)}
-                                className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant rounded focus:ring-primary focus:ring-1 focus:ring-offset-0 cursor-pointer"
-                              />
-                            </td>
-                          )}
+
                           <td className="px-4 py-2">
                             <input
                               type="number"
@@ -1443,61 +1358,7 @@ export default function QuoterPage() {
         </div>
       </div>
 
-      {/* ─── Sizes Distribution Modal ─── */}
-      <Modal
-        isOpen={showSizesModal}
-        onClose={() => setShowSizesModal(false)}
-        title="Distribución de Cantidades por Talla"
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-on-surface-variant leading-relaxed">
-            Ingresa las cantidades para cada talla. La cantidad total del pedido se calculará automáticamente.
-          </p>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-            {['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map((size) => {
-              const qty = sizeDistribution[size] || ''
-              return (
-                <div key={size} className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-on-surface-variant font-mono text-center block">Talla {size}</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={qty}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0
-                      const newDist = {
-                        ...sizeDistribution,
-                        [size]: val > 0 ? val : undefined
-                      }
-                      // remove undefined
-                      Object.keys(newDist).forEach(key => newDist[key] === undefined && delete newDist[key])
-                      setSizeDistribution(newDist)
-                      
-                      // Calculate total quantity
-                      const newTotal = Object.values(newDist).reduce((sum, q) => sum + (parseInt(q) || 0), 0)
-                      setQuantity(Math.max(1, newTotal))
-                    }}
-                    className="w-full text-center px-2 py-2 bg-[#060a14] border border-outline-variant rounded-xl text-sm font-mono text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              )
-            })}
-          </div>
-
-          <div className="flex justify-between items-center bg-[#060a14] p-3 rounded-xl border border-white/5 mt-4">
-            <span className="text-xs text-on-surface-variant font-mono uppercase">Cantidad Total Calc:</span>
-            <span className="font-mono text-body-lg text-primary font-bold">{quantity} uds</span>
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <Button variant="primary" onClick={() => setShowSizesModal(false)}>
-              Aceptar
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

@@ -2,17 +2,61 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import {
-  Card, SearchInput, Button, StatusBadge,
-  LoadingSpinner, EmptyState, Select, AlertBanner, Modal
+import { Card, SearchInput, Button, StatusBadge,
+  LoadingSpinner, EmptyState, Select, AlertBanner, Modal,
+  Input, Textarea
 } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, formatQuoteNumber } from '@/lib/formatters'
+import { useGlobalSettings } from '@/context/GlobalSettingsContext'
+
+const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+const PANELS_LIST = ['1 PANEL', '2 PANELES', '3 PANELES', '4 PANELES', '5 PANELES', '6 PANELES']
+
+const PANEL_OPTIONS = {
+  '1 PANEL': ['Almohadas', 'Delantera suelta', 'Otros'],
+  '2 PANELES': ['Short', 'Delantera+Espalda', 'Otros'],
+  '3 PANELES': ['Polera manga corta', 'Otros'],
+  '4 PANELES': ['Malla+Short', 'Chaqueta deportiva', 'Camiseta manga larga', 'Otros'],
+  '5 PANELES': ['Camiseta+Short', 'Otros'],
+  '6 PANELES': ['Camiseta manga larga + Short', 'Otros']
+}
+
+const initialItemTypes = PANELS_LIST.reduce((acc, panel) => ({
+  ...acc,
+  [panel]: PANEL_OPTIONS[panel]?.[0] || 'Otros'
+}), {})
+
+const initialSizes = {
+  ...SIZES_LIST.reduce((acc, size) => ({ ...acc, [size]: 0 }), {}),
+  ...PANELS_LIST.reduce((acc, panel) => ({ ...acc, [panel]: 0 }), {})
+}
+
+const initialSizePrices = {
+  ...SIZES_LIST.reduce((acc, size) => {
+    let price = 50
+    if (['2', '4', '6'].includes(size)) price = 40
+    else if (['8', '10', '12'].includes(size)) price = 45
+    else if (['14', '16'].includes(size)) price = 50
+    else if (size === 'S') price = 55
+    else if (size === 'M') price = 60
+    else if (size === 'L') price = 65
+    else if (size === 'XL') price = 70
+    else if (size === 'XXL') price = 75
+    else if (size === 'XXXL') price = 80
+    return { ...acc, [size]: price }
+  }, {}),
+  ...PANELS_LIST.reduce((acc, panel, idx) => {
+    const price = (idx + 1) * 20
+    return { ...acc, [panel]: price }
+  }, {})
+}
 
 export default function OrdersPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const convertQuoteId = searchParams.get('convertQuoteId')
+  const { settings, getServicePrice } = useGlobalSettings()
 
   // Estado de datos
   const [orders, setOrders] = useState([])
@@ -28,6 +72,39 @@ export default function OrdersPage() {
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
+
+  // Asistente de registro de pedidos (5 pasos)
+  const [currentStep, setCurrentStep] = useState(1)
+  const [orderForm, setOrderForm] = useState({
+    clientName: '',
+    clientNit: '',
+    clientPhone: '',
+    clientEmail: '',
+    category: '',
+    subcategory: '',
+    sizes: initialSizes,
+    sizePrices: settings.sizes, // Precios dinámicos para tallas
+    itemTypes: initialItemTypes,
+    productName: '',
+    flatQuantity: 1,
+    stitchesCount: 0,
+    flatUnitPrice: 50,
+    paymentMethod: 'efectivo',
+    advanceAmount: 0,
+    paymentNotes: '',
+    particularDetails: '',
+    orderDate: new Date().toISOString().split('T')[0]
+  })
+  const [formErrors, setFormErrors] = useState({})
+
+  // Update flatUnitPrice automatically when subcategory changes (if service)
+  useEffect(() => {
+    if (orderForm.category && orderForm.category !== 'produccion_textil' && orderForm.subcategory !== 'sublimacion_localizada' && currentStep === 4) {
+      if (orderForm.flatUnitPrice === 50) {
+         updateForm('flatUnitPrice', getServicePrice(orderForm.category, orderForm.subcategory))
+      }
+    }
+  }, [orderForm.subcategory, currentStep, orderForm.category, settings, getServicePrice])
 
   useEffect(() => {
     if (user) {
@@ -148,16 +225,366 @@ export default function OrdersPage() {
   // Limpiar parámetro de cotización de URL al cerrar
   const handleCloseForm = () => {
     setShowMobileForm(false)
+    setCurrentStep(1)
+    setOrderForm({
+      clientName: '',
+      clientNit: '',
+      clientPhone: '',
+      clientEmail: '',
+      category: '',
+      subcategory: '',
+      sizes: initialSizes,
+      sizePrices: settings.sizes, // Precios por defecto del catálogo
+      itemTypes: initialItemTypes,
+      productName: '',
+      flatQuantity: 1,
+      stitchesCount: 0,
+      flatUnitPrice: 50,
+      paymentMethod: 'efectivo',
+      advanceAmount: 0,
+      paymentNotes: '',
+      particularDetails: '',
+      orderDate: new Date().toISOString().split('T')[0]
+    })
+    setFormErrors({})
     if (convertQuoteId) {
       searchParams.delete('convertQuoteId')
       setSearchParams(searchParams)
     }
   }
 
+  // Helper methods for order entry wizard
+  const updateForm = (field, value) => {
+    setOrderForm(prev => ({
+      ...prev,
+      [field]: value
+    }))
+    if (formErrors[field]) {
+      setFormErrors(prev => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
+  }
+
+  const updateSizeQty = (size, delta) => {
+    setOrderForm(prev => {
+      const currentVal = prev.sizes[size] || 0
+      const newVal = Math.max(0, currentVal + delta)
+      return {
+        ...prev,
+        sizes: {
+          ...prev.sizes,
+          [size]: newVal
+        }
+      }
+    })
+    if (formErrors.sizes) {
+      setFormErrors(prev => {
+        const next = { ...prev }
+        delete next.sizes
+        return next
+      })
+    }
+  }
+
+  const updateSizePrice = (size, val) => {
+    setOrderForm(prev => ({
+      ...prev,
+      sizePrices: {
+        ...prev.sizePrices,
+        [size]: Math.max(0, parseFloat(val) || 0)
+      }
+    }))
+  }
+
+  const updateFormItemType = (panel, val) => {
+    setOrderForm(prev => ({
+      ...prev,
+      itemTypes: {
+        ...prev.itemTypes,
+        [panel]: val
+      }
+    }))
+  }
+
+  const totalAmount = useMemo(() => {
+    const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
+    const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
+
+    if (usesSizes) {
+      return Object.entries(orderForm.sizes).reduce((sum, [size, qty]) => {
+        if (!SIZES_LIST.includes(size)) return sum;
+        const price = orderForm.sizePrices[size] || 0
+        return sum + (parseInt(qty) || 0) * parseFloat(price)
+      }, 0)
+    } else if (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') {
+      return Object.entries(orderForm.sizes).reduce((sum, [panel, qty]) => {
+        if (!PANELS_LIST.includes(panel)) return sum;
+        const price = orderForm.sizePrices[panel] || 0
+        return sum + (parseInt(qty) || 0) * parseFloat(price)
+      }, 0)
+    } else {
+      const unit = activeSub?.unit || 'unidad';
+      
+      if (unit === '1000_puntadas') {
+         return ((parseInt(orderForm.stitchesCount) || 0) / 1000) * parseFloat(orderForm.flatUnitPrice) * (parseInt(orderForm.flatQuantity) || 1)
+      } else {
+         return (parseInt(orderForm.flatQuantity) || 0) * (parseFloat(orderForm.flatUnitPrice) || 0)
+      }
+    }
+  }, [orderForm.category, orderForm.subcategory, orderForm.sizes, orderForm.sizePrices, orderForm.flatQuantity, orderForm.flatUnitPrice, orderForm.stitchesCount, settings])
+
+  const subtotal = totalAmount / 1.18
+  const igvAmount = totalAmount - subtotal
+
+  const validateStep = (step) => {
+    const errors = {}
+    if (step === 1) {
+      if (!orderForm.clientName?.trim()) {
+        errors.clientName = 'El nombre o razón social es requerido.'
+      }
+    } else if (step === 2) {
+      if (!orderForm.category) {
+        errors.category = 'Debe seleccionar una categoría principal.'
+      }
+    } else if (step === 3) {
+      if (!orderForm.subcategory) {
+        errors.subcategory = 'Debe seleccionar una subcategoría.'
+      }
+    } else if (step === 4) {
+      const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
+      const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
+
+      if (usesSizes) {
+        const totalQty = Object.entries(orderForm.sizes).reduce((sum, [k, v]) => SIZES_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+        if (totalQty <= 0) {
+          errors.sizes = 'Debe ingresar cantidad en al menos una talla.'
+        }
+      } else if (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') {
+        const totalPanels = Object.entries(orderForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+        if (totalPanels <= 0) {
+          errors.sizes = 'Debe ingresar cantidad en al menos un tipo de panel.'
+        }
+      } else {
+        if (!orderForm.productName?.trim()) {
+          errors.productName = 'El detalle del servicio es requerido.'
+        }
+        if ((parseInt(orderForm.flatQuantity) || 0) <= 0) {
+          errors.flatQuantity = 'La cantidad debe ser mayor a 0.'
+        }
+        if ((parseFloat(orderForm.flatUnitPrice) || 0) <= 0) {
+          errors.flatUnitPrice = 'El precio unitario debe ser mayor a 0.'
+        }
+      }
+    }
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleNext = () => {
+    if (validateStep(currentStep)) {
+      if (currentStep < 5) {
+        setCurrentStep(prev => prev + 1)
+      } else {
+        handleRegister()
+      }
+    }
+  }
+
+  const handlePrev = () => {
+    if (currentStep > 1) {
+      setCurrentStep(prev => prev - 1)
+    } else {
+      handleCloseForm()
+    }
+  }
+
+  const handleRegister = async () => {
+    const total = totalAmount
+    const advance = parseFloat(orderForm.advanceAmount) || 0
+    const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
+    const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
+    const isSublimacionPaneles = orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada'
+
+    try {
+      let clientId = null
+      const clientName = orderForm.clientName.trim()
+      const clientPhone = orderForm.clientPhone?.trim() || ''
+      const clientEmail = orderForm.clientEmail?.trim() || ''
+      const clientNit = orderForm.clientNit?.trim() || ''
+
+      // 1. Resolver el cliente (buscar si existe o crear uno nuevo)
+      const { data: existingClients, error: clientFindError } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('name', clientName)
+        
+      if (clientFindError) throw clientFindError
+
+      if (existingClients && existingClients.length > 0) {
+        clientId = existingClients[0].id
+      } else {
+        const { data: newClient, error: clientCreateError } = await supabase
+          .from('clients')
+          .insert({
+            user_id: user.id,
+            name: clientName,
+            phone: clientPhone,
+            email: clientEmail,
+            notes: clientNit ? `NIT: ${clientNit}` : ''
+          })
+          .select()
+          .single()
+        if (clientCreateError) throw clientCreateError
+        clientId = newClient.id
+      }
+
+      // 2. Insertar el Pedido principal
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          user_id: user.id,
+          client_id: clientId,
+          order_type: orderForm.category === 'produccion_textil' ? 'pedido_cotizado' : 'servicio_diario',
+          status: 'pendiente',
+          payment_status: advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente'),
+          total_amount: total,
+          paid_amount: advance,
+          delivery_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+          notes: orderForm.paymentNotes
+        })
+        .select()
+        .single()
+      if (orderError) throw orderError
+
+      // 3. Calcular cantidades y distribución
+      const qty = usesSizes
+        ? Object.entries(orderForm.sizes).reduce((sum, [k, v]) => SIZES_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+        : isSublimacionPaneles
+          ? Object.entries(orderForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+          : orderForm.flatQuantity
+          
+      const unitPrice = usesSizes
+        ? (total / Math.max(1, qty))
+        : isSublimacionPaneles
+          ? (total / Math.max(1, qty))
+          : orderForm.flatUnitPrice
+
+      const sizeDist = usesSizes
+        ? SIZES_LIST.reduce((acc, size) => ({ ...acc, [size]: orderForm.sizes[size] || 0 }), {})
+        : isSublimacionPaneles
+          ? PANELS_LIST.reduce((acc, panel) => {
+              const qtyQty = orderForm.sizes[panel] || 0
+              const type = orderForm.itemTypes[panel] || 'Otros'
+              return { ...acc, [panel]: { cantidad: qtyQty, tipo: type } }
+            }, {})
+          : null
+
+      const itemName = (usesSizes || isSublimacionPaneles)
+        ? `${settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)?.label || 'Producto'} (${settings.categories.find(c => c.id === orderForm.category)?.label})`
+        : orderForm.productName
+
+      // 4. Insertar el Ítem del Pedido
+      const { error: itemError } = await supabase
+        .from('order_items')
+        .insert({
+          order_id: newOrder.id,
+          name: itemName,
+          category: settings.categories.find(c => c.id === orderForm.category)?.label || 'otro',
+          product_category: settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)?.label || '',
+          description: orderForm.particularDetails || '',
+          quantity: qty,
+          unit_price: unitPrice,
+          total_price: total,
+          size_distribution: sizeDist
+        })
+      if (itemError) throw itemError
+
+      // 5. Recargar lista y limpiar
+      await fetchOrders()
+      handleCloseForm()
+      alert('Pedido registrado con éxito en la Base de Datos.')
+    } catch (err) {
+      console.error('Error al registrar pedido:', err)
+      alert(`Error al registrar el pedido: ${err.message || 'Error desconocido'}`)
+    }
+  }
+
   // Renderizador del panel lateral
   const renderNewOrderPanel = (isMobile = false, onClose = null) => {
+    const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
+    const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
+
     return (
       <div className="space-y-6">
+        <style dangerouslySetInnerHTML={{__html: `
+          .btn-3d-raised {
+            background: #0f131a;
+            box-shadow: 4px 4px 10px rgba(0,0,0,0.8), -1px -1px 4px rgba(255,255,255,0.05);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            border-left: 1px solid rgba(255,255,255,0.02);
+            border-bottom: 1px solid rgba(0,0,0,0.8);
+            border-right: 1px solid rgba(0,0,0,0.5);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+          .btn-3d-active {
+            background: rgba(255, 92, 0, 0.05) !important;
+            box-shadow: inset 4px 4px 8px rgba(0,0,0,0.8), 0 0 10px rgba(255, 92, 0, 0.2) !important;
+            border: 1px solid #ff5c00 !important;
+            color: #ff5c00 !important;
+          }
+          .btn-3d-active span {
+            color: #ff5c00 !important;
+          }
+          .led-glow-active {
+            background-color: #ff5c00 !important;
+            box-shadow: 0 0 8px #ff5c00;
+          }
+          .sizes-scroll-container {
+            display: grid;
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+            grid-auto-flow: column;
+            gap: 12px;
+            overflow-x: auto;
+          }
+          .sizes-scroll-container::-webkit-scrollbar {
+            height: 6px;
+          }
+          .sizes-scroll-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 3px;
+          }
+          .sizes-scroll-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 92, 0, 0.3);
+            border-radius: 3px;
+          }
+          .sizes-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #ff5c00;
+          }
+          .panels-scroll-container {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+          }
+          .panels-scroll-container::-webkit-scrollbar {
+            height: 6px;
+          }
+          .panels-scroll-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 3px;
+          }
+          .panels-scroll-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 92, 0, 0.3);
+            border-radius: 3px;
+          }
+          .panels-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #ff5c00;
+          }
+        `}} />
+
         <div className="flex justify-between items-center pb-3 border-b border-white/5">
           <div>
             <h3 className="text-body-lg font-bold text-white flex items-center gap-2">
@@ -165,7 +592,7 @@ export default function OrdersPage() {
               Registrar Nuevo Pedido
             </h3>
             <p className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider mt-1">
-              Servicios Rápidos o Cotizaciones
+              Ingreso de Ventas y Servicios Manual
             </p>
           </div>
           {isMobile && onClose && (
@@ -178,49 +605,689 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {convertQuoteId && (
-          <AlertBanner type="info">
-            <span className="font-semibold">Cotización aprobada detectada.</span> Los datos de la cotización se precargarán automáticamente en este panel.
-          </AlertBanner>
-        )}
-
-        <div className="p-6 rounded-2xl bg-[#060a14] border border-white/5 flex flex-col items-center justify-center text-center py-12 min-h-[300px]">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4 text-primary orange-glow">
-            <span className="material-symbols-outlined text-[32px]">design_services</span>
+        {/* Step Indicator and Progress Bars */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-mono text-[#ff5c00] uppercase tracking-wider font-bold">Paso {currentStep} de 5</span>
+            <span className="text-on-surface-variant/70">Ingreso Manual</span>
           </div>
-          <h4 className="text-body-lg font-semibold text-white mb-2">Formulario de Pedidos</h4>
-          <p className="text-xs text-on-surface-variant max-w-[240px] leading-relaxed">
-            Este espacio está reservado para la implementación posterior del formulario de registro y sus parámetros de costeo.
-          </p>
-          <div className="mt-6 w-full space-y-3">
-            <div className="w-full h-10 rounded-xl bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center text-[11px] text-on-surface-variant font-mono">
-              [Datos Generales e Importación]
-            </div>
-            <div className="w-full h-14 rounded-xl bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center text-[11px] text-on-surface-variant font-mono">
-              [Ítems: Servicios / Confección]
-            </div>
-            <div className="w-full h-16 rounded-xl bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center text-[11px] text-on-surface-variant font-mono">
-              [Parámetros de Insumos y Procesos]
-            </div>
+          <div className="flex gap-1.5 h-1.5 w-full bg-white/[0.02] rounded-full p-[1px]">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <div
+                key={s}
+                className={`flex-1 h-full rounded-full transition-all duration-300 ${
+                  s <= currentStep ? 'bg-[#ff5c00] shadow-[0_0_6px_rgba(255,92,0,0.6)]' : 'bg-white/10'
+                }`}
+              />
+            ))}
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={isMobile ? onClose : () => {}}
-            disabled
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="primary"
-            className="w-full opacity-60 pointer-events-none"
-            disabled
-          >
-            Registrar Pedido
-          </Button>
+        <div className="min-h-[340px] flex flex-col justify-between">
+          <div className="space-y-4">
+            {/* ─── PASO 1: Registro de Cliente ─── */}
+            {currentStep === 1 && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex justify-between items-center bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                  <p className="text-[11px] text-on-surface-variant/80">
+                    ¿Es un cliente rápido?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateForm('clientName', 'Cliente General')
+                      updateForm('clientNit', '')
+                      updateForm('clientPhone', '')
+                      updateForm('clientEmail', '')
+                      setCurrentStep(2)
+                    }}
+                    className="neu-raised-sm px-2.5 py-1 rounded-lg text-[10px] font-bold text-primary hover:text-white transition-colors cursor-pointer"
+                  >
+                    Usar Cliente General ⚡
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <Input
+                    label="Nombre o Razón Social"
+                    value={orderForm.clientName}
+                    onChange={e => updateForm('clientName', e.target.value)}
+                    placeholder="Ej. Textiles Pro-Weave S.A."
+                    error={formErrors.clientName}
+                    required
+                  />
+                  <Input
+                    label="ID / NIT (Opcional)"
+                    value={orderForm.clientNit}
+                    onChange={e => updateForm('clientNit', e.target.value)}
+                    placeholder="Ej. 10293847-5"
+                    className="font-mono"
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input
+                      label="Teléfono"
+                      value={orderForm.clientPhone}
+                      onChange={e => updateForm('clientPhone', e.target.value)}
+                      placeholder="Ej. 70012345"
+                      className="font-mono"
+                    />
+                    <Input
+                      label="Correo Electrónico"
+                      type="email"
+                      value={orderForm.clientEmail}
+                      onChange={e => updateForm('clientEmail', e.target.value)}
+                      placeholder="cliente@correo.com"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ─── PASO 2: Categorización de Ingreso ─── */}
+            {currentStep === 2 && (
+              <div className="space-y-4 animate-fade-in">
+                <p className="text-xs text-on-surface-variant/80">
+                  Selecciona la categoría principal del pedido o servicio a registrar.
+                </p>
+                {formErrors.category && (
+                  <AlertBanner type="error">{formErrors.category}</AlertBanner>
+                )}
+                <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                  {settings.categories.map((cat) => {
+                    const isActive = orderForm.category === cat.id
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          updateForm('category', cat.id)
+                          updateForm('subcategory', '')
+                          
+                          // Pre-cargar precios según la categoría elegida
+                          if (cat.id === 'produccion_textil') {
+                             updateForm('sizePrices', settings.sizes)
+                          } else if (cat.id === 'servicios_sublimacion') {
+                             const subLocalizada = settings.subcategories['servicios_sublimacion']?.find(s => s.id === 'sublimacion_localizada')
+                             const basePanelPrice = subLocalizada?.unitPrice || 20
+                             const calculatedPanelPrices = PANELS_LIST.reduce((acc, panel, idx) => {
+                               acc[panel] = basePanelPrice * (idx + 1)
+                               return acc
+                             }, {})
+                             updateForm('sizePrices', calculatedPanelPrices)
+                          }
+
+                          setCurrentStep(3)
+                        }}
+                        className={`btn-3d-raised rounded-xl p-3 flex flex-col items-center justify-center gap-2 h-24 text-center cursor-pointer ${
+                          isActive ? 'btn-3d-active' : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <span className={`material-symbols-outlined text-[28px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
+                          {cat.icon}
+                        </span>
+                        <span className="text-[11px] font-bold tracking-wide text-on-surface leading-tight">
+                          {cat.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ─── PASO 3: Selección de Subcategoría ─── */}
+            {currentStep === 3 && (
+              <div className="space-y-4 animate-fade-in">
+                <p className="text-xs text-on-surface-variant/80">
+                  Detalla la subcategoría específica del servicio seleccionado.
+                </p>
+                {formErrors.subcategory && (
+                  <AlertBanner type="error">{formErrors.subcategory}</AlertBanner>
+                )}
+                {(() => {
+                  const isProduccionTextil = orderForm.category === 'produccion_textil';
+                  return (
+                    <div className={`grid ${isProduccionTextil ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3 max-w-md mx-auto`}>
+                      {(settings.subcategories[orderForm.category] || []).map((sub) => {
+                        const isActive = orderForm.subcategory === sub.id
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => {
+                              updateForm('subcategory', sub.id)
+                              const usesSizes = sub.unit === 'tallas' || (!sub.unit && orderForm.category === 'produccion_textil')
+                              
+                              if (!usesSizes && sub.id !== 'sublimacion_localizada') {
+                                 const price = sub.unitPrice || getServicePrice(orderForm.category, sub.id) || 50
+                                 updateForm('flatUnitPrice', price)
+                                 updateForm('productName', sub.label)
+                              } else if (sub.id === 'sublimacion_localizada') {
+                                 const basePanelPrice = sub.unitPrice || 20
+                                 const calculatedPanelPrices = PANELS_LIST.reduce((acc, panel, idx) => {
+                                   acc[panel] = basePanelPrice * (idx + 1)
+                                   return acc
+                                 }, {})
+                                 updateForm('sizePrices', calculatedPanelPrices)
+                              } else if (usesSizes) {
+                                 const specificPrices = settings.sizesBySubcategory?.[sub.id];
+                                 if (specificPrices && Object.keys(specificPrices).length > 0) {
+                                   updateForm('sizePrices', specificPrices);
+                                 } else {
+                                   updateForm('sizePrices', settings.sizes);
+                                 }
+                              }
+                              setCurrentStep(4)
+                            }}
+                            className={`btn-3d-raised rounded-xl p-3 flex items-center gap-3 cursor-pointer text-left ${
+                              isActive ? 'btn-3d-active' : 'hover:bg-white/[0.02]'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-[#ff5c00]/10' : 'bg-white/5'}`}>
+                              <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
+                                {sub.icon}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={isProduccionTextil ? "text-[11px] font-bold text-on-surface tracking-wide truncate" : "text-[12px] font-bold text-on-surface tracking-wide leading-tight"}>
+                                {sub.label}
+                              </p>
+                              <p className={isProduccionTextil ? "text-[9px] text-on-surface-variant truncate" : "text-[10px] text-on-surface-variant leading-tight mt-0.5"}>
+                                {sub.description}
+                              </p>
+                            </div>
+                            <div className={`w-2 h-2 rounded-full ${isActive ? 'led-glow-active' : 'bg-white/10'}`} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* ─── PASO 4: Registro de Pedido (Detalle / Cantidades) ─── */}
+            {currentStep === 4 && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Encabezado de la Subcategoría Seleccionada */}
+                {(() => {
+                  const subLabel = settings.subcategories[orderForm.category]?.find(sub => sub.id === orderForm.subcategory)?.label || '';
+                  if (!subLabel) return null;
+                  return (
+                    <div className="neu-pressed px-3 py-2 rounded-xl flex items-center gap-2 border border-white/5 bg-white/[0.01]">
+                      <span className="material-symbols-outlined text-primary text-[18px]">bookmark</span>
+                      <div className="flex-1">
+                        <p className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider">Servicio Seleccionado</p>
+                        <p className="text-xs font-bold text-white uppercase">{subLabel}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                 {usesSizes ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-on-surface-variant/80">
+                      Modifica la cantidad y el precio sugerido de confección por talla (desliza horizontalmente, 2 filas).
+                    </p>
+                    {formErrors.sizes && (
+                      <AlertBanner type="error">{formErrors.sizes}</AlertBanner>
+                    )}
+                    <div className="sizes-scroll-container pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-[#ff5c00]/30 scrollbar-track-transparent">
+                      {SIZES_LIST.map((size) => {
+                        const qty = orderForm.sizes[size] || 0
+                        const price = orderForm.sizePrices[size] || 0
+                        return (
+                          <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-[#0f131a] rounded-xl border border-white/5 space-y-2">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                              <span className="text-body-md font-bold text-primary">{size}</span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={price}
+                                  onChange={e => updateSizePrice(size, e.target.value)}
+                                  className="w-12 text-right bg-black/40 border border-white/10 rounded px-1 py-0.5 text-xs text-primary font-mono outline-none focus:border-[#ff5c00]"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-black/20 rounded-lg p-1 border border-white/5">
+                              <button
+                                type="button"
+                                onClick={() => updateSizeQty(size, -1)}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-on-surface-variant hover:text-white cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[12px]">remove</span>
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                value={qty}
+                                onChange={e => {
+                                  const val = Math.max(0, parseInt(e.target.value) || 0)
+                                  setOrderForm(prev => ({
+                                    ...prev,
+                                    sizes: { ...prev.sizes, [size]: val }
+                                  }))
+                                }}
+                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-white outline-none focus:ring-0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateSizeQty(size, 1)}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-primary cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[12px]">add</span>
+                              </button>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-on-surface-variant/80 font-mono">
+                                Sub: {formatCurrency(qty * price)}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-on-surface-variant/80">
+                      Modifica la cantidad y el precio por tipo de panel (desliza horizontalmente).
+                    </p>
+                    {formErrors.sizes && (
+                      <AlertBanner type="error">{formErrors.sizes}</AlertBanner>
+                    )}
+                    <div className="panels-scroll-container pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-[#ff5c00]/30 scrollbar-track-transparent">
+                      {PANELS_LIST.map((panel) => {
+                        const qty = orderForm.sizes[panel] || 0
+                        const price = orderForm.sizePrices[panel] || 0
+                        return (
+                          <div key={panel} className="min-w-[175px] w-[175px] flex-shrink-0 snap-start p-3 bg-[#0f131a] rounded-xl border border-white/5 space-y-2.5">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                              <span className="text-[11px] font-bold text-primary truncate max-w-[90px]" title={panel}>{panel}</span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={price}
+                                  onChange={e => updateSizePrice(panel, e.target.value)}
+                                  className="w-12 text-right bg-black/40 border border-white/10 rounded px-1 py-0.5 text-xs text-primary font-mono outline-none focus:border-[#ff5c00]"
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-between bg-black/20 rounded-lg p-1 border border-white/5">
+                              <button
+                                type="button"
+                                onClick={() => updateSizeQty(panel, -1)}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-on-surface-variant hover:text-white cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[12px]">remove</span>
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                value={qty}
+                                onChange={e => {
+                                  const val = Math.max(0, parseInt(e.target.value) || 0)
+                                  setOrderForm(prev => ({
+                                    ...prev,
+                                    sizes: { ...prev.sizes, [panel]: val }
+                                  }))
+                                }}
+                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-white outline-none focus:ring-0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateSizeQty(panel, 1)}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-primary cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[12px]">add</span>
+                              </button>
+                            </div>
+
+                            {/* Dropdown y Textbox para Tipo de Item */}
+                            {(() => {
+                              const options = PANEL_OPTIONS[panel] || [];
+                              const currentVal = orderForm.itemTypes[panel] || 'Otros';
+                              const isCustom = !options.filter(opt => opt !== 'Otros').includes(currentVal);
+                              const selectVal = isCustom ? 'Otros' : currentVal;
+
+                              return (
+                                <div className="space-y-1 pt-1.5 border-t border-white/5">
+                                  <label className="text-[9px] text-on-surface-variant font-mono block">TIPO ITEM:</label>
+                                  <select
+                                    value={selectVal}
+                                    onChange={e => {
+                                      const val = e.target.value
+                                      updateFormItemType(panel, val)
+                                    }}
+                                    className="w-full bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-white outline-none focus:border-[#ff5c00] cursor-pointer"
+                                  >
+                                    {options.map(opt => (
+                                      <option key={opt} value={opt} className="bg-[#0f131a] text-white text-[10px]">{opt}</option>
+                                    ))}
+                                  </select>
+                                  {selectVal === 'Otros' && (
+                                    <input
+                                      type="text"
+                                      placeholder="Especificar..."
+                                      value={currentVal === 'Otros' ? '' : currentVal}
+                                      onChange={e => {
+                                        const val = e.target.value
+                                        updateFormItemType(panel, val || 'Otros')
+                                      }}
+                                      className="w-full bg-black/50 border border-[#ff5c00]/30 rounded px-1.5 py-0.5 text-[10px] text-white outline-none focus:border-[#ff5c00] font-sans mt-1"
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                            <div className="text-right border-t border-white/5 pt-1.5">
+                              <span className="text-[10px] text-on-surface-variant/80 font-mono">
+                                Sub: {formatCurrency(qty * price)}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Detalle del Pedido y Total de la Suma de Paneles */}
+                    {(() => {
+                      const totalPanels = Object.entries(orderForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0);
+                      return (
+                        <div className="p-3 bg-black/35 rounded-xl border border-white/5 space-y-2 text-xs font-mono">
+                          <div className="text-[10px] text-[#ff5c00] uppercase tracking-wider font-bold border-b border-white/5 pb-1 flex justify-between">
+                            <span>Detalle del Pedido</span>
+                            <span>Cant. x P.Unit</span>
+                          </div>
+                          <div className="space-y-1 max-h-[120px] overflow-y-auto pr-1">
+                            {PANELS_LIST.map((panel) => {
+                              const qty = orderForm.sizes[panel] || 0
+                              const price = orderForm.sizePrices[panel] || 0
+                              const type = orderForm.itemTypes[panel] || 'Otros'
+                              if (qty <= 0) return null
+                              return (
+                                <div key={panel} className="flex justify-between text-on-surface-variant text-[11px]">
+                                  <span>{panel} ({type})</span>
+                                  <span>{qty} x {formatCurrency(price)} = {formatCurrency(qty * price)}</span>
+                                </div>
+                              )
+                            })}
+                            {totalPanels === 0 && (
+                              <div className="text-on-surface-variant/50 text-center py-2 text-[11px]">Sin paneles registrados</div>
+                            )}
+                          </div>
+                          <div className="flex justify-between font-bold text-white border-t border-white/5 pt-1.5 text-[11px]">
+                            <span>SUMA TOTAL PANELES:</span>
+                            <span className="text-primary">{totalPanels} {totalPanels === 1 ? 'PANEL' : 'PANELES'}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-on-surface-variant/80">
+                      Introduce el detalle del servicio rápido y sus cantidades manuales.
+                    </p>
+                    <Input
+                      label="Detalle del Servicio / Producto"
+                      value={orderForm.productName}
+                      onChange={e => updateForm('productName', e.target.value)}
+                      placeholder="Ej. Estampado corporativo"
+                      error={formErrors.productName}
+                      required
+                    />
+                    
+                    {(() => {
+                      const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory);
+                      const unit = activeSub?.unit || 'unidad';
+                      
+                      return (
+                        <div className="space-y-4">
+                           {unit === '1000_puntadas' && (
+                             <div className="bg-primary/5 p-3 rounded-xl border border-primary/20 space-y-3">
+                                <p className="text-[11px] text-primary font-bold">Detalle de Bordado (1000 Puntadas)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                   <div className="space-y-1">
+                                      <label className="text-xs text-on-surface-variant font-medium">Cant. Puntadas (total por logo)</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="100"
+                                        value={orderForm.stitchesCount}
+                                        onChange={e => updateForm('stitchesCount', Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none focus:border-[#ff5c00]"
+                                      />
+                                   </div>
+                                   <div className="space-y-1">
+                                      <label className="text-xs text-on-surface-variant font-medium">Precio Base (por 1000)</label>
+                                      <div className="relative">
+                                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-xs">Bs</span>
+                                         <input
+                                           type="number"
+                                           min="0"
+                                           step="0.1"
+                                           value={orderForm.flatUnitPrice}
+                                           onChange={e => updateForm('flatUnitPrice', e.target.value)}
+                                           className="w-full bg-black/40 border border-white/10 rounded-lg pl-7 pr-3 py-2 text-sm text-white font-mono outline-none focus:border-[#ff5c00]"
+                                         />
+                                      </div>
+                                   </div>
+                                </div>
+                             </div>
+                           )}
+
+                           <div className="grid grid-cols-2 gap-3">
+                             {/* Control +/- para Cantidad Global */}
+                             <div className="space-y-1">
+                               <label className="text-xs text-on-surface-variant font-medium">
+                                 {unit === 'metro' ? 'Metros' : unit === '1000_puntadas' ? 'Cant. Prendas' : 'Cantidad'}
+                               </label>
+                               <div className="flex items-center justify-between bg-black/20 rounded-xl p-1 border border-white/10 h-10">
+                                 <button
+                                   type="button"
+                                   onClick={() => updateForm('flatQuantity', Math.max(1, (parseInt(orderForm.flatQuantity) || 1) - 1))}
+                                   className="w-8 h-8 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-on-surface-variant hover:text-white cursor-pointer"
+                                 >
+                                   <span className="material-symbols-outlined text-[14px]">remove</span>
+                                 </button>
+                                 <input
+                                   type="number"
+                                   min="1"
+                                   value={orderForm.flatQuantity}
+                                   onChange={e => updateForm('flatQuantity', Math.max(1, parseInt(e.target.value) || 1))}
+                                   className="bg-transparent border-none text-center w-8 font-mono text-xs text-white outline-none focus:ring-0"
+                                 />
+                                 <button
+                                   type="button"
+                                   onClick={() => updateForm('flatQuantity', (parseInt(orderForm.flatQuantity) || 1) + 1)}
+                                   className="w-8 h-8 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-primary cursor-pointer"
+                                 >
+                                   <span className="material-symbols-outlined text-[14px]">add</span>
+                                 </button>
+                               </div>
+                               {formErrors.flatQuantity && (
+                                 <span className="text-[10px] text-error font-medium">{formErrors.flatQuantity}</span>
+                               )}
+                             </div>
+
+                             {unit !== '1000_puntadas' && (
+                               <Input
+                                 label="Precio Unitario (Bs)"
+                                 type="number"
+                                 min="0"
+                                 step="0.1"
+                                 value={orderForm.flatUnitPrice}
+                                 onChange={e => updateForm('flatUnitPrice', e.target.value)}
+                                 error={formErrors.flatUnitPrice}
+                                 required
+                               />
+                             )}
+                           </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-xs text-on-surface-variant font-medium">Detalle del Pedido Particular</label>
+                  <Textarea
+                    value={orderForm.particularDetails}
+                    onChange={e => updateForm('particularDetails', e.target.value)}
+                    placeholder="Ej. Bordado dorado en pecho, logo en manga, talla XL extra larga, etc."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="p-3 bg-black/30 rounded-xl border border-white/5 flex justify-between items-center text-xs">
+                  <span className="font-mono text-on-surface-variant uppercase font-semibold">Subtotal Preliminar:</span>
+                  <span className="font-mono text-primary font-bold text-sm">{formatCurrency(totalAmount)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ─── PASO 5: Monetización y Pago ─── */}
+            {currentStep === 5 && (
+              <div className="space-y-4 animate-fade-in">
+                <p className="text-xs text-on-surface-variant/80">
+                  Selecciona la fecha, método de pago e ingresa el adelanto.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Fecha de Pedido"
+                    type="date"
+                    value={orderForm.orderDate}
+                    onChange={e => updateForm('orderDate', e.target.value)}
+                    required
+                  />
+                  <div className="space-y-1">
+                    <Input
+                      label="Adelanto (Bs)"
+                      type="number"
+                      min="0"
+                      max={totalAmount}
+                      step="1"
+                      value={orderForm.advanceAmount}
+                      onChange={e => updateForm('advanceAmount', Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="Ej. 100"
+                      suffix="Bs"
+                    />
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => updateForm('advanceAmount', Math.round(totalAmount * 0.5))}
+                        className="flex-1 py-1 rounded bg-[#ff5c00]/10 hover:bg-[#ff5c00]/20 text-[#ff5c00] border border-[#ff5c00]/20 text-[10px] font-bold font-mono active:scale-95 transition-all cursor-pointer text-center"
+                      >
+                        50% ({Math.round(totalAmount * 0.5)} Bs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateForm('advanceAmount', totalAmount)}
+                        className="flex-1 py-1 rounded bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 text-[#60a5fa] border border-[#3b82f6]/20 text-[10px] font-bold font-mono active:scale-95 transition-all cursor-pointer text-center"
+                      >
+                        100% ({totalAmount} Bs)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-on-surface-variant font-medium">Saldo Pendiente</label>
+                  <div className="h-10 bg-black/40 border border-white/10 rounded-xl flex items-center justify-end px-3 font-mono text-xs text-error font-bold">
+                    {formatCurrency(Math.max(0, totalAmount - (parseFloat(orderForm.advanceAmount) || 0)))}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono uppercase text-on-surface-variant tracking-wider">Método de Pago</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
+                      { id: 'tarjeta', label: 'Tarjeta', icon: 'credit_card' },
+                      { id: 'transferencia', label: 'Transferencia', icon: 'account_balance' },
+                      { id: 'yape_plin', label: 'Yape / Plin', icon: 'qr_code_scanner' }
+                    ].map((method) => {
+                      const isActive = orderForm.paymentMethod === method.id
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() => updateForm('paymentMethod', method.id)}
+                          className={`btn-3d-raised rounded-xl py-2 px-3 flex items-center gap-2 cursor-pointer ${
+                            isActive ? 'btn-3d-active' : 'hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">{method.icon}</span>
+                          <span className="text-[11px] font-bold">{method.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <Textarea
+                  label="Observaciones de Pago (Opcional)"
+                  value={orderForm.paymentNotes}
+                  onChange={e => updateForm('paymentNotes', e.target.value)}
+                  placeholder="Ingrese detalles de pago, cuenta de banco, etc."
+                  rows={2}
+                />
+
+                <div className="bg-[#0f131a] border border-white/5 rounded-xl p-3 space-y-2 text-xs font-mono">
+                  <div className="flex justify-between border-b border-white/5 pb-1 text-on-surface-variant">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-white/5 pb-1 text-on-surface-variant">
+                    <span>IGV (18%)</span>
+                    <span>{formatCurrency(igvAmount)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-sm text-primary pt-1">
+                    <span>TOTAL A PAGAR</span>
+                    <span>{formatCurrency(totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-white/5 flex gap-3">
+            <Button
+              variant="secondary"
+              className="w-full flex items-center justify-center gap-1.5"
+              onClick={handlePrev}
+            >
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+              Atrás
+            </Button>
+            {currentStep !== 2 && currentStep !== 3 && (
+              <Button
+                variant="primary"
+                className="w-full flex items-center justify-center gap-1.5"
+                onClick={handleNext}
+                style={currentStep === 5 ? { backgroundColor: '#ff5c00', color: 'white' } : {}}
+              >
+                {currentStep === 5 ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    Registrar
+                  </>
+                ) : (
+                  <>
+                    Continuar
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -425,10 +1492,30 @@ export default function OrdersPage() {
                           <td className="px-4 py-3 text-sm text-on-surface font-medium">
                             {order.clients?.name || 'Cliente general'}
                           </td>
-                          <td className="px-4 py-3 text-sm text-on-surface-variant">
-                            {firstItem?.name || '—'}
+                          <td className="px-4 py-3 text-sm">
+                            <div className="font-semibold text-white">
+                              {firstItem?.category || '—'}
+                            </div>
+                            <div className="text-xs text-on-surface-variant mt-0.5 font-sans">
+                              {(() => {
+                                const isProduccionTextil = firstItem?.category === 'Producción Textil';
+                                const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
+                                if (isProduccionTextil) {
+                                  return <span className="font-mono text-[#ff5c00] font-bold">VARIAS TALLAS</span>;
+                                } else if (isSublimacionPaneles) {
+                                  return <span className="font-mono text-[#ff5c00] font-bold">VARIOS ITEMS</span>;
+                                } else {
+                                  return firstItem?.name || '—';
+                                }
+                              })()}
+                            </div>
+                            {firstItem?.description && (
+                              <div className="text-[10px] text-primary/80 italic mt-1 font-mono max-w-[200px] truncate" title={firstItem.description}>
+                                Detalle: {firstItem.description}
+                              </div>
+                            )}
                             {order.order_items?.length > 1 && (
-                              <span className="text-xs text-primary font-mono ml-1">
+                              <span className="text-[10px] text-primary font-mono ml-1">
                                 (+{order.order_items.length - 1})
                               </span>
                             )}
@@ -547,12 +1634,9 @@ export default function OrdersPage() {
                             </span>
                           )}
                         </div>
-                        {item.size_distribution && Object.keys(item.size_distribution).length > 0 && (
-                          <div className="text-[10px] text-on-surface-variant font-mono mt-2 flex flex-wrap gap-1 items-center">
-                            <span className="font-bold text-primary">Tallas:</span>
-                            {Object.entries(item.size_distribution).map(([size, qty]) => (
-                              <span key={size} className="bg-white/5 px-1.5 py-0.5 rounded text-[10px]">{size}({qty})</span>
-                            ))}
+                        {item.description && (
+                          <div className="text-xs text-[#ff5c00] mt-2 bg-primary/5 border border-primary/20 rounded-lg p-2 font-mono">
+                            <strong>Detalle:</strong> {item.description}
                           </div>
                         )}
                       </div>
@@ -565,6 +1649,52 @@ export default function OrdersPage() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Detalles del Pedido (Tallas, Paneles, Metros) */}
+                    {item.size_distribution && (
+                      <div className="border-t border-white/5 pt-3 space-y-2">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
+                          Distribución / Detalles de Trabajo
+                        </p>
+                        {Object.keys(item.size_distribution).some(k => PANELS_LIST.includes(k)) ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {Object.entries(item.size_distribution).map(([panel, data]) => {
+                              if (!data || !data.cantidad) return null
+                              return (
+                                <div key={panel} className="neu-pressed p-2.5 rounded-xl flex justify-between items-center text-xs">
+                                  <div>
+                                    <p className="font-bold text-white">{panel}</p>
+                                    <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Item: {data.tipo}</p>
+                                  </div>
+                                  <span className="font-mono text-primary font-bold text-sm">x{data.cantidad}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(item.size_distribution).map(([size, qty]) => {
+                              if (!qty) return null
+                              return (
+                                <div key={size} className="neu-pressed px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs">
+                                  <span className="font-bold text-primary">{size}</span>
+                                  <span className="font-mono text-white">({qty} uds)</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(item.product_category === 'SUBLIMACION POR METRO' || item.product_category === 'SUBLIMACION CALANDRA') && (
+                      <div className="border-t border-white/5 pt-3">
+                        <div className="neu-pressed p-2.5 rounded-xl flex justify-between items-center text-xs">
+                          <span className="font-medium text-on-surface-variant font-mono uppercase text-[9px]">Metraje de Trabajo:</span>
+                          <span className="font-mono font-bold text-primary text-xs">{item.quantity} metros</span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Parámetros de costeo recolectados */}
                     <div className="border-t border-white/5 pt-3 mt-2">

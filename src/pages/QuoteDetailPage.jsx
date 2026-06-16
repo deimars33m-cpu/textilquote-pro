@@ -142,7 +142,6 @@ export default function QuoteDetailPage() {
   const processes = item.quote_processes || []
   const embellishments = item.quote_embellishments || []
 
-  // Calcular costeo y precios desglosados por talla en tiempo real
   const calc = calculateQuote({
     materials,
     processes,
@@ -154,9 +153,6 @@ export default function QuoteDetailPage() {
     totalMonthlyExpenses,
     monthlyCapacity: settings?.monthly_capacity_units || 1000,
     minMargin: settings?.min_margin || 15,
-    isClothing: !!item.size_multipliers,
-    sizeDistribution: item.size_distribution,
-    sizeMultipliers: item.size_multipliers,
     negotiatedPrice: quote.total_price,
   })
 
@@ -291,29 +287,14 @@ export default function QuoteDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/30 print:divide-gray-300">
-                {calc.sizeBreakdown && Object.values(calc.sizeBreakdown).some(s => s.quantity > 0) ? (
-                  Object.values(calc.sizeBreakdown)
-                    .filter((sizeItem) => sizeItem.quantity > 0)
-                    .map((sizeItem) => (
-                      <tr key={sizeItem.size} className="text-on-surface print:text-black">
-                        <td className="py-3 text-sm font-semibold">
-                          {item.product_name || 'Prenda textil personalizada'} - Talla {sizeItem.size}
-                        </td>
-                        <td className="py-3 text-sm text-right font-mono">{sizeItem.quantity}</td>
-                        <td className="py-3 text-sm text-right font-mono">{formatCurrency(sizeItem.negotiatedUnitPrice)}</td>
-                        <td className="py-3 text-sm text-right font-bold font-mono">{formatCurrency(sizeItem.negotiatedTotalPrice)}</td>
-                      </tr>
-                    ))
-                ) : (
-                  <tr className="text-on-surface print:text-black">
-                    <td className="py-4 text-sm font-semibold">
-                      {item.product_name || 'Prenda textil personalizada'}
-                    </td>
-                    <td className="py-4 text-sm text-right font-mono">{item.quantity || 0}</td>
-                    <td className="py-4 text-sm text-right font-mono">{formatCurrency(quote.total_price / item.quantity)}</td>
-                    <td className="py-4 text-sm text-right font-bold font-mono">{formatCurrency(quote.total_price)}</td>
-                  </tr>
-                )}
+                <tr className="text-on-surface print:text-black">
+                  <td className="py-4 text-sm font-semibold">
+                    {item.product_name || 'Prenda textil personalizada'}
+                  </td>
+                  <td className="py-4 text-sm text-right font-mono">{item.quantity || 0}</td>
+                  <td className="py-4 text-sm text-right font-mono">{formatCurrency(quote.total_price / item.quantity)}</td>
+                  <td className="py-4 text-sm text-right font-bold font-mono">{formatCurrency(quote.total_price)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -817,23 +798,7 @@ export default function QuoteDetailPage() {
               </span>
             </div>
 
-            {calc.sizeBreakdown && Object.values(calc.sizeBreakdown).some(s => s.quantity > 0) && (
-              <div className="px-5 py-3 bg-[#060a14] border-b border-white/5 flex flex-wrap gap-3 items-center">
-                <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest font-bold">Resumen por Tallas:</span>
-                {Object.values(calc.sizeBreakdown)
-                  .filter((sizeItem) => sizeItem.quantity > 0)
-                  .map((sizeItem) => (
-                    <span key={sizeItem.size} className="text-xs bg-primary/5 text-primary border border-primary/20 px-3 py-1 rounded-xl font-mono flex flex-wrap items-center gap-1.5 font-semibold">
-                      <span className="font-bold text-white bg-primary/25 px-1.5 py-0.5 rounded text-[10px]">Talla {sizeItem.size}</span>
-                      <span>{sizeItem.quantity} ud</span>
-                      <span className="text-white/20">|</span>
-                      <span className="text-tertiary">Costo: {formatCurrency(sizeItem.unitCost)}</span>
-                      <span className="text-white/20">|</span>
-                      <span className="text-white">Precio: {formatCurrency(sizeItem.negotiatedUnitPrice)}</span>
-                    </span>
-                  ))}
-              </div>
-            )}
+
 
             <div className="overflow-x-auto">
               <table className="w-full zebra-table text-sm">
@@ -1024,20 +989,7 @@ export default function QuoteDetailPage() {
                   </p>
                 </div>
 
-                {/* Desglose de precios por talla en el sidebar de detalle */}
-                {calc.sizeBreakdown && Object.values(calc.sizeBreakdown).some(s => s.quantity > 0) && (
-                  <div className="bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 space-y-1.5 text-xs font-mono">
-                    <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">Precio Unitario por Talla</p>
-                    {Object.values(calc.sizeBreakdown)
-                      .filter((sizeItem) => sizeItem.quantity > 0)
-                      .map((sizeItem) => (
-                        <div key={sizeItem.size} className="flex justify-between">
-                          <span className="text-on-surface-variant">Talla {sizeItem.size} ({sizeItem.quantity} ud):</span>
-                          <span className="text-white font-bold">{formatCurrency(sizeItem.negotiatedUnitPrice)}</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
+
               </div>
             </div>
           </Card>

@@ -15,7 +15,8 @@ import QuoteHistoryPage from '@/pages/QuoteHistoryPage'
 import QuoteDetailPage from '@/pages/QuoteDetailPage'
 import CompanySettingsPage from '@/pages/CompanySettingsPage'
 import OrdersPage from '@/pages/OrdersPage'
-
+import GlobalSettingsPage from '@/pages/GlobalSettingsPage'
+import { GlobalSettingsProvider } from '@/context/GlobalSettingsContext'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="/quotes/:id" element={<QuoteDetailPage />} />
         <Route path="/settings" element={<CompanySettingsPage />} />
         <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/settings/global" element={<GlobalSettingsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -84,7 +86,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <CategoryProvider>
-          <AppRoutes />
+          <GlobalSettingsProvider>
+            <AppRoutes />
+          </GlobalSettingsProvider>
         </CategoryProvider>
       </AuthProvider>
     </BrowserRouter>
