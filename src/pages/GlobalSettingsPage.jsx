@@ -170,7 +170,7 @@ export default function GlobalSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-2 bg-surface-container/30 p-1.5 rounded-xl border border-white/5 w-fit">
+      <div className="flex flex-wrap items-center gap-2 bg-surface-container-low p-1.5 rounded-xl border border-outline-variant w-fit">
         {[
           { id: 'categories', label: 'Categorías Principales', icon: 'category' },
           { id: 'subcategories', label: 'Subcategorías y Servicios', icon: 'account_tree' },
@@ -186,8 +186,8 @@ export default function GlobalSettingsPage() {
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === tab.id 
-                ? 'bg-[#ff5c00]/10 text-[#ff5c00] shadow-[0_0_10px_rgba(255,92,0,0.1)] border border-[#ff5c00]/20' 
-                : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                ? 'bg-primary/10 text-primary shadow-[0_0_10px_rgba(255,122,0,0.15)] border border-primary/20' 
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high border border-transparent'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
@@ -196,20 +196,20 @@ export default function GlobalSettingsPage() {
         ))}
       </div>
 
-      <Card className="p-6 bg-surface-container/20 border-white/5 min-h-[400px]">
+      <Card className="p-6 min-h-[400px]">
         {/* --- TAB: CATEGORIES --- */}
         {activeTab === 'categories' && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
-                <h3 className="text-body-lg font-bold text-white">Categorías Actuales</h3>
+                <h3 className="text-body-lg font-bold text-on-surface">Categorías Actuales</h3>
                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
                   {settings.categories.map(cat => (
-                    <div key={cat.id} className="flex items-center justify-between p-3 bg-[#0f131a] border border-white/5 rounded-xl">
+                    <div key={cat.id} className="flex items-center justify-between p-3 bg-surface border border-outline-variant rounded-xl">
                       <div className="flex items-center gap-3">
                         <span className="material-symbols-outlined text-primary">{cat.icon}</span>
                         <div>
-                          <p className="font-bold text-sm text-white">{cat.label}</p>
+                          <p className="font-bold text-sm text-on-surface">{cat.label}</p>
                           <p className="text-[10px] text-on-surface-variant font-mono">{cat.id}</p>
                         </div>
                       </div>
@@ -217,7 +217,7 @@ export default function GlobalSettingsPage() {
                         <button onClick={() => {
                           setEditingCategory(cat)
                           setCatForm(cat)
-                        }} className="p-1.5 hover:bg-white/5 text-on-surface-variant hover:text-white rounded">
+                        }} className="p-1.5 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded">
                           <span className="material-symbols-outlined text-[16px]">edit</span>
                         </button>
                         <button onClick={() => {
@@ -231,8 +231,8 @@ export default function GlobalSettingsPage() {
                 </div>
               </div>
 
-              <div className="bg-[#0f131a] p-4 rounded-xl border border-white/5 space-y-4 h-fit">
-                <h3 className="text-body-lg font-bold text-white">
+              <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 h-fit">
+                <h3 className="text-body-lg font-bold text-on-surface">
                   {editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}
                 </h3>
                 <Input
@@ -254,18 +254,18 @@ export default function GlobalSettingsPage() {
                   onChange={e => setCatForm({...catForm, icon: e.target.value})}
                   placeholder="Ej. factory, diamond, print..."
                 />
-                <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
-                  {editingCategory && (
-                    <Button variant="secondary" onClick={() => {
-                      setEditingCategory(null)
-                      setCatForm({ id: '', label: '', icon: '' })
-                    }}>Cancelar</Button>
-                  )}
-                  <Button onClick={handleSaveCategory}>
-                    Guardar
-                  </Button>
-                </div>
-                {savedStatus['category_save'] && <p className="text-green-400 text-xs text-right animate-pulse">Guardado exitosamente!</p>}
+                 <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
+                   {editingCategory && (
+                     <Button variant="secondary" onClick={() => {
+                       setEditingCategory(null)
+                       setCatForm({ id: '', label: '', icon: '' })
+                     }}>Cancelar</Button>
+                   )}
+                   <Button onClick={handleSaveCategory}>
+                     Guardar
+                   </Button>
+                 </div>
+                 {savedStatus['category_save'] && <p className="text-tertiary text-xs text-right animate-pulse">Guardado exitosamente!</p>}
               </div>
             </div>
           </div>
@@ -295,14 +295,14 @@ export default function GlobalSettingsPage() {
             {selectedCatForSub ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-body-lg font-bold text-white">Subcategorías y Servicios</h3>
+                  <h3 className="text-body-lg font-bold text-on-surface">Subcategorías y Servicios</h3>
                   <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2">
                     {(settings.subcategories[selectedCatForSub] || []).map(sub => (
-                      <div key={sub.id} className="flex items-center justify-between p-3 bg-[#0f131a] border border-white/5 rounded-xl hover:border-white/10">
+                      <div key={sub.id} className="flex items-center justify-between p-3 bg-surface border border-outline-variant rounded-xl hover:border-primary/20">
                         <div className="flex items-center gap-3">
                           <span className="material-symbols-outlined text-primary">{sub.icon}</span>
                           <div>
-                            <p className="font-bold text-sm text-white">{sub.label}</p>
+                            <p className="font-bold text-sm text-on-surface">{sub.label}</p>
                             <p className="text-[10px] text-on-surface-variant font-mono">
                               {sub.id} | {sub.unit === 'tallas' ? 'Tallas' : sub.unit === 'unidad' ? 'Unidad' : sub.unit === 'metro' ? 'Metro' : sub.unit === '1000_puntadas' ? '1K Puntadas' : sub.unit}
                             </p>
@@ -310,7 +310,7 @@ export default function GlobalSettingsPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           {/* Toggle Switch Tallas ON/OFF */}
-                          <div className="flex items-center gap-1.5 mr-2 bg-white/[0.02] border border-white/5 rounded-lg px-2 py-1">
+                          <div className="flex items-center gap-1.5 mr-2 bg-surface-container border border-outline-variant rounded-lg px-2 py-1">
                             <span className="text-[9px] text-on-surface-variant/80 font-mono font-bold">TALLAS:</span>
                             <button
                               type="button"
@@ -322,7 +322,7 @@ export default function GlobalSettingsPage() {
                                 });
                               }}
                               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                                sub.unit === 'tallas' ? 'bg-[#ff5c00]' : 'bg-white/10'
+                                sub.unit === 'tallas' ? 'bg-[#ff5c00]' : 'bg-slate-300'
                               }`}
                             >
                               <span
@@ -349,7 +349,7 @@ export default function GlobalSettingsPage() {
                               unit: sub.unit || 'unidad', 
                               unitPrice: sub.unitPrice || 0
                             })
-                          }} className="p-1.5 hover:bg-white/5 text-on-surface-variant hover:text-white rounded">
+                          }} className="p-1.5 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded">
                             <span className="material-symbols-outlined text-[16px]">edit</span>
                           </button>
                           <button onClick={() => {
@@ -366,8 +366,8 @@ export default function GlobalSettingsPage() {
                   </div>
                 </div>
  
-                <div className="bg-[#0f131a] p-4 rounded-xl border border-white/5 space-y-4 h-fit">
-                  <h3 className="text-body-lg font-bold text-white">
+                <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 h-fit">
+                  <h3 className="text-body-lg font-bold text-on-surface">
                     {editingSub ? 'Editar Subcategoría' : 'Nueva Subcategoría'}
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
@@ -397,7 +397,7 @@ export default function GlobalSettingsPage() {
                     onChange={e => setSubForm({...subForm, description: e.target.value})}
                     rows={2}
                   />
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-outline-variant">
                      <Select
                         label="Unidad de Cobro"
                         value={subForm.unit}
@@ -418,7 +418,7 @@ export default function GlobalSettingsPage() {
                         onChange={e => setSubForm({...subForm, unitPrice: parseFloat(e.target.value) || 0})}
                      />
                   </div>
-                  <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                  <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
                     {editingSub && (
                       <Button variant="secondary" onClick={() => {
                         setEditingSub(null)
@@ -429,11 +429,11 @@ export default function GlobalSettingsPage() {
                       Guardar
                     </Button>
                   </div>
-                  {savedStatus['subcategory_save'] && <p className="text-green-400 text-xs text-right animate-pulse">Guardado exitosamente!</p>}
+                  {savedStatus['subcategory_save'] && <p className="text-tertiary text-xs text-right animate-pulse">Guardado exitosamente!</p>}
                 </div>
               </div>
             ) : (
-              <div className="p-8 text-center bg-[#0f131a] rounded-xl border border-white/5">
+              <div className="p-8 text-center bg-surface-container-low rounded-xl border border-outline-variant">
                 <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-2">category</span>
                 <p className="text-on-surface-variant">Selecciona una categoría principal para ver y editar sus subcategorías o servicios.</p>
               </div>
@@ -445,7 +445,7 @@ export default function GlobalSettingsPage() {
         {activeTab === 'sizes' && (
           <div className="space-y-6 animate-fade-in">
             {/* Header / Selector */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center bg-white/[0.02] p-4 rounded-xl border border-white/5">
+            <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center bg-surface-container-low p-4 rounded-xl border border-outline-variant">
               <div className="w-full sm:w-72">
                 <Select
                   label="Lista de Precios a Editar"
@@ -469,9 +469,9 @@ export default function GlobalSettingsPage() {
             </div>
 
             {/* Auto-Generador */}
-            <div className="bg-[#0f131a] p-4 rounded-xl border border-[#ff5c00]/20 space-y-3 relative overflow-hidden">
+            <div className="bg-surface-container-low p-4 rounded-xl border border-primary/20 space-y-3 relative overflow-hidden">
                <div className="absolute top-0 right-0 bg-[#ff5c00]/10 text-[#ff5c00] text-[10px] font-bold px-3 py-1 rounded-bl-lg">NUEVO</div>
-               <h4 className="text-sm font-bold text-white flex items-center gap-2">
+               <h4 className="text-sm font-bold text-on-surface flex items-center gap-2">
                  <span className="material-symbols-outlined text-[#ff5c00] text-[18px]">magic_button</span>
                  Autogenerar Precios por Escala
                </h4>
@@ -501,10 +501,9 @@ export default function GlobalSettingsPage() {
                      Calcular y Aplicar
                   </Button>
                </div>
-               {savedStatus['autogen_save'] && <p className="text-green-400 text-xs text-right animate-pulse">¡Precios actualizados masivamente!</p>}
+                {savedStatus['autogen_save'] && <p className="text-tertiary text-xs text-right animate-pulse">¡Precios actualizados masivamente!</p>}
             </div>
 
-            {/* Grid de Tallas */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {Object.entries(settings.sizes).map(([size, globalPrice]) => {
                 const currentPrice = sizeSubcategory === 'default' 
@@ -512,7 +511,7 @@ export default function GlobalSettingsPage() {
                   : (settings.sizesBySubcategory[sizeSubcategory]?.[size] || globalPrice)
 
                 return (
-                  <div key={size} className="bg-[#0f131a] p-4 rounded-xl border border-white/10 relative group hover:border-[#ff5c00]/30 transition-colors">
+                  <div key={size} className="bg-surface p-4 rounded-xl border border-outline-variant relative group hover:border-primary/30 transition-colors">
                     <div className="flex justify-between items-center mb-3">
                       <span className="text-body-lg font-bold text-primary">{size}</span>
                       {savedStatus[`size_${sizeSubcategory}_${size}`] ? (
@@ -536,7 +535,7 @@ export default function GlobalSettingsPage() {
                           }
                           showSavedIndicator(`size_${sizeSubcategory}_${size}`)
                         }}
-                        className="w-full bg-black/40 border border-white/10 rounded-lg pl-8 pr-3 py-2 text-sm text-white font-mono outline-none focus:border-[#ff5c00] transition-colors"
+                        className="w-full bg-surface-container-low border border-outline-variant rounded-lg pl-8 pr-3 py-2 text-sm text-on-surface font-mono outline-none focus:border-primary transition-colors"
                       />
                     </div>
                   </div>
@@ -635,11 +634,11 @@ function ExpensesStructureEditor({
   const categories = Object.entries(expenseStructure)
 
   return (
-    <div className="space-y-6 animate-fade-in text-white">
-      <div className="flex justify-between items-center pb-3 border-b border-white/5">
-        <h3 className="text-lg font-bold text-white">Estructura de Categorías de Gastos</h3>
+    <div className="space-y-6 animate-fade-in text-on-surface">
+      <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+        <h3 className="text-lg font-bold text-on-surface">Estructura de Categorías de Gastos</h3>
         {savedStatus['expense_structure_save'] && (
-          <span className="text-emerald-400 text-xs font-bold animate-pulse flex items-center gap-1">
+          <span className="text-tertiary text-xs font-bold animate-pulse flex items-center gap-1">
             <span className="material-symbols-outlined text-sm">check_circle</span> Cambios guardados
           </span>
         )}
@@ -648,7 +647,7 @@ function ExpensesStructureEditor({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* COLUMNA 1: Categorías Principales */}
-        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">1. Categorías Principales</h4>
           </div>
@@ -661,8 +660,8 @@ function ExpensesStructureEditor({
                   key={key} 
                   className={`flex items-center justify-between p-2.5 rounded-lg border text-sm transition-all cursor-pointer ${
                     isActive 
-                      ? 'bg-[#ff5c00]/10 border-[#ff5c00]/40 text-[#ff5c00]' 
-                      : 'bg-[#0f131a] border-white/5 text-on-surface-variant hover:text-white hover:border-white/10'
+                      ? 'bg-primary/10 border-primary/40 text-primary' 
+                      : 'bg-surface border-outline-variant text-on-surface-variant hover:text-on-surface hover:border-outline'
                   }`}
                   onClick={() => {
                     setSelectedCat(key)
@@ -679,7 +678,7 @@ function ExpensesStructureEditor({
                         setEditingCatKey(key)
                         setEditingCatLabel(data.label)
                       }}
-                      className="p-1 hover:bg-white/5 rounded text-on-surface-variant hover:text-white"
+                      className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface"
                     >
                       <span className="material-symbols-outlined text-[15px]">edit</span>
                     </button>
@@ -705,50 +704,50 @@ function ExpensesStructureEditor({
           </div>
 
           {editingCatKey ? (
-            <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-3">
+            <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant space-y-3">
               <p className="text-[10px] font-bold uppercase text-primary">Editar Categoría</p>
               <input
                 type="text"
                 placeholder="Nombre de categoría"
                 value={editingCatLabel}
                 onChange={e => setEditingCatLabel(e.target.value)}
-                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                className="w-full bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
               />
               <div className="flex justify-end gap-1.5">
                 <button 
                   onClick={() => { setEditingCatKey(''); setEditingCatLabel(''); }} 
-                  className="px-2 py-1 bg-white/5 text-[10px] rounded hover:bg-white/10"
+                  className="px-2 py-1 bg-surface-container text-[10px] rounded hover:bg-surface-container-high text-on-surface-variant"
                 >
                   Cancelar
                 </button>
                 <button 
                   onClick={handleUpdateCat} 
-                  className="px-2.5 py-1 bg-primary text-[10px] font-bold rounded hover:bg-primary/80"
+                  className="px-2.5 py-1 bg-primary text-[10px] font-bold text-on-primary rounded hover:brightness-110"
                 >
                   Guardar
                 </button>
               </div>
             </div>
           ) : (
-            <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2.5">
+            <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant space-y-2.5">
               <p className="text-[10px] font-bold uppercase text-on-surface-variant">Nueva Categoría</p>
               <input
                 type="text"
                 placeholder="CLAVE_UNICA (Ej: LOGISTICA)"
                 value={newCatKey}
                 onChange={e => setNewCatKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))}
-                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                className="w-full bg-surface border border-outline rounded px-2.5 py-1.5 text-xs font-mono text-on-surface"
               />
               <input
                 type="text"
                 placeholder="Nombre a mostrar (Ej: Logística)"
                 value={newCatLabel}
                 onChange={e => setNewCatLabel(e.target.value)}
-                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                className="w-full bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
               />
               <button 
                 onClick={handleAddCat}
-                className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+                className="w-full py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-xs font-bold transition-all"
               >
                 Agregar Categoría
               </button>
@@ -757,13 +756,13 @@ function ExpensesStructureEditor({
         </div>
 
         {/* COLUMNA 2: Subcategorías */}
-        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
           <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">2. Subcategorías</h4>
           
           {selectedCat ? (
             <>
               <p className="text-[11px] text-on-surface-variant">
-                En: <strong className="text-white">{expenseStructure[selectedCat]?.label}</strong>
+                En: <strong className="text-on-surface">{expenseStructure[selectedCat]?.label}</strong>
               </p>
               <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
                 {Object.keys(expenseStructure[selectedCat]?.subcategories || {}).map(sub => {
@@ -774,7 +773,7 @@ function ExpensesStructureEditor({
                       className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-all cursor-pointer ${
                         isActive 
                           ? 'bg-primary/10 border-primary/40 text-primary' 
-                          : 'bg-[#0f131a] border-white/5 text-on-surface-variant hover:text-white hover:border-white/10'
+                          : 'bg-surface border-outline-variant text-on-surface-variant hover:text-on-surface hover:border-outline'
                       }`}
                       onClick={() => setSelectedSub(sub)}
                     >
@@ -800,17 +799,17 @@ function ExpensesStructureEditor({
                 )}
               </div>
 
-              <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2">
+              <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant space-y-2">
                 <input
                   type="text"
                   placeholder="Nombre de subcategoría..."
                   value={newSubName}
                   onChange={e => setNewSubName(e.target.value)}
-                  className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
                 />
                 <button 
                   onClick={handleAddSub}
-                  className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+                  className="w-full py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-xs font-bold transition-all"
                 >
                   Agregar Subcategoría
                 </button>
@@ -822,13 +821,13 @@ function ExpensesStructureEditor({
         </div>
 
         {/* COLUMNA 3: Ítems Específicos */}
-        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
           <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">3. Ítems Específicos</h4>
           
           {selectedCat && selectedSub ? (
             <>
               <div className="text-[11px] text-on-surface-variant leading-tight">
-                Categoría: <strong className="text-white">{expenseStructure[selectedCat]?.label}</strong>
+                Categoría: <strong className="text-on-surface">{expenseStructure[selectedCat]?.label}</strong>
                 <br />
                 Subcat: <strong className="text-primary">{selectedSub}</strong>
               </div>
@@ -836,7 +835,7 @@ function ExpensesStructureEditor({
                 {(expenseStructure[selectedCat]?.subcategories[selectedSub] || []).map(item => (
                   <div 
                     key={item} 
-                    className="flex items-center justify-between p-2 rounded-lg border border-white/5 bg-[#0f131a] text-xs text-on-surface-variant"
+                    className="flex items-center justify-between p-2 rounded-lg border border-outline-variant bg-surface text-xs text-on-surface-variant"
                   >
                     <span className="font-semibold truncate">{item}</span>
                     <button 
@@ -855,17 +854,17 @@ function ExpensesStructureEditor({
                 )}
               </div>
 
-              <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2">
+              <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant space-y-2">
                 <input
                   type="text"
                   placeholder="Nombre del ítem (ej: Hilos, Agujas)..."
                   value={newItemName}
                   onChange={e => setNewItemName(e.target.value)}
-                  className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
                 />
                 <button 
                   onClick={handleAddItem}
-                  className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+                  className="w-full py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-xs font-bold transition-all"
                 >
                   Agregar Ítem Específico
                 </button>
