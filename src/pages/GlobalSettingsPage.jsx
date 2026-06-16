@@ -33,7 +33,14 @@ export default function GlobalSettingsPage() {
     updateSubcategory,
     deleteSubcategory,
     updateSizePriceForSubcategory,
-    updateMultipleSizePricesForSubcategory
+    updateMultipleSizePricesForSubcategory,
+    addExpenseCategory,
+    updateExpenseCategory,
+    deleteExpenseCategory,
+    addExpenseSubcategory,
+    deleteExpenseSubcategory,
+    addExpenseSpecificItem,
+    deleteExpenseSpecificItem
   } = useGlobalSettings()
   
   const [activeTab, setActiveTab] = useState('categories') // 'categories', 'subcategories', 'sizes', 'panels'
@@ -167,7 +174,8 @@ export default function GlobalSettingsPage() {
         {[
           { id: 'categories', label: 'Categorías Principales', icon: 'category' },
           { id: 'subcategories', label: 'Subcategorías y Servicios', icon: 'account_tree' },
-          { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' }
+          { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
+          { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -537,7 +545,338 @@ export default function GlobalSettingsPage() {
             </div>
           </div>
         )}
+
+        {/* --- TAB: EXPENSES STRUCTURE --- */}
+        {activeTab === 'expenses_structure' && (
+          <ExpensesStructureEditor 
+            settings={settings}
+            addExpenseCategory={addExpenseCategory}
+            updateExpenseCategory={updateExpenseCategory}
+            deleteExpenseCategory={deleteExpenseCategory}
+            addExpenseSubcategory={addExpenseSubcategory}
+            deleteExpenseSubcategory={deleteExpenseSubcategory}
+            addExpenseSpecificItem={addExpenseSpecificItem}
+            deleteExpenseSpecificItem={deleteExpenseSpecificItem}
+            showSavedIndicator={showSavedIndicator}
+            savedStatus={savedStatus}
+          />
+        )}
       </Card>
+    </div>
+  )
+}
+
+function ExpensesStructureEditor({
+  settings,
+  addExpenseCategory,
+  updateExpenseCategory,
+  deleteExpenseCategory,
+  addExpenseSubcategory,
+  deleteExpenseSubcategory,
+  addExpenseSpecificItem,
+  deleteExpenseSpecificItem,
+  showSavedIndicator,
+  savedStatus
+}) {
+  const expenseStructure = settings.expenseStructure || {}
+  
+  const [selectedCat, setSelectedCat] = useState('')
+  const [selectedSub, setSelectedSub] = useState('')
+  
+  // Form states
+  const [newCatKey, setNewCatKey] = useState('')
+  const [newCatLabel, setNewCatLabel] = useState('')
+  const [editingCatKey, setEditingCatKey] = useState('')
+  const [editingCatLabel, setEditingCatLabel] = useState('')
+  
+  const [newSubName, setNewSubName] = useState('')
+  const [newItemName, setNewItemName] = useState('')
+
+  const handleAddCat = () => {
+    if (!newCatKey.trim() || !newCatLabel.trim()) return alert('Ingrese clave y nombre de categoría')
+    const formattedKey = newCatKey.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+    if (expenseStructure[formattedKey]) return alert('Esta categoría ya existe')
+    
+    addExpenseCategory(formattedKey, newCatLabel.trim())
+    setNewCatKey('')
+    setNewCatLabel('')
+    setSelectedCat(formattedKey)
+    setSelectedSub('')
+    showSavedIndicator('expense_structure_save')
+  }
+
+  const handleUpdateCat = () => {
+    if (!editingCatLabel.trim()) return
+    updateExpenseCategory(editingCatKey, editingCatLabel.trim())
+    setEditingCatKey('')
+    setEditingCatLabel('')
+    showSavedIndicator('expense_structure_save')
+  }
+
+  const handleAddSub = () => {
+    if (!selectedCat) return alert('Seleccione una categoría primero')
+    if (!newSubName.trim()) return alert('Ingrese nombre de la subcategoría')
+    
+    addExpenseSubcategory(selectedCat, newSubName.trim())
+    setSelectedSub(newSubName.trim())
+    setNewSubName('')
+    showSavedIndicator('expense_structure_save')
+  }
+
+  const handleAddItem = () => {
+    if (!selectedCat || !selectedSub) return alert('Seleccione categoría y subcategoría')
+    if (!newItemName.trim()) return alert('Ingrese nombre del ítem específico')
+    
+    addExpenseSpecificItem(selectedCat, selectedSub, newItemName.trim())
+    setNewItemName('')
+    showSavedIndicator('expense_structure_save')
+  }
+
+  const categories = Object.entries(expenseStructure)
+
+  return (
+    <div className="space-y-6 animate-fade-in text-white">
+      <div className="flex justify-between items-center pb-3 border-b border-white/5">
+        <h3 className="text-lg font-bold text-white">Estructura de Categorías de Gastos</h3>
+        {savedStatus['expense_structure_save'] && (
+          <span className="text-emerald-400 text-xs font-bold animate-pulse flex items-center gap-1">
+            <span className="material-symbols-outlined text-sm">check_circle</span> Cambios guardados
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* COLUMNA 1: Categorías Principales */}
+        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">1. Categorías Principales</h4>
+          </div>
+          
+          <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+            {categories.map(([key, data]) => {
+              const isActive = selectedCat === key
+              return (
+                <div 
+                  key={key} 
+                  className={`flex items-center justify-between p-2.5 rounded-lg border text-sm transition-all cursor-pointer ${
+                    isActive 
+                      ? 'bg-[#ff5c00]/10 border-[#ff5c00]/40 text-[#ff5c00]' 
+                      : 'bg-[#0f131a] border-white/5 text-on-surface-variant hover:text-white hover:border-white/10'
+                  }`}
+                  onClick={() => {
+                    setSelectedCat(key)
+                    setSelectedSub('')
+                  }}
+                >
+                  <div className="flex-1 truncate">
+                    <p className="font-bold text-xs">{data.label}</p>
+                    <p className="text-[9px] font-mono opacity-50">{key}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <button 
+                      onClick={() => {
+                        setEditingCatKey(key)
+                        setEditingCatLabel(data.label)
+                      }}
+                      className="p-1 hover:bg-white/5 rounded text-on-surface-variant hover:text-white"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (window.confirm(`¿Eliminar la categoría "${data.label}" y todo su contenido?`)) {
+                          deleteExpenseCategory(key)
+                          if (selectedCat === key) {
+                            setSelectedCat('')
+                            setSelectedSub('')
+                          }
+                          showSavedIndicator('expense_structure_save')
+                        }
+                      }}
+                      className="p-1 hover:bg-error/10 rounded text-error"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {editingCatKey ? (
+            <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-3">
+              <p className="text-[10px] font-bold uppercase text-primary">Editar Categoría</p>
+              <input
+                type="text"
+                placeholder="Nombre de categoría"
+                value={editingCatLabel}
+                onChange={e => setEditingCatLabel(e.target.value)}
+                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+              <div className="flex justify-end gap-1.5">
+                <button 
+                  onClick={() => { setEditingCatKey(''); setEditingCatLabel(''); }} 
+                  className="px-2 py-1 bg-white/5 text-[10px] rounded hover:bg-white/10"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleUpdateCat} 
+                  className="px-2.5 py-1 bg-primary text-[10px] font-bold rounded hover:bg-primary/80"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2.5">
+              <p className="text-[10px] font-bold uppercase text-on-surface-variant">Nueva Categoría</p>
+              <input
+                type="text"
+                placeholder="CLAVE_UNICA (Ej: LOGISTICA)"
+                value={newCatKey}
+                onChange={e => setNewCatKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))}
+                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+              />
+              <input
+                type="text"
+                placeholder="Nombre a mostrar (Ej: Logística)"
+                value={newCatLabel}
+                onChange={e => setNewCatLabel(e.target.value)}
+                className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+              <button 
+                onClick={handleAddCat}
+                className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+              >
+                Agregar Categoría
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* COLUMNA 2: Subcategorías */}
+        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+          <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">2. Subcategorías</h4>
+          
+          {selectedCat ? (
+            <>
+              <p className="text-[11px] text-on-surface-variant">
+                En: <strong className="text-white">{expenseStructure[selectedCat]?.label}</strong>
+              </p>
+              <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+                {Object.keys(expenseStructure[selectedCat]?.subcategories || {}).map(sub => {
+                  const isActive = selectedSub === sub
+                  return (
+                    <div 
+                      key={sub} 
+                      className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-all cursor-pointer ${
+                        isActive 
+                          ? 'bg-primary/10 border-primary/40 text-primary' 
+                          : 'bg-[#0f131a] border-white/5 text-on-surface-variant hover:text-white hover:border-white/10'
+                      }`}
+                      onClick={() => setSelectedSub(sub)}
+                    >
+                      <span className="font-semibold truncate">{sub}</span>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (window.confirm(`¿Eliminar la subcategoría "${sub}"?`)) {
+                            deleteExpenseSubcategory(selectedCat, sub)
+                            if (selectedSub === sub) setSelectedSub('')
+                            showSavedIndicator('expense_structure_save')
+                          }
+                        }}
+                        className="p-1 hover:bg-error/10 rounded text-error shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                      </button>
+                    </div>
+                  )
+                })}
+                {!Object.keys(expenseStructure[selectedCat]?.subcategories || {}).length && (
+                  <p className="text-[11px] text-on-surface-variant/50 italic py-3 text-center">No hay subcategorías.</p>
+                )}
+              </div>
+
+              <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2">
+                <input
+                  type="text"
+                  placeholder="Nombre de subcategoría..."
+                  value={newSubName}
+                  onChange={e => setNewSubName(e.target.value)}
+                  className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+                <button 
+                  onClick={handleAddSub}
+                  className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+                >
+                  Agregar Subcategoría
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-on-surface-variant italic py-10 text-center">Seleccione una categoría principal.</p>
+          )}
+        </div>
+
+        {/* COLUMNA 3: Ítems Específicos */}
+        <div className="bg-[#0a0d14]/40 p-4 rounded-xl border border-white/5 space-y-4">
+          <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">3. Ítems Específicos</h4>
+          
+          {selectedCat && selectedSub ? (
+            <>
+              <div className="text-[11px] text-on-surface-variant leading-tight">
+                Categoría: <strong className="text-white">{expenseStructure[selectedCat]?.label}</strong>
+                <br />
+                Subcat: <strong className="text-primary">{selectedSub}</strong>
+              </div>
+              <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+                {(expenseStructure[selectedCat]?.subcategories[selectedSub] || []).map(item => (
+                  <div 
+                    key={item} 
+                    className="flex items-center justify-between p-2 rounded-lg border border-white/5 bg-[#0f131a] text-xs text-on-surface-variant"
+                  >
+                    <span className="font-semibold truncate">{item}</span>
+                    <button 
+                      onClick={() => {
+                        deleteExpenseSpecificItem(selectedCat, selectedSub, item)
+                        showSavedIndicator('expense_structure_save')
+                      }}
+                      className="p-1 hover:bg-error/10 rounded text-error shrink-0"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                    </button>
+                  </div>
+                ))}
+                {!(expenseStructure[selectedCat]?.subcategories[selectedSub] || []).length && (
+                  <p className="text-[11px] text-on-surface-variant/50 italic py-3 text-center">No hay ítems específicos.</p>
+                )}
+              </div>
+
+              <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2">
+                <input
+                  type="text"
+                  placeholder="Nombre del ítem (ej: Hilos, Agujas)..."
+                  value={newItemName}
+                  onChange={e => setNewItemName(e.target.value)}
+                  className="w-full bg-[#0f131a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+                <button 
+                  onClick={handleAddItem}
+                  className="w-full py-1.5 bg-primary/20 border border-primary/30 hover:bg-primary text-white rounded text-xs font-bold transition-all"
+                >
+                  Agregar Ítem Específico
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-on-surface-variant italic py-10 text-center">Seleccione categoría y subcategoría.</p>
+          )}
+        </div>
+
+      </div>
     </div>
   )
 }

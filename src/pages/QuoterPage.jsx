@@ -440,7 +440,7 @@ export default function QuoterPage() {
     setInitialLoading(true)
     try {
       const [clientsRes, templatesRes, expensesRes] = await Promise.all([
-        supabase.from('clients').select('id, name').eq('user_id', user.id).order('name'),
+        supabase.from('terceros').select('id, name').eq('user_id', user.id).eq('role', 'cliente').order('name'),
         supabase.from('product_templates').select('id, name, suggested_margin').eq('user_id', user.id).order('name'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id),
       ])
@@ -682,7 +682,7 @@ export default function QuoterPage() {
         .from('quotes')
         .insert({
           user_id: user.id,
-          client_id: clientId,
+          tercero_id: clientId,
           quote_number: nextNumber,
           status: 'borrador',
           discount_pct: discountPct,

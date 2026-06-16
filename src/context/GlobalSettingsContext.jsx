@@ -60,12 +60,73 @@ const INITIAL_PANELS = {
   '5 PANELES': 100, '6 PANELES': 120
 }
 
+const INITIAL_EXPENSE_STRUCTURE = {
+  PRODUCCION: {
+    label: 'PRODUCCIÓN',
+    subcategories: {
+      'Materia Prima': ['Tela', 'Accesorios', 'Cierres', 'Otro'],
+      'Embellecimientos': ['Pago Bordado', 'Pago Sublimación', 'Otro'],
+      'Pagos a destajo': ['Mano de obra externa', 'Otro'],
+      'Comisiones': ['Comisiones por Ventas', 'Otro']
+    }
+  },
+  INSUMOS: {
+    label: 'INSUMOS',
+    subcategories: {
+      'Sublimación': ['Tintas', 'Papel de Sublimación', 'Otro'],
+      'Bordado': ['Hilos', 'Pellón', 'Agujas', 'Otro'],
+      'Vinil': ['Vinil Textil', 'Cuchillas de corte', 'Otro'],
+      'DTF': ['Tintas DTF', 'Lámina (Film)', 'Polvo Poliamida', 'Otro']
+    }
+  },
+  GASTOS_FIJOS: {
+    label: 'GASTOS FIJOS',
+    subcategories: {
+      'Alquileres': ['Alquiler Taller', 'Alquiler Tienda', 'Otro'],
+      'Dependientes': ['Sueldos', 'Anticipos', 'Otro'],
+      'Financieros': ['Cuota Banco', 'Intereses', 'Otro'],
+      'Servicios Básicos': ['Luz', 'Agua', 'Gas', 'Otro'],
+      'Telecomunicaciones': ['Internet', 'Telefonía Móvil', 'Otro'],
+      'Viáticos': ['Alimentación', 'Transporte', 'Otro'],
+      'Impuestos': ['IVA', 'IT', 'Otro']
+    }
+  },
+  INDIRECTOS: {
+    label: 'INDIRECTOS',
+    subcategories: {
+      'Publicidad': ['Facebook Ads', 'Impresos', 'Otro'],
+      'Transporte': ['Fletes', 'Envíos', 'Otro'],
+      'Mantenimientos': ['Mantenimiento Máquinas', 'Repuestos', 'Limpieza', 'Otro']
+    }
+  },
+  PERSONAL: {
+    label: 'PERSONAL',
+    subcategories: {
+      'Alimentación': ['Comida Diaria', 'Supermercado', 'Otro'],
+      'Crecimiento personal': ['Cursos', 'Libros', 'Otro'],
+      'Esparcimiento': ['Salidas', 'Suscripciones', 'Otro'],
+      'Compras': ['Ropa', 'Electrónicos', 'Otro'],
+      'Deudas': ['Tarjetas', 'Préstamos', 'Otro']
+    }
+  },
+  CASA_FAMILIA: {
+    label: 'CASA-FAMILIA',
+    subcategories: {
+      'Compras': ['Supermercado', 'Limpieza', 'Otro'],
+      'Internet': ['Internet Casa', 'Otro'],
+      'Pensión Familiar': ['Pensión', 'Otro'],
+      'Colegiaturas': ['Colegio', 'Universidad', 'Otro']
+    }
+  }
+}
+
 const INITIAL_CATALOG = {
   categories: INITIAL_CATEGORIES,
   subcategories: INITIAL_SUBCATEGORIES,
   sizes: INITIAL_SIZES,
   sizesBySubcategory: {}, // Nuevo
-  panels: INITIAL_PANELS
+  panels: INITIAL_PANELS,
+  expenseStructure: INITIAL_EXPENSE_STRUCTURE
 }
 
 export function GlobalSettingsProvider({ children }) {
@@ -84,7 +145,8 @@ export function GlobalSettingsProvider({ children }) {
           subcategories: parsed.subcategories || INITIAL_CATALOG.subcategories,
           sizes: { ...INITIAL_CATALOG.sizes, ...(parsed.sizes || {}) },
           sizesBySubcategory: parsed.sizesBySubcategory || {},
-          panels: { ...INITIAL_CATALOG.panels, ...(parsed.panels || {}) }
+          panels: { ...INITIAL_CATALOG.panels, ...(parsed.panels || {}) },
+          expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure
         })
       } catch (e) {
         console.error('Error parsing settings from LocalStorage', e)
@@ -103,7 +165,11 @@ export function GlobalSettingsProvider({ children }) {
           .select('settings')
           .single()
         if (!error && data?.settings) {
-          setSettings(data.settings)
+          setSettings(prev => ({
+            ...prev,
+            ...data.settings,
+            expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure
+          }))
         }
       } catch (e) {
         console.error('Error cargando configuración desde Supabase', e)
@@ -245,6 +311,131 @@ export function GlobalSettingsProvider({ children }) {
     return sub?.unitPrice || 50
   }
 
+  // --- CRUD Estructura de Gastos ---
+  const addExpenseCategory = (key, label) => {
+    setSettings(prev => ({
+      ...prev,
+      expenseStructure: {
+        ...prev.expenseStructure,
+        [key]: {
+          label: label,
+          subcategories: {}
+        }
+      }
+    }))
+  }
+
+  const updateExpenseCategory = (key, newLabel) => {
+    setSettings(prev => {
+      if (!prev.expenseStructure[key]) return prev
+      return {
+        ...prev,
+        expenseStructure: {
+          ...prev.expenseStructure,
+          [key]: {
+            ...prev.expenseStructure[key],
+            label: newLabel
+          }
+        }
+      }
+    })
+  }
+
+  const deleteExpenseCategory = (key) => {
+    setSettings(prev => {
+      const nextStructure = { ...prev.expenseStructure }
+      delete nextStructure[key]
+      return {
+        ...prev,
+        expenseStructure: nextStructure
+      }
+    })
+  }
+
+  const addExpenseSubcategory = (categoryKey, subcategoryName) => {
+    setSettings(prev => {
+      const cat = prev.expenseStructure[categoryKey]
+      if (!cat) return prev
+      return {
+        ...prev,
+        expenseStructure: {
+          ...prev.expenseStructure,
+          [categoryKey]: {
+            ...cat,
+            subcategories: {
+              ...cat.subcategories,
+              [subcategoryName]: []
+            }
+          }
+        }
+      }
+    })
+  }
+
+  const deleteExpenseSubcategory = (categoryKey, subcategoryName) => {
+    setSettings(prev => {
+      const cat = prev.expenseStructure[categoryKey]
+      if (!cat) return prev
+      const nextSubcategories = { ...cat.subcategories }
+      delete nextSubcategories[subcategoryName]
+      return {
+        ...prev,
+        expenseStructure: {
+          ...prev.expenseStructure,
+          [categoryKey]: {
+            ...cat,
+            subcategories: nextSubcategories
+          }
+        }
+      }
+    })
+  }
+
+  const addExpenseSpecificItem = (categoryKey, subcategoryName, itemName) => {
+    setSettings(prev => {
+      const cat = prev.expenseStructure[categoryKey]
+      if (!cat) return prev
+      const sub = cat.subcategories[subcategoryName]
+      if (!sub) return prev
+      if (sub.includes(itemName)) return prev
+      return {
+        ...prev,
+        expenseStructure: {
+          ...prev.expenseStructure,
+          [categoryKey]: {
+            ...cat,
+            subcategories: {
+              ...cat.subcategories,
+              [subcategoryName]: [...sub, itemName]
+            }
+          }
+        }
+      }
+    })
+  }
+
+  const deleteExpenseSpecificItem = (categoryKey, subcategoryName, itemName) => {
+    setSettings(prev => {
+      const cat = prev.expenseStructure[categoryKey]
+      if (!cat) return prev
+      const sub = cat.subcategories[subcategoryName]
+      if (!sub) return prev
+      return {
+        ...prev,
+        expenseStructure: {
+          ...prev.expenseStructure,
+          [categoryKey]: {
+            ...cat,
+            subcategories: {
+              ...cat.subcategories,
+              [subcategoryName]: sub.filter(item => item !== itemName)
+            }
+          }
+        }
+      }
+    })
+  }
+
   return (
     <GlobalSettingsContext.Provider value={{
       settings,
@@ -260,6 +451,13 @@ export function GlobalSettingsProvider({ children }) {
       updatePanelPrice,
       resetToDefaults,
       getServicePrice,
+      addExpenseCategory,
+      updateExpenseCategory,
+      deleteExpenseCategory,
+      addExpenseSubcategory,
+      deleteExpenseSubcategory,
+      addExpenseSpecificItem,
+      deleteExpenseSpecificItem,
       isLoaded
     }}>
       {children}

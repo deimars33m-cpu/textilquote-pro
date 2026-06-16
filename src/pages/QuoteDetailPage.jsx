@@ -58,7 +58,7 @@ export default function QuoteDetailPage() {
         .from('quotes')
         .select(`
           *,
-          clients (*),
+          terceros (*),
           quote_items (
             *,
             quote_materials (
@@ -136,7 +136,7 @@ export default function QuoteDetailPage() {
     )
   }
 
-  const client = quote.clients || {}
+  const client = quote.terceros || {}
   const item = quote.quote_items?.[0] || {}
   const materials = item.quote_materials || []
   const processes = item.quote_processes || []

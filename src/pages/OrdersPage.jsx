@@ -123,9 +123,10 @@ export default function OrdersPage() {
   async function fetchClients() {
     try {
       const { data, error } = await supabase
-        .from('clients')
+        .from('terceros')
         .select('*')
         .eq('user_id', user.id)
+        .eq('role', 'cliente')
         .order('name', { ascending: true })
       if (!error && data) {
         setClients(data)
@@ -150,7 +151,7 @@ export default function OrdersPage() {
         .from('orders')
         .select(`
           *,
-          clients (name, phone),
+          terceros (name, phone),
           order_items (
             *
           )
@@ -178,7 +179,7 @@ export default function OrdersPage() {
   // Filtrar pedidos
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const clientName = o.clients?.name || 'Cliente general'
+      const clientName = o.terceros?.name || 'Cliente general'
       const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
       const firstItemName = o.order_items?.[0]?.name || ''
 
@@ -440,10 +441,11 @@ export default function OrdersPage() {
 
       // 1. Resolver el cliente (buscar si existe o crear uno nuevo)
       const { data: existingClients, error: clientFindError } = await supabase
-        .from('clients')
+        .from('terceros')
         .select('id')
         .eq('user_id', user.id)
         .eq('name', clientName)
+        .eq('role', 'cliente')
         
       if (clientFindError) throw clientFindError
 
@@ -451,12 +453,13 @@ export default function OrdersPage() {
         clientId = existingClients[0].id
       } else {
         const { data: newClient, error: clientCreateError } = await supabase
-          .from('clients')
+          .from('terceros')
           .insert({
             user_id: user.id,
             name: clientName,
             phone: clientPhone,
             email: clientEmail,
+            role: 'cliente',
             notes: clientNit ? `NIT: ${clientNit}` : ''
           })
           .select()
@@ -470,7 +473,7 @@ export default function OrdersPage() {
         .from('orders')
         .insert({
           user_id: user.id,
-          client_id: clientId,
+          tercero_id: clientId,
           order_type: orderForm.category === 'produccion_textil' ? 'pedido_cotizado' : 'servicio_diario',
           status: 'pendiente',
           payment_status: advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente'),
@@ -1537,7 +1540,7 @@ export default function OrdersPage() {
                             {orderNum}
                           </td>
                           <td className="px-4 py-3 text-sm text-on-surface font-medium">
-                            {order.clients?.name || 'Cliente general'}
+                            {order.terceros?.name || 'Cliente general'}
                           </td>
                           <td className="px-4 py-3 text-sm">
                             <div className="font-semibold text-white">
@@ -1643,10 +1646,10 @@ export default function OrdersPage() {
               <div>
                 <p className="text-xs text-on-surface-variant font-mono uppercase">Cliente</p>
                 <p className="text-sm font-semibold text-white mt-0.5">
-                  {selectedOrder.clients?.name || 'Cliente general'}
+                  {selectedOrder.terceros?.name || 'Cliente general'}
                 </p>
-                {selectedOrder.clients?.phone && (
-                  <p className="text-xs text-on-surface-variant mt-0.5">Tel: {selectedOrder.clients.phone}</p>
+                {selectedOrder.terceros?.phone && (
+                  <p className="text-xs text-on-surface-variant mt-0.5">Tel: {selectedOrder.terceros.phone}</p>
                 )}
               </div>
               <div className="text-right">

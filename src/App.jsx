@@ -6,10 +6,10 @@ import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import MaterialsPage from '@/pages/MaterialsPage'
 import ProcessesPage from '@/pages/ProcessesPage'
-import FixedExpensesPage from '@/pages/FixedExpensesPage'
+import ExpensesAndBudgetsPage from '@/pages/ExpensesAndBudgetsPage'
 import ProductTemplatesPage from '@/pages/ProductTemplatesPage'
 import TemplateDetailPage from '@/pages/TemplateDetailPage'
-import ClientsPage from '@/pages/ClientsPage'
+import TercerosPage from '@/pages/TercerosPage'
 import QuoterPage from '@/pages/QuoterPage'
 import QuoteHistoryPage from '@/pages/QuoteHistoryPage'
 import QuoteDetailPage from '@/pages/QuoteDetailPage'
@@ -64,10 +64,11 @@ function AppRoutes() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/materials" element={<MaterialsPage />} />
         <Route path="/processes" element={<ProcessesPage />} />
-        <Route path="/expenses" element={<FixedExpensesPage />} />
+        <Route path="/expenses" element={<ExpensesAndBudgetsPage />} />
         <Route path="/templates" element={<ProductTemplatesPage />} />
         <Route path="/templates/:id" element={<TemplateDetailPage />} />
-        <Route path="/clients" element={<ClientsPage />} />
+        <Route path="/terceros" element={<TercerosPage />} />
+        <Route path="/clients" element={<Navigate to="/terceros" replace />} />
         <Route path="/quotes/new" element={<QuoterPage />} />
         <Route path="/quotes" element={<QuoteHistoryPage />} />
         <Route path="/quotes/:id" element={<QuoteDetailPage />} />

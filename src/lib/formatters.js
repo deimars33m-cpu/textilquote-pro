@@ -119,6 +119,66 @@ export const expenseFrequencies = {
   anual: 'Anual',
 }
 
+export const expenseStructure = {
+  PRODUCCION: {
+    label: 'PRODUCCIÓN',
+    subcategories: {
+      'Materia Prima': ['Tela', 'Accesorios', 'Cierres', 'Otro'],
+      'Embellecimientos': ['Pago Bordado', 'Pago Sublimación', 'Otro'],
+      'Pagos a destajo': ['Mano de obra externa', 'Otro'],
+      'Comisiones': ['Comisiones por Ventas', 'Otro']
+    }
+  },
+  INSUMOS: {
+    label: 'INSUMOS',
+    subcategories: {
+      'Sublimación': ['Tintas', 'Papel de Sublimación', 'Otro'],
+      'Bordado': ['Hilos', 'Pellón', 'Agujas', 'Otro'],
+      'Vinil': ['Vinil Textil', 'Cuchillas de corte', 'Otro'],
+      'DTF': ['Tintas DTF', 'Lámina (Film)', 'Polvo Poliamida', 'Otro']
+    }
+  },
+  GASTOS_FIJOS: {
+    label: 'GASTOS FIJOS',
+    subcategories: {
+      'Alquileres': ['Alquiler Taller', 'Alquiler Tienda', 'Otro'],
+      'Dependientes': ['Sueldos', 'Anticipos', 'Otro'],
+      'Financieros': ['Cuota Banco', 'Intereses', 'Otro'],
+      'Servicios Básicos': ['Luz', 'Agua', 'Gas', 'Otro'],
+      'Telecomunicaciones': ['Internet', 'Telefonía Móvil', 'Otro'],
+      'Viáticos': ['Alimentación', 'Transporte', 'Otro'],
+      'Impuestos': ['IVA', 'IT', 'Otro']
+    }
+  },
+  INDIRECTOS: {
+    label: 'INDIRECTOS',
+    subcategories: {
+      'Publicidad': ['Facebook Ads', 'Impresos', 'Otro'],
+      'Transporte': ['Fletes', 'Envíos', 'Otro'],
+      'Mantenimientos': ['Mantenimiento Máquinas', 'Repuestos', 'Limpieza', 'Otro']
+    }
+  },
+  PERSONAL: {
+    label: 'PERSONAL',
+    subcategories: {
+      'Alimentación': ['Comida Diaria', 'Supermercado', 'Otro'],
+      'Crecimiento personal': ['Cursos', 'Libros', 'Otro'],
+      'Esparcimiento': ['Salidas', 'Suscripciones', 'Otro'],
+      'Compras': ['Ropa', 'Electrónicos', 'Otro'],
+      'Deudas': ['Tarjetas', 'Préstamos', 'Otro']
+    }
+  },
+  CASA_FAMILIA: {
+    label: 'CASA-FAMILIA',
+    subcategories: {
+      'Compras': ['Supermercado', 'Limpieza', 'Otro'],
+      'Internet': ['Internet Casa', 'Otro'],
+      'Pensión Familiar': ['Pensión', 'Otro'],
+      'Colegiaturas': ['Colegio', 'Universidad', 'Otro']
+    }
+  }
+}
+
 export const clientTypes = {
   minorista: 'Minorista',
   mayorista: 'Mayorista',
@@ -126,6 +186,19 @@ export const clientTypes = {
   colegio: 'Colegio',
   empresa: 'Empresa',
   revendedor: 'Revendedor',
+  otro: 'Otro',
+}
+
+export const terceroTypes = {
+  minorista: 'Minorista',
+  mayorista: 'Mayorista',
+  club_deportivo: 'Club Deportivo',
+  colegio: 'Colegio',
+  empresa: 'Empresa',
+  revendedor: 'Revendedor',
+  proveedor_materia_prima: 'Materia Prima',
+  proveedor_insumos: 'Insumos',
+  proveedor_servicios: 'Servicios Externos',
   otro: 'Otro',
 }
 

@@ -30,7 +30,7 @@ export default function QuoteHistoryPage() {
         .from('quotes')
         .select(`
           *,
-          clients (name),
+          terceros (name),
           quote_items (product_name, quantity, total_price, real_margin)
         `)
         .eq('user_id', user.id)
@@ -47,7 +47,7 @@ export default function QuoteHistoryPage() {
 
   const filteredQuotes = useMemo(() => {
     return quotes.filter(q => {
-      const clientName = q.clients?.name || ''
+      const clientName = q.terceros?.name || ''
       const quoteNum = formatQuoteNumber(q.quote_number)
       const productName = q.quote_items?.[0]?.product_name || ''
       
@@ -157,7 +157,7 @@ export default function QuoteHistoryPage() {
                         {formatQuoteNumber(q.quote_number)}
                       </td>
                       <td className="px-4 py-3 text-sm text-on-surface font-medium">
-                        {q.clients?.name || 'Cliente general'}
+                        {q.terceros?.name || 'Cliente general'}
                       </td>
                       <td className="px-4 py-3 text-sm text-on-surface-variant">
                         {item?.product_name || '—'}
