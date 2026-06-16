@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, Input, Button, AlertBanner } from '@/components/ui/index.jsx'
+import { Card, Input, Button, AlertBanner, Modal } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, expenseStructure as defaultExpenseStructure } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
@@ -35,6 +35,7 @@ export default function ExpensesAndBudgetsPage() {
   const [productionAvg, setProductionAvg] = useState(1000)
   const [providers, setProviders] = useState([])
   const [saving, setSaving] = useState(false)
+  const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
 
   const expenseStructure = settings?.expenseStructure || defaultExpenseStructure
 
@@ -216,6 +217,7 @@ export default function ExpensesAndBudgetsPage() {
       })
       setCurrentStep(1)
       setSuccess('Transacción registrada con éxito')
+      setFormOpen(false) // Cerrar modal si está en móvil
       setTimeout(() => setSuccess(null), 3000)
     } catch (e) {
       console.error('Error saving expense:', e)
@@ -257,6 +259,378 @@ export default function ExpensesAndBudgetsPage() {
   const overheadCosts = (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
   const unitOverhead = productionAvg > 0 ? overheadCosts / productionAvg : 0
 
+  // --- RENDER WIZARD FORM ---
+  const renderWizardForm = () => {
+    return (
+      <div className="flex flex-col h-full bg-[#0f131a] select-none text-white overflow-hidden">
+        {/* Header del Wizard */}
+        <div className="p-5 border-b border-white/5 shrink-0 bg-[#0f131a]">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-[#ff5c00]">receipt_long</span>
+            <h2 className="text-base font-bold text-white leading-none">Registrar Transacción</h2>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-mono text-[#ff5c00] uppercase tracking-wider font-bold">Paso {currentStep} de 3</span>
+              <span className="text-on-surface-variant/70">Ingreso Manual</span>
+            </div>
+            <div className="flex gap-1.5 h-1.5 w-full bg-white/[0.02] rounded-full p-[1px]">
+              {[1, 2, 3].map((s) => (
+                <div
+                  key={s}
+                  className={`flex-1 h-full rounded-full transition-all duration-300 ${
+                    s <= currentStep ? 'bg-[#ff5c00] shadow-[0_0_6px_rgba(255,92,0,0.6)]' : 'bg-white/10'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Contenido del Paso */}
+        <div className="p-5 flex-1 overflow-y-auto space-y-4">
+          {(error || success) && (
+             <AlertBanner type={success ? 'success' : 'error'} className="mb-4">{error || success}</AlertBanner>
+          )}
+
+          {/* PASO 1: Proveedor */}
+          {currentStep === 1 && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex justify-between items-center bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                <p className="text-[11px] text-on-surface-variant/80">
+                  ¿Es un proveedor rápido?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateForm('providerName', 'Proveedor Genérico')
+                    updateForm('providerNit', '')
+                    updateForm('providerPhone', '')
+                    updateForm('providerEmail', '')
+                    setCurrentStep(2)
+                  }}
+                  className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[14px]">bolt</span>
+                  Usar Proveedor Genérico
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="relative">
+                  <Input
+                    label="Nombre o Razón Social"
+                    value={form.providerName}
+                    onChange={e => updateForm('providerName', e.target.value)}
+                    placeholder="Ej. Comercializadora XYZ S.A."
+                    error={error && !form.providerName ? 'Requerido' : null}
+                  />
+                  {providerSuggestions.length > 0 && (
+                    <div className="absolute z-30 w-full mt-1 bg-[#161b26] border border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-white/5">
+                      {providerSuggestions.map(prov => (
+                        <div 
+                          key={prov.id}
+                          className="p-3 text-xs text-white hover:bg-[#ff5c00]/10 hover:text-white cursor-pointer transition-colors flex items-center justify-between"
+                          onClick={() => {
+                            updateForm('providerName', prov.name)
+                            updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || '')
+                            updateForm('providerPhone', prov.phone || '')
+                            updateForm('providerEmail', prov.email || '')
+                          }}
+                        >
+                          <span className="font-semibold text-left">{prov.name}</span>
+                          {prov.phone && <span className="text-[10px] text-on-surface-variant font-mono">{prov.phone}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Input
+                  label="ID / NIT (Opcional)"
+                  value={form.providerNit}
+                  onChange={e => updateForm('providerNit', e.target.value)}
+                  placeholder="Ej. 10293847-5"
+                  className="font-mono"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Teléfono"
+                    value={form.providerPhone}
+                    onChange={e => updateForm('providerPhone', e.target.value)}
+                    placeholder="Ej. 70012345"
+                    className="font-mono"
+                  />
+                  <Input
+                    label="Correo Electrónico"
+                    type="email"
+                    value={form.providerEmail}
+                    onChange={e => updateForm('providerEmail', e.target.value)}
+                    placeholder="proveedor@correo.com"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 2: Categorización Jerárquica */}
+          {currentStep === 2 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="space-y-3">
+                <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">1. Selecciona la Categoría</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(expenseStructure).map(([key, data]) => {
+                    const isActive = form.categoryKey === key
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          updateForm('categoryKey', key)
+                          updateForm('subcategory', '') 
+                          updateForm('specificItem', '')
+                        }}
+                        className={`btn-3d-raised rounded-xl px-3 py-2 flex flex-row items-center justify-start gap-3 h-14 text-left cursor-pointer ${
+                          isActive ? 'btn-3d-active border-[#ff5c00]/50' : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <span className={`material-symbols-outlined text-[24px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
+                          {CATEGORY_ICONS[key] || 'label'}
+                        </span>
+                        <span className="text-[11px] font-bold tracking-wide text-on-surface leading-tight">
+                          {data.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {form.categoryKey && expenseStructure[form.categoryKey] && (
+                <div className="space-y-3 animate-in fade-in duration-200 border-t border-white/5 pt-4">
+                  <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">2. Especifica la Subcategoría</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.keys(expenseStructure[form.categoryKey].subcategories || {}).map(sub => {
+                      const isActive = form.subcategory === sub
+                      return (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => {
+                            updateForm('subcategory', sub)
+                            updateForm('specificItem', '')
+                          }}
+                          className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[40px] ${
+                            isActive ? 'btn-3d-active bg-primary/10 border-primary/50' : 'hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          <span className={`text-[11px] font-semibold tracking-wide leading-tight ${isActive ? 'text-primary' : 'text-on-surface'}`}>
+                            {sub}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {form.subcategory && expenseStructure[form.categoryKey]?.subcategories[form.subcategory] && (
+                <div className="space-y-3 animate-in fade-in duration-200 border-t border-white/5 pt-4">
+                  <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">3. Ítem Específico</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {expenseStructure[form.categoryKey].subcategories[form.subcategory].map(item => {
+                      const isActive = form.specificItem === item
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            updateForm('specificItem', item)
+                            setError(null)
+                            setTimeout(() => setCurrentStep(3), 300)
+                          }}
+                          className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[36px] ${
+                            isActive ? 'btn-3d-active bg-secondary/10 border-secondary/50' : 'hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          <span className={`text-[10px] font-bold tracking-wide leading-tight ${isActive ? 'text-secondary' : 'text-on-surface-variant'}`}>
+                            {item}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PASO 3: Detalles y Monetización */}
+          {currentStep === 3 && (
+            <div className="space-y-5 animate-fade-in">
+              <Input
+                label="Fecha de la Transacción"
+                type="date"
+                value={form.date}
+                onChange={(e) => updateForm('date', e.target.value)}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-on-surface-variant mb-1 ml-1 block">
+                    Cantidad
+                  </label>
+                  <div className="flex gap-1.5 items-center">
+                    <button 
+                      type="button" 
+                      onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))} 
+                      className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={form.quantity}
+                      onChange={(e) => updateForm('quantity', e.target.value)}
+                      className="w-full bg-[#0a0d14] border border-white/10 rounded-lg py-1.5 font-mono text-sm text-white text-center focus:border-[#ff5c00] outline-none"
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => updateForm('quantity', Number(form.quantity) + 1)} 
+                      className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <Input
+                  label="P. Unitario (Bs)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.unitPrice}
+                  onChange={(e) => updateForm('unitPrice', e.target.value)}
+                  className="font-mono text-lg text-white"
+                />
+              </div>
+
+              <div className="bg-[#0a0d14] p-4 rounded-xl border border-white/5 space-y-4 shadow-inner mt-2">
+                <Input
+                  label="Monto Total (Bs)"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="0.00"
+                  value={form.amount}
+                  onChange={(e) => updateForm('amount', e.target.value)}
+                  className="font-mono text-xl text-[#ff5c00] font-bold h-12 bg-black/40 border-[#ff5c00]/30 focus:border-[#ff5c00]"
+                />
+
+                <div className="pt-3 border-t border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Adelanto / Pago</label>
+                    <button 
+                      type="button" 
+                      onClick={() => updateForm('advanceAmount', form.amount)}
+                      className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">done_all</span>
+                      Pagar 100%
+                    </button>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    placeholder="0.00"
+                    value={form.advanceAmount}
+                    onChange={(e) => updateForm('advanceAmount', e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <label className="text-[10px] font-mono uppercase text-on-surface-variant tracking-wider">Método de Pago</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PAYMENT_METHODS.map(method => {
+                    const isActive = form.paymentMethod === method.id
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => updateForm('paymentMethod', method.id)}
+                        className={`btn-3d-raised rounded-xl py-2 px-3 flex items-center gap-2 cursor-pointer ${
+                          isActive ? 'btn-3d-active border-emerald-500/50 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'hover:bg-white/[0.02] text-on-surface'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">{method.icon}</span>
+                        <span className="text-[11px] font-bold">{method.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              
+              <Input
+                label="Observaciones (Opcional)"
+                placeholder="Ej: Factura #1234, Marca X..."
+                value={form.description}
+                onChange={(e) => updateForm('description', e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Botones de Navegación del Wizard */}
+        <div className="p-5 border-t border-white/5 bg-[#0a0d14] flex gap-3 shrink-0 mt-auto">
+          {currentStep > 1 && (
+            <button 
+              type="button"
+              onClick={handleBack} 
+              className="flex-1 btn-3d-raised bg-black/20 border-white/10 hover:bg-white/5 py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-white cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+              Atrás
+            </button>
+          )}
+          <button 
+            type="button"
+            onClick={handleNext}
+            disabled={saving}
+            className={`flex-[2] btn-3d-raised py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-white shadow-lg cursor-pointer ${
+              currentStep === 3 
+                ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500 shadow-emerald-600/20' 
+                : 'bg-[#ff5c00] hover:bg-[#ff5c00]/80 border-[#ff5c00] shadow-[#ff5c00]/20'
+            }`}
+          >
+            {saving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Guardando...
+              </>
+            ) : currentStep < 3 ? (
+              <>
+                Continuar
+                <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">save</span>
+                Finalizar y Guardar
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 h-[calc(100vh-6rem)] flex flex-col">
       <style dangerouslySetInnerHTML={{__html: `
@@ -288,6 +662,13 @@ export default function ExpensesAndBudgetsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-white">Gastos y Presupuestos</h1>
           <p className="text-on-surface-variant text-sm mt-1">Registra, supervisa y analiza los costos indirectos de la empresa.</p>
         </div>
+        <Button 
+          onClick={() => setFormOpen(true)} 
+          className="flex items-center gap-1.5 self-start sm:self-auto neu-button-primary"
+        >
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          NUEVO GASTO
+        </Button>
       </div>
 
       {/* TABS COMPACTOS */}
@@ -336,7 +717,7 @@ export default function ExpensesAndBudgetsPage() {
                 ) : expenses.length === 0 ? (
                   <div className="text-center py-20 text-on-surface-variant text-sm flex flex-col items-center gap-2">
                     <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
-                    Aún no hay gastos registrados. Usa el panel derecho.
+                    Aún no hay gastos registrados. Usa el botón superior o el panel derecho.
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse">
@@ -397,370 +778,7 @@ export default function ExpensesAndBudgetsPage() {
  
             {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
             <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 border-white/10 bg-[#0f131a] flex-col h-full max-h-full shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
-              {/* Header del Wizard */}
-              <div className="p-5 border-b border-white/5">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="material-symbols-outlined text-[#ff5c00]">receipt_long</span>
-                  <h2 className="text-base font-bold text-white leading-none">Registrar Transacción</h2>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-mono text-[#ff5c00] uppercase tracking-wider font-bold">Paso {currentStep} de 3</span>
-                    <span className="text-on-surface-variant/70">Ingreso Manual</span>
-                  </div>
-                  <div className="flex gap-1.5 h-1.5 w-full bg-white/[0.02] rounded-full p-[1px]">
-                    {[1, 2, 3].map((s) => (
-                      <div
-                        key={s}
-                        className={`flex-1 h-full rounded-full transition-all duration-300 ${
-                          s <= currentStep ? 'bg-[#ff5c00] shadow-[0_0_6px_rgba(255,92,0,0.6)]' : 'bg-white/10'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Contenido del Paso */}
-              <div className="p-5 flex-1 overflow-y-auto">
-                {(error || success) && (
-                   <AlertBanner type={success ? 'success' : 'error'} className="mb-4">{error || success}</AlertBanner>
-                )}
-
-                {/* PASO 1: Proveedor */}
-                {currentStep === 1 && (
-                  <div className="space-y-4 animate-fade-in">
-                    <div className="flex justify-between items-center bg-white/[0.02] p-2 rounded-lg border border-white/5">
-                      <p className="text-[11px] text-on-surface-variant/80">
-                        ¿Es un proveedor rápido?
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateForm('providerName', 'Proveedor Genérico')
-                          updateForm('providerNit', '')
-                          updateForm('providerPhone', '')
-                          updateForm('providerEmail', '')
-                          setCurrentStep(2)
-                        }}
-                        className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">bolt</span>
-                        Usar Proveedor Genérico
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="relative">
-                        <Input
-                          label="Nombre o Razón Social"
-                          value={form.providerName}
-                          onChange={e => updateForm('providerName', e.target.value)}
-                          placeholder="Ej. Comercializadora XYZ S.A."
-                          error={error && !form.providerName ? 'Requerido' : null}
-                        />
-                        {providerSuggestions.length > 0 && (
-                          <div className="absolute z-30 w-full mt-1 bg-[#161b26] border border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-white/5">
-                            {providerSuggestions.map(prov => (
-                              <div 
-                                key={prov.id}
-                                className="p-3 text-xs text-white hover:bg-[#ff5c00]/10 hover:text-white cursor-pointer transition-colors flex items-center justify-between"
-                                onClick={() => {
-                                  updateForm('providerName', prov.name)
-                                  updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || '')
-                                  updateForm('providerPhone', prov.phone || '')
-                                  updateForm('providerEmail', prov.email || '')
-                                }}
-                              >
-                                <span className="font-semibold text-left">{prov.name}</span>
-                                {prov.phone && <span className="text-[10px] text-on-surface-variant font-mono">{prov.phone}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <Input
-                        label="ID / NIT (Opcional)"
-                        value={form.providerNit}
-                        onChange={e => updateForm('providerNit', e.target.value)}
-                        placeholder="Ej. 10293847-5"
-                        className="font-mono"
-                      />
-                      <div className="grid grid-cols-2 gap-3">
-                        <Input
-                          label="Teléfono"
-                          value={form.providerPhone}
-                          onChange={e => updateForm('providerPhone', e.target.value)}
-                          placeholder="Ej. 70012345"
-                          className="font-mono"
-                        />
-                        <Input
-                          label="Correo Electrónico"
-                          type="email"
-                          value={form.providerEmail}
-                          onChange={e => updateForm('providerEmail', e.target.value)}
-                          placeholder="proveedor@correo.com"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* PASO 2: Categorización Jerárquica */}
-                {currentStep === 2 && (
-                  <div className="space-y-6 animate-fade-in">
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">1. Selecciona la Categoría</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {Object.entries(expenseStructure).map(([key, data]) => {
-                          const isActive = form.categoryKey === key
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => {
-                                updateForm('categoryKey', key)
-                                updateForm('subcategory', '') 
-                                updateForm('specificItem', '')
-                              }}
-                              className={`btn-3d-raised rounded-xl px-3 py-2 flex flex-row items-center justify-start gap-3 h-14 text-left cursor-pointer ${
-                                isActive ? 'btn-3d-active border-[#ff5c00]/50' : 'hover:bg-white/[0.02]'
-                              }`}
-                            >
-                              <span className={`material-symbols-outlined text-[24px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
-                                {CATEGORY_ICONS[key] || 'label'}
-                              </span>
-                              <span className="text-[11px] font-bold tracking-wide text-on-surface leading-tight">
-                                {data.label}
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {form.categoryKey && expenseStructure[form.categoryKey] && (
-                      <div className="space-y-3 animate-in fade-in duration-200 border-t border-white/5 pt-4">
-                        <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">2. Especifica la Subcategoría</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {Object.keys(expenseStructure[form.categoryKey].subcategories || {}).map(sub => {
-                            const isActive = form.subcategory === sub
-                            return (
-                              <button
-                                key={sub}
-                                type="button"
-                                onClick={() => {
-                                  updateForm('subcategory', sub)
-                                  updateForm('specificItem', '')
-                                }}
-                                className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[40px] ${
-                                  isActive ? 'btn-3d-active bg-primary/10 border-primary/50' : 'hover:bg-white/[0.02]'
-                                }`}
-                              >
-                                <span className={`text-[11px] font-semibold tracking-wide leading-tight ${isActive ? 'text-primary' : 'text-on-surface'}`}>
-                                  {sub}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {form.subcategory && expenseStructure[form.categoryKey]?.subcategories[form.subcategory] && (
-                      <div className="space-y-3 animate-in fade-in duration-200 border-t border-white/5 pt-4">
-                        <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">3. Ítem Específico</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {expenseStructure[form.categoryKey].subcategories[form.subcategory].map(item => {
-                            const isActive = form.specificItem === item
-                            return (
-                              <button
-                                key={item}
-                                type="button"
-                                onClick={() => {
-                                  updateForm('specificItem', item)
-                                  setError(null)
-                                  setTimeout(() => setCurrentStep(3), 300)
-                                }}
-                                className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[36px] ${
-                                  isActive ? 'btn-3d-active bg-secondary/10 border-secondary/50' : 'hover:bg-white/[0.02]'
-                                }`}
-                              >
-                                <span className={`text-[10px] font-bold tracking-wide leading-tight ${isActive ? 'text-secondary' : 'text-on-surface-variant'}`}>
-                                  {item}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* PASO 3: Detalles y Monetización */}
-                {currentStep === 3 && (
-                  <div className="space-y-5 animate-fade-in">
-                    <Input
-                      label="Fecha de la Transacción"
-                      type="date"
-                      value={form.date}
-                      onChange={(e) => updateForm('date', e.target.value)}
-                    />
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-on-surface-variant mb-1 ml-1 block">
-                          Cantidad
-                        </label>
-                        <div className="flex gap-1.5 items-center">
-                          <button 
-                            type="button" 
-                            onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))} 
-                            className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            min="1"
-                            step="0.01"
-                            value={form.quantity}
-                            onChange={(e) => updateForm('quantity', e.target.value)}
-                            className="w-full bg-[#0a0d14] border border-white/10 rounded-lg py-1.5 font-mono text-sm text-white text-center focus:border-[#ff5c00] outline-none"
-                          />
-                          <button 
-                            type="button" 
-                            onClick={() => updateForm('quantity', Number(form.quantity) + 1)} 
-                            className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                      <Input
-                        label="P. Unitario (Bs)"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={form.unitPrice}
-                        onChange={(e) => updateForm('unitPrice', e.target.value)}
-                        className="font-mono text-lg text-white"
-                      />
-                    </div>
-
-                    <div className="bg-[#0a0d14] p-4 rounded-xl border border-white/5 space-y-4 shadow-inner mt-2">
-                      <Input
-                        label="Monto Total (Bs)"
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        placeholder="0.00"
-                        value={form.amount}
-                        onChange={(e) => updateForm('amount', e.target.value)}
-                        className="font-mono text-xl text-[#ff5c00] font-bold h-12 bg-black/40 border-[#ff5c00]/30 focus:border-[#ff5c00]"
-                      />
-
-                      <div className="pt-3 border-t border-white/5">
-                        <div className="flex justify-between items-center mb-2">
-                          <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Adelanto / Pago</label>
-                          <button 
-                            type="button" 
-                            onClick={() => updateForm('advanceAmount', form.amount)}
-                            className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">done_all</span>
-                            Pagar 100%
-                          </button>
-                        </div>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          placeholder="0.00"
-                          value={form.advanceAmount}
-                          onChange={(e) => updateForm('advanceAmount', e.target.value)}
-                          className="font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 pt-2">
-                      <label className="text-[10px] font-mono uppercase text-on-surface-variant tracking-wider">Método de Pago</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {PAYMENT_METHODS.map(method => {
-                          const isActive = form.paymentMethod === method.id
-                          return (
-                            <button
-                              key={method.id}
-                              type="button"
-                              onClick={() => updateForm('paymentMethod', method.id)}
-                              className={`btn-3d-raised rounded-xl py-2 px-3 flex items-center gap-2 cursor-pointer ${
-                                isActive ? 'btn-3d-active border-emerald-500/50 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'hover:bg-white/[0.02] text-on-surface'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[18px]">{method.icon}</span>
-                              <span className="text-[11px] font-bold">{method.label}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    
-                    <Input
-                      label="Observaciones (Opcional)"
-                      placeholder="Ej: Factura #1234, Marca X..."
-                      value={form.description}
-                      onChange={(e) => updateForm('description', e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Botones de Navegación del Wizard */}
-              <div className="p-5 border-t border-white/5 bg-[#0a0d14] flex gap-3 shrink-0 mt-auto rounded-b-xl">
-                {currentStep > 1 && (
-                  <button 
-                    type="button"
-                    onClick={handleBack} 
-                    className="flex-1 btn-3d-raised bg-black/20 border-white/10 hover:bg-white/5 py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-white cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-                    Atrás
-                  </button>
-                )}
-                <button 
-                  type="button"
-                  onClick={handleNext}
-                  disabled={saving}
-                  className={`flex-[2] btn-3d-raised py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-white shadow-lg cursor-pointer ${
-                    currentStep === 3 
-                      ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500 shadow-emerald-600/20' 
-                      : 'bg-[#ff5c00] hover:bg-[#ff5c00]/80 border-[#ff5c00] shadow-[#ff5c00]/20'
-                  }`}
-                >
-                  {saving ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Guardando...
-                    </>
-                  ) : currentStep < 3 ? (
-                    <>
-                      Continuar
-                      <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[18px]">save</span>
-                      Finalizar y Guardar
-                    </>
-                  )}
-                </button>
-              </div>
+              {renderWizardForm()}
             </Card>
           </div>
         )}
@@ -851,6 +869,18 @@ export default function ExpensesAndBudgetsPage() {
         )}
 
       </div>
+
+      {/* MODAL DE REGISTRO PARA MÓVILES */}
+      <Modal
+        isOpen={formOpen}
+        onClose={() => setFormOpen(false)}
+        title=""
+        size="lg"
+      >
+        <div className="bg-[#0f131a] -m-6 p-4 h-[75vh] flex flex-col">
+          {renderWizardForm()}
+        </div>
+      </Modal>
     </div>
   )
 }
