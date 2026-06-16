@@ -262,12 +262,12 @@ export default function ExpensesAndBudgetsPage() {
   // --- RENDER WIZARD FORM ---
   const renderWizardForm = () => {
     return (
-      <div className="flex flex-col h-full bg-[#0f131a] select-none text-white overflow-hidden">
+      <div className="flex flex-col h-full bg-transparent select-none text-on-surface overflow-hidden">
         {/* Header del Wizard */}
-        <div className="p-5 border-b border-white/5 shrink-0 bg-[#0f131a]">
+        <div className="p-5 border-b border-outline-variant shrink-0 bg-surface-container/50">
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-[#ff5c00]">receipt_long</span>
-            <h2 className="text-base font-bold text-white leading-none">Registrar Transacción</h2>
+            <h2 className="text-base font-bold text-on-surface leading-none">Registrar Transacción</h2>
           </div>
           
           <div className="space-y-2">
@@ -297,7 +297,7 @@ export default function ExpensesAndBudgetsPage() {
           {/* PASO 1: Proveedor */}
           {currentStep === 1 && (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex justify-between items-center bg-white/[0.02] p-2 rounded-lg border border-white/5">
+              <div className="flex justify-between items-center bg-surface-container-low p-2 rounded-lg border border-outline-variant">
                 <p className="text-[11px] text-on-surface-variant/80">
                   ¿Es un proveedor rápido?
                 </p>
@@ -519,7 +519,7 @@ export default function ExpensesAndBudgetsPage() {
                 />
               </div>
 
-              <div className="bg-[#0a0d14] p-4 rounded-xl border border-white/5 space-y-4 shadow-inner mt-2">
+              <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 shadow-inner mt-2">
                 <Input
                   label="Monto Total (Bs)"
                   type="number"
@@ -528,7 +528,7 @@ export default function ExpensesAndBudgetsPage() {
                   placeholder="0.00"
                   value={form.amount}
                   onChange={(e) => updateForm('amount', e.target.value)}
-                  className="font-mono text-xl text-[#ff5c00] font-bold h-12 bg-black/40 border-[#ff5c00]/30 focus:border-[#ff5c00]"
+                  className="font-mono text-xl text-[#ff7a00] font-bold h-12 bg-surface border-[#ff7a00]/30 focus:border-[#ff7a00]"
                 />
 
                 <div className="pt-3 border-t border-white/5">
@@ -588,12 +588,12 @@ export default function ExpensesAndBudgetsPage() {
         </div>
 
         {/* Botones de Navegación del Wizard */}
-        <div className="p-5 border-t border-white/5 bg-[#0a0d14] flex gap-3 shrink-0 mt-auto">
+        <div className="p-5 border-t border-outline-variant bg-surface-container/50 flex gap-3 shrink-0 mt-auto">
           {currentStep > 1 && (
             <button 
               type="button"
               onClick={handleBack} 
-              className="flex-1 btn-3d-raised bg-black/20 border-white/10 hover:bg-white/5 py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-white cursor-pointer"
+              className="flex-1 btn-3d-raised py-3 rounded-xl font-bold flex items-center justify-center gap-1 text-on-surface cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
               Atrás
@@ -702,8 +702,8 @@ export default function ExpensesAndBudgetsPage() {
             
             {/* IZQUIERDA: LISTA DE TRANSACCIONES */}
             <Card className="flex-1 overflow-hidden flex flex-col h-full w-full">
-              <div className="p-4 border-b border-white/5 bg-[#0a0d14]">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="p-4 border-b border-outline-variant bg-surface-container/40">
+                <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary">receipt_long</span>
                   Historial de Transacciones
                 </h2>
@@ -721,8 +721,8 @@ export default function ExpensesAndBudgetsPage() {
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse min-w-[650px]">
-                    <thead className="sticky top-0 bg-[#0a0d14]/95 backdrop-blur z-10">
-                      <tr className="border-b border-white/10 text-on-surface-variant text-xs uppercase tracking-wider">
+                    <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
+                      <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider">
                         <th className="py-3 px-4 font-medium">Fecha</th>
                         <th className="py-3 px-4 font-medium">Categoría / Ítem</th>
                         <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
@@ -777,7 +777,7 @@ export default function ExpensesAndBudgetsPage() {
             </Card>
  
             {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
-            <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 border-white/10 bg-[#0f131a] flex-col h-full max-h-full shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+            <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 border-outline-variant bg-transparent flex-col h-full max-h-full shadow-lg">
               {renderWizardForm()}
             </Card>
           </div>
@@ -786,17 +786,17 @@ export default function ExpensesAndBudgetsPage() {
         {/* PESTAÑA 2: DASHBOARD Y PRESUPUESTOS */}
         {activeTab === 'dashboard' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <Card className="col-span-full bg-[#0a0d14]/50 border-white/5">
+            <Card className="col-span-full bg-surface-container/30 border-outline-variant">
               <div className="p-5">
-                <h2 className="text-lg font-bold text-white mb-1">Resumen del Mes Actual</h2>
+                <h2 className="text-lg font-bold text-on-surface mb-1">Resumen del Mes Actual</h2>
                 <p className="text-sm text-on-surface-variant mb-6">Totales agrupados por categoría principal.</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                   {Object.entries(expenseStructure).map(([key, data]) => {
                     const total = totalsByCategory[key] || 0
                     return (
-                      <div key={key} className="bg-[#0f131a] p-4 rounded-xl border border-white/5 hover:border-white/10 transition-colors shadow-lg">
+                      <div key={key} className="bg-surface-container/60 p-4 rounded-xl border border-outline-variant hover:border-primary/20 transition-colors shadow-sm">
                         <p className="text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">{data.label}</p>
-                        <p className="text-lg font-mono font-bold text-white">{formatCurrency(total)}</p>
+                        <p className="text-lg font-mono font-bold text-on-surface">{formatCurrency(total)}</p>
                       </div>
                     )
                   })}
@@ -831,7 +831,7 @@ export default function ExpensesAndBudgetsPage() {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center bg-[#0a0d14] p-6 rounded-2xl border border-white/5 shadow-inner">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center bg-surface-container-low p-6 rounded-2xl border border-outline-variant shadow-inner">
                   <div className="space-y-1">
                     <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Gastos Prorrateables</p>
                     <p className="text-2xl font-mono font-bold text-error">{formatCurrency(overheadCosts)}</p>
@@ -847,7 +847,7 @@ export default function ExpensesAndBudgetsPage() {
                       min="1"
                       value={productionAvg}
                       onChange={(e) => setProductionAvg(Number(e.target.value))}
-                      className="text-xl font-mono text-center font-bold h-12 bg-black/40"
+                      className="text-xl font-mono text-center font-bold h-12 bg-surface"
                     />
                     <p className="text-[10px] text-on-surface-variant text-center">Unidades a fabricar</p>
                   </div>
@@ -858,7 +858,7 @@ export default function ExpensesAndBudgetsPage() {
                     <h3 className="text-lg font-bold text-primary">Costo Indirecto a Cargar:</h3>
                     <p className="text-sm text-primary/70">Monto adicional por prenda sobre el costo directo.</p>
                   </div>
-                  <div className="text-4xl font-mono font-bold text-primary mt-4 sm:mt-0 bg-[#0a0d14]/50 px-6 py-3 rounded-xl border border-primary/20 shadow-inner">
+                  <div className="text-4xl font-mono font-bold text-primary mt-4 sm:mt-0 bg-surface px-6 py-3 rounded-xl border border-primary/20 shadow-inner">
                     {formatCurrency(unitOverhead)} <span className="text-lg text-primary/50">/ u</span>
                   </div>
                 </div>
@@ -877,7 +877,7 @@ export default function ExpensesAndBudgetsPage() {
         title=""
         size="lg"
       >
-        <div className="bg-[#0f131a] -m-6 p-4 h-[75vh] flex flex-col">
+        <div className="bg-surface-container -m-6 p-4 h-[75vh] flex flex-col">
           {renderWizardForm()}
         </div>
       </Modal>
