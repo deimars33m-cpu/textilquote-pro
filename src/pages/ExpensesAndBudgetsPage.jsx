@@ -354,7 +354,7 @@ export default function ExpensesAndBudgetsPage() {
                   placeholder="Ej. 10293847-5"
                   className="font-mono"
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Input
                     label="Teléfono"
                     value={form.providerPhone}
@@ -391,7 +391,7 @@ export default function ExpensesAndBudgetsPage() {
                           updateForm('subcategory', '') 
                           updateForm('specificItem', '')
                         }}
-                        className={`btn-3d-raised rounded-xl px-3 py-2 flex flex-row items-center justify-start gap-3 h-14 text-left cursor-pointer ${
+                        className={`btn-3d-raised rounded-xl px-3 py-2 flex flex-row items-center justify-start gap-3 min-h-[3.5rem] h-auto text-left cursor-pointer ${
                           isActive ? 'btn-3d-active border-[#ff5c00]/50' : 'hover:bg-white/[0.02]'
                         }`}
                       >
@@ -476,7 +476,7 @@ export default function ExpensesAndBudgetsPage() {
                 onChange={(e) => updateForm('date', e.target.value)}
               />
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-on-surface-variant mb-1 ml-1 block">
                     Cantidad
@@ -495,7 +495,7 @@ export default function ExpensesAndBudgetsPage() {
                       step="0.01"
                       value={form.quantity}
                       onChange={(e) => updateForm('quantity', e.target.value)}
-                      className="w-full bg-[#0a0d14] border border-white/10 rounded-lg py-1.5 font-mono text-sm text-white text-center focus:border-[#ff5c00] outline-none"
+                      className="w-full min-w-0 bg-[#0a0d14] border border-white/10 rounded-lg py-1.5 font-mono text-sm text-white text-center focus:border-[#ff5c00] outline-none"
                     />
                     <button 
                       type="button" 
@@ -632,7 +632,7 @@ export default function ExpensesAndBudgetsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 h-[calc(100vh-6rem)] flex flex-col">
+    <div className="max-w-7xl mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
       <style dangerouslySetInnerHTML={{__html: `
         .btn-3d-raised {
           background: #0f131a;
@@ -672,7 +672,7 @@ export default function ExpensesAndBudgetsPage() {
       </div>
 
       {/* TABS COMPACTOS */}
-      <div className="flex gap-4 border-b border-white/10 pb-px">
+      <div className="flex gap-2 border-b border-white/10 pb-px overflow-x-auto whitespace-nowrap scrollbar-none">
         {[
           { id: 'registro', label: 'Transacciones y Registro', icon: 'list_alt' },
           { id: 'dashboard', label: 'Dashboard y Presupuestos', icon: 'donut_large' },
@@ -681,7 +681,7 @@ export default function ExpensesAndBudgetsPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
+            className={`flex items-center gap-2 px-4 py-2 font-medium text-sm transition-colors border-b-2 whitespace-nowrap shrink-0 ${
               activeTab === tab.id 
                 ? 'border-primary text-primary bg-primary/5 rounded-t-lg' 
                 : 'border-transparent text-on-surface-variant hover:text-white hover:bg-white/5 rounded-t-lg'
@@ -708,7 +708,7 @@ export default function ExpensesAndBudgetsPage() {
                   Historial de Transacciones
                 </h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-0">
+              <div className="flex-1 overflow-auto p-0">
                 {loadingExpenses ? (
                   <div className="text-center py-20 text-on-surface-variant text-sm flex flex-col items-center gap-2">
                     <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -720,7 +720,7 @@ export default function ExpensesAndBudgetsPage() {
                     Aún no hay gastos registrados. Usa el botón superior o el panel derecho.
                   </div>
                 ) : (
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full text-left border-collapse min-w-[650px]">
                     <thead className="sticky top-0 bg-[#0a0d14]/95 backdrop-blur z-10">
                       <tr className="border-b border-white/10 text-on-surface-variant text-xs uppercase tracking-wider">
                         <th className="py-3 px-4 font-medium">Fecha</th>
