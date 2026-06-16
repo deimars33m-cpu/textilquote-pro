@@ -703,7 +703,7 @@ export default function ExpensesAndBudgetsPage() {
           <div className="flex flex-col lg:flex-row gap-6 h-full items-start">
             
             {/* IZQUIERDA: LISTA DE TRANSACCIONES */}
-            <Card className="glass-card flex-1 overflow-hidden flex flex-col h-full w-full">
+            <Card className="flex-1 overflow-hidden flex flex-col h-full w-full">
               <div className="p-4 border-b border-outline-variant bg-surface-container/40">
                 <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary">receipt_long</span>
@@ -779,7 +779,7 @@ export default function ExpensesAndBudgetsPage() {
             </Card>
  
             {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
-            <Card className="glass-card hidden lg:flex w-full lg:w-[420px] shrink-0 flex-col h-full max-h-full shadow-lg">
+            <Card className="hidden lg:flex w-full lg:w-[420px] shrink-0 flex-col h-full max-h-full">
               {renderWizardForm()}
             </Card>
           </div>
@@ -788,7 +788,7 @@ export default function ExpensesAndBudgetsPage() {
         {/* PESTAÑA 2: DASHBOARD Y PRESUPUESTOS */}
         {activeTab === 'dashboard' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <Card className="glass-card col-span-full">
+            <Card className="col-span-full">
               <div className="p-5">
                 <h2 className="text-lg font-bold text-on-surface mb-1">Resumen del Mes Actual</h2>
                 <p className="text-sm text-on-surface-variant mb-6">Totales agrupados por categoría principal.</p>
@@ -806,7 +806,7 @@ export default function ExpensesAndBudgetsPage() {
               </div>
             </Card>
             
-            <Card className="glass-card col-span-full flex items-center justify-center py-20 text-on-surface-variant border-dashed">
+            <Card className="col-span-full flex items-center justify-center py-20 text-on-surface-variant">
               <div className="text-center">
                 <span className="material-symbols-outlined text-4xl mb-2 opacity-50">data_usage</span>
                 <p>Módulo de Metas de Presupuesto en desarrollo.</p>
@@ -818,7 +818,7 @@ export default function ExpensesAndBudgetsPage() {
         {/* PESTAÑA 3: ANALISIS DE COSTOS (PRORRATEO) */}
         {activeTab === 'analisis' && (
           <div className="max-w-3xl mx-auto">
-            <Card className="glass-card border-primary/30 relative overflow-hidden shadow-[0_8px_30px_rgba(var(--color-primary),0.15)]">
+            <Card className="relative overflow-hidden">
               <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
               <div className="p-8">
                 <div className="flex items-start gap-4 mb-8">
