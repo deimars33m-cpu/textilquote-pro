@@ -696,7 +696,7 @@ export default function ExpensesAndBudgetsPage() {
       </div>
 
       {/* CONTENIDO SCROLLABLE */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 p-4">
         
         {/* PESTAÑA 1: TRANSACCIONES + FORMULARIO SIDEBAR WIZARD */}
         {activeTab === 'registro' && (
