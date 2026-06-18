@@ -707,7 +707,7 @@ export default function OrdersPage() {
                       required
                     />
                     {clientSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 mt-1 bg-[#0f131a] border border-white/10 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-white/5">
+                      <div className="absolute left-0 right-0 mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-outline-variant/30">
                         {clientSuggestions.map(client => (
                           <button
                             key={client.id}
@@ -719,7 +719,7 @@ export default function OrdersPage() {
                               const nitMatch = client.notes?.match(/NIT:\s*([^\s,]+)/)
                               updateForm('clientNit', nitMatch ? nitMatch[1] : '')
                             }}
-                            className="w-full text-left px-4 py-2 text-xs hover:bg-[#ff5c00]/10 hover:text-primary transition-colors flex justify-between items-center text-white"
+                            className="w-full text-left px-4 py-2 text-xs text-on-surface hover:bg-primary/10 hover:text-primary transition-colors flex justify-between items-center bg-transparent border-none"
                           >
                             <span className="font-semibold">{client.name}</span>
                             {client.phone && <span className="text-[10px] text-on-surface-variant font-mono">{client.phone}</span>}
@@ -909,8 +909,8 @@ export default function OrdersPage() {
                         const qty = orderForm.sizes[size] || 0
                         const price = orderForm.sizePrices[size] || 0
                         return (
-                          <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-[#0f131a] rounded-xl border border-white/5 space-y-2">
-                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                          <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-surface-container rounded-xl border border-outline-variant space-y-2 text-on-surface">
+                            <div className="flex justify-between items-center border-b border-outline-variant/30 pb-1">
                               <span className="text-body-md font-bold text-primary">{size}</span>
                               <div className="flex items-center gap-1">
                                 <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
@@ -919,15 +919,15 @@ export default function OrdersPage() {
                                   min="0"
                                   value={price}
                                   onChange={e => updateSizePrice(size, e.target.value)}
-                                  className="w-12 text-right bg-black/40 border border-white/10 rounded px-1 py-0.5 text-xs text-primary font-mono outline-none focus:border-[#ff5c00]"
+                                  className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs text-on-surface font-mono outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
                                 />
                               </div>
                             </div>
-                            <div className="flex items-center justify-between bg-black/20 rounded-lg p-1 border border-white/5">
+                            <div className="flex items-center justify-between neu-pressed rounded-lg p-1 border border-outline-variant/30">
                               <button
                                 type="button"
                                 onClick={() => updateSizeQty(size, -1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-on-surface-variant hover:text-white cursor-pointer"
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[12px]">remove</span>
                               </button>
@@ -942,12 +942,12 @@ export default function OrdersPage() {
                                     sizes: { ...prev.sizes, [size]: val }
                                   }))
                                 }}
-                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-white outline-none focus:ring-0"
+                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-on-surface outline-none focus:ring-0"
                               />
                               <button
                                 type="button"
                                 onClick={() => updateSizeQty(size, 1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-primary cursor-pointer"
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[12px]">add</span>
                               </button>
@@ -975,8 +975,8 @@ export default function OrdersPage() {
                         const qty = orderForm.sizes[panel] || 0
                         const price = orderForm.sizePrices[panel] || 0
                         return (
-                          <div key={panel} className="min-w-[175px] w-[175px] flex-shrink-0 snap-start p-3 bg-[#0f131a] rounded-xl border border-white/5 space-y-2.5">
-                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                          <div key={panel} className="min-w-[175px] w-[175px] flex-shrink-0 snap-start p-3 bg-surface-container rounded-xl border border-outline-variant space-y-2.5 text-on-surface">
+                            <div className="flex justify-between items-center border-b border-outline-variant/30 pb-1">
                               <span className="text-[11px] font-bold text-primary truncate max-w-[90px]" title={panel}>{panel}</span>
                               <div className="flex items-center gap-1">
                                 <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
@@ -985,16 +985,16 @@ export default function OrdersPage() {
                                   min="0"
                                   value={price}
                                   onChange={e => updateSizePrice(panel, e.target.value)}
-                                  className="w-12 text-right bg-black/40 border border-white/10 rounded px-1 py-0.5 text-xs text-primary font-mono outline-none focus:border-[#ff5c00]"
+                                  className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs text-on-surface font-mono outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
                                 />
                               </div>
                             </div>
                             
-                            <div className="flex items-center justify-between bg-black/20 rounded-lg p-1 border border-white/5">
+                            <div className="flex items-center justify-between neu-pressed rounded-lg p-1 border border-outline-variant/30">
                               <button
                                 type="button"
                                 onClick={() => updateSizeQty(panel, -1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-on-surface-variant hover:text-white cursor-pointer"
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[12px]">remove</span>
                               </button>
@@ -1009,12 +1009,12 @@ export default function OrdersPage() {
                                     sizes: { ...prev.sizes, [panel]: val }
                                   }))
                                 }}
-                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-white outline-none focus:ring-0"
+                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-on-surface outline-none focus:ring-0"
                               />
                               <button
                                 type="button"
                                 onClick={() => updateSizeQty(panel, 1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#0f131a] border border-white/5 active:scale-95 text-xs text-primary cursor-pointer"
+                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[12px]">add</span>
                               </button>
@@ -1028,7 +1028,7 @@ export default function OrdersPage() {
                               const selectVal = isCustom ? 'Otros' : currentVal;
 
                               return (
-                                <div className="space-y-1 pt-1.5 border-t border-white/5">
+                                <div className="space-y-1 pt-1.5 border-t border-outline-variant/30">
                                   <label className="text-[9px] text-on-surface-variant font-mono block">TIPO ITEM:</label>
                                   <select
                                     value={selectVal}
@@ -1036,10 +1036,10 @@ export default function OrdersPage() {
                                       const val = e.target.value
                                       updateFormItemType(panel, val)
                                     }}
-                                    className="w-full bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-white outline-none focus:border-[#ff5c00] cursor-pointer"
+                                    className="w-full bg-transparent border-none rounded px-1 py-0.5 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
                                   >
                                     {options.map(opt => (
-                                      <option key={opt} value={opt} className="bg-[#0f131a] text-white text-[10px]">{opt}</option>
+                                      <option key={opt} value={opt} className="bg-surface text-on-surface text-[10px]">{opt}</option>
                                     ))}
                                   </select>
                                   {selectVal === 'Otros' && (
@@ -1051,7 +1051,7 @@ export default function OrdersPage() {
                                         const val = e.target.value
                                         updateFormItemType(panel, val || 'Otros')
                                       }}
-                                      className="w-full bg-black/50 border border-[#ff5c00]/30 rounded px-1.5 py-0.5 text-[10px] text-white outline-none focus:border-[#ff5c00] font-sans mt-1"
+                                      className="w-full bg-transparent border-none rounded px-1.5 py-1 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-[#ff5c00]/50 font-sans mt-1 neu-pressed"
                                     />
                                   )}
                                 </div>
@@ -1227,53 +1227,60 @@ export default function OrdersPage() {
 
             {/* ─── PASO 5: Monetización y Pago ─── */}
             {currentStep === 5 && (
-              <div className="space-y-4 animate-fade-in">
+              <div className="space-y-4 animate-fade-in text-on-surface">
                 <p className="text-xs text-on-surface-variant/80">
                   Selecciona la fecha, método de pago e ingresa el adelanto.
                 </p>
 
-                <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Fecha de Pedido"
+                  type="date"
+                  value={orderForm.orderDate}
+                  onChange={e => updateForm('orderDate', e.target.value)}
+                  required
+                  className="w-full"
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                   <Input
-                    label="Fecha de Pedido"
-                    type="date"
-                    value={orderForm.orderDate}
-                    onChange={e => updateForm('orderDate', e.target.value)}
-                    required
+                    label="Adelanto (Bs)"
+                    type="number"
+                    min="0"
+                    max={totalAmount}
+                    step="1"
+                    value={orderForm.advanceAmount}
+                    onChange={e => updateForm('advanceAmount', Math.max(0, parseFloat(e.target.value) || 0))}
+                    placeholder="Ej. 100"
+                    suffix="Bs"
+                    className="w-full"
                   />
-                  <div className="space-y-1">
-                    <Input
-                      label="Adelanto (Bs)"
-                      type="number"
-                      min="0"
-                      max={totalAmount}
-                      step="1"
-                      value={orderForm.advanceAmount}
-                      onChange={e => updateForm('advanceAmount', Math.max(0, parseFloat(e.target.value) || 0))}
-                      placeholder="Ej. 100"
-                      suffix="Bs"
-                    />
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => updateForm('advanceAmount', Math.round(totalAmount * 0.5))}
-                        className="flex-1 py-1 rounded bg-[#ff5c00]/10 hover:bg-[#ff5c00]/20 text-[#ff5c00] border border-[#ff5c00]/20 text-[10px] font-bold font-mono active:scale-95 transition-all cursor-pointer text-center"
-                      >
-                        50% ({Math.round(totalAmount * 0.5)} Bs)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateForm('advanceAmount', totalAmount)}
-                        className="flex-1 py-1 rounded bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 text-[#60a5fa] border border-[#3b82f6]/20 text-[10px] font-bold font-mono active:scale-95 transition-all cursor-pointer text-center"
-                      >
-                        100% ({totalAmount} Bs)
-                      </button>
-                    </div>
+                  <div className="flex gap-2 pb-1.5 h-11">
+                    <button
+                      type="button"
+                      onClick={() => updateForm('advanceAmount', Math.round(totalAmount * 0.5))}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center flex items-center justify-center btn-3d-raised ${
+                        Number(orderForm.advanceAmount) === Math.round(totalAmount * 0.5) ? 'btn-3d-active border-[#ff5c00]/50' : ''
+                      }`}
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateForm('advanceAmount', totalAmount)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center flex items-center justify-center btn-3d-raised ${
+                        Number(orderForm.advanceAmount) === totalAmount ? 'btn-3d-active border-[#ff5c00]/50' : ''
+                      }`}
+                    >
+                      100%
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-on-surface-variant font-medium">Saldo Pendiente</label>
-                  <div className="h-10 bg-black/40 border border-white/10 rounded-xl flex items-center justify-end px-3 font-mono text-xs text-error font-bold">
+                <div className="flex flex-col gap-1.5">
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">
+                    Saldo Pendiente
+                  </label>
+                  <div className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-error font-mono font-bold flex items-center justify-start h-10">
                     {formatCurrency(Math.max(0, totalAmount - (parseFloat(orderForm.advanceAmount) || 0)))}
                   </div>
                 </div>
@@ -1313,18 +1320,18 @@ export default function OrdersPage() {
                   rows={2}
                 />
 
-                <div className="bg-[#0f131a] border border-white/5 rounded-xl p-3 space-y-2 text-xs font-mono">
-                  <div className="flex justify-between border-b border-white/5 pb-1 text-on-surface-variant">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-1 text-on-surface-variant">
-                    <span>IGV (18%)</span>
-                    <span>{formatCurrency(igvAmount)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-sm text-primary pt-1">
-                    <span>TOTAL A PAGAR</span>
+                <div className="bg-surface-container border border-outline-variant rounded-xl p-3 space-y-2 text-xs font-mono text-on-surface">
+                  <div className="flex justify-between border-b border-outline-variant/30 pb-1 text-on-surface-variant">
+                    <span>Total a Pagar</span>
                     <span>{formatCurrency(totalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-outline-variant/30 pb-1 text-on-surface-variant">
+                    <span>Adelanto Realizado</span>
+                    <span>{formatCurrency(parseFloat(orderForm.advanceAmount) || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-sm text-[#ff5c00] pt-1">
+                    <span>SALDO PENDIENTE</span>
+                    <span>{formatCurrency(Math.max(0, totalAmount - (parseFloat(orderForm.advanceAmount) || 0)))}</span>
                   </div>
                 </div>
               </div>
@@ -1457,7 +1464,7 @@ export default function OrdersPage() {
           </div>
 
           {/* Filtros */}
-          <Card className="p-4 space-y-4">
+          <Card className="py-2.5 px-4">
             <div className="flex flex-col md:flex-row gap-3">
               <div className="flex-1">
                 <SearchInput
@@ -1515,7 +1522,7 @@ export default function OrdersPage() {
                     <tr className="bg-surface-container-high">
                       <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">N°</th>
                       <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Cliente</th>
-                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Ítem Principal</th>
+                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-[26%] min-w-[220px]">Ítem Principal</th>
                       <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Tipo</th>
                       <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Monto</th>
                       <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Producción</th>
@@ -1570,19 +1577,6 @@ export default function OrdersPage() {
                             <div className="font-semibold text-white">
                               {firstItem?.category || '—'}
                             </div>
-                            <div className="text-xs text-on-surface-variant mt-0.5 font-sans">
-                              {(() => {
-                                const isProduccionTextil = firstItem?.category === 'Producción Textil';
-                                const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
-                                if (isProduccionTextil) {
-                                  return <span className="font-mono text-[#ff5c00] font-bold">VARIAS TALLAS</span>;
-                                } else if (isSublimacionPaneles) {
-                                  return <span className="font-mono text-[#ff5c00] font-bold">VARIOS ITEMS</span>;
-                                } else {
-                                  return firstItem?.name || '—';
-                                }
-                              })()}
-                            </div>
                             {firstItem?.description && (
                               <div className="text-[10px] text-primary/80 italic mt-1 font-mono max-w-[200px] truncate" title={firstItem.description}>
                                 Detalle: {firstItem.description}
@@ -1596,10 +1590,23 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-4 py-3 text-xs font-mono">
                             {order.order_type === 'servicio_diario' ? (
-                              <span className="text-on-surface-variant/80">Servicio Diario</span>
+                              <span className="text-on-surface-variant/80 block">Servicio Diario</span>
                             ) : (
-                              <span className="text-primary font-bold">Cotizado</span>
+                              <span className="text-primary font-bold block">Cotizado</span>
                             )}
+                            <div className="text-[10px] text-on-surface-variant mt-1 font-sans">
+                              {(() => {
+                                const isProduccionTextil = firstItem?.category === 'Producción Textil';
+                                const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
+                                if (isProduccionTextil) {
+                                  return <span className="font-mono text-[#ff5c00] font-bold block">VARIAS TALLAS</span>;
+                                } else if (isSublimacionPaneles) {
+                                  return <span className="font-mono text-[#ff5c00] font-bold block">VARIOS ITEMS</span>;
+                                } else {
+                                  return <span className="block">{firstItem?.name || '—'}</span>;
+                                }
+                              })()}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-sm text-right font-mono font-bold text-white">
                             {formatCurrency(order.total_amount)}
@@ -1620,9 +1627,10 @@ export default function OrdersPage() {
                                 variant="secondary"
                                 size="sm"
                                 onClick={() => setSelectedOrder(order)}
+                                title="Ver Detalle"
+                                className="p-1.5"
                               >
                                 <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                Detalle
                               </Button>
                               <button
                                 onClick={() => handleDeleteOrder(order.id)}
