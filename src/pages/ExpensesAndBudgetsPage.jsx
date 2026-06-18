@@ -330,9 +330,9 @@ export default function ExpensesAndBudgetsPage() {
           {/* PASO 1: Proveedor */}
           {currentStep === 1 && (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex justify-between items-center bg-surface-container-low p-2 rounded-lg border border-outline-variant">
-                <p className="text-[11px] text-on-surface-variant/80">
-                  ¿Es un proveedor rápido?
+              <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
+                <p className="text-[10px] text-on-surface-variant/80">
+                  ¿Proveedor rápido?
                 </p>
                 <button
                   type="button"
@@ -343,10 +343,10 @@ export default function ExpensesAndBudgetsPage() {
                     updateForm('providerEmail', '')
                     setCurrentStep(2)
                   }}
-                  className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                  className="btn-3d-raised px-2 py-1 rounded-md text-[9px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-0.5"
                 >
-                  <span className="material-symbols-outlined text-[14px]">bolt</span>
-                  Usar Proveedor Genérico
+                  <span className="material-symbols-outlined text-[12px]">bolt</span>
+                  Usar Genérico
                 </button>
               </div>
 
@@ -679,30 +679,7 @@ export default function ExpensesAndBudgetsPage() {
   return (
     <>
       <div className="max-w-none mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
-        <style dangerouslySetInnerHTML={{
-          __html: `
-        .btn-3d-raised {
-          background: #f1f5f9;
-          box-shadow: 3px 3px 6px rgba(148, 163, 184, 0.25), -3px -3px 6px rgba(255,255,255,0.95);
-          border-top: 1px solid rgba(255,255,255,0.8);
-          border-left: 1px solid rgba(255,255,255,0.6);
-          border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-          border-right: 1px solid rgba(148, 163, 184, 0.2);
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .btn-3d-raised:hover {
-          color: #ff5c00;
-        }
-        .btn-3d-active {
-          background: rgba(255, 92, 0, 0.05) !important;
-          box-shadow: inset 3px 3px 6px rgba(148, 163, 184, 0.3), 0 0 8px rgba(255, 92, 0, 0.15) !important;
-          border: 1px solid #ff5c00 !important;
-          color: #ff5c00 !important;
-        }
-        .btn-3d-active span {
-          color: #ff5c00 !important;
-        }
-      `}} />
+
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

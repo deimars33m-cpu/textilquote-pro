@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
@@ -26,6 +26,18 @@ const bottomItems = [
 export default function Header() {
   const { user, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  }
 
   return (
     <>
@@ -54,6 +66,16 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            className="p-2.5 rounded-xl neu-raised-sm text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+            title={theme === 'dark' ? 'Modo Claro' : 'Modo Oscuro'}
+          >
+            <span className="material-symbols-outlined text-[18px] text-primary">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
+
           <Link
             to="/quotes/new"
             className="flex items-center gap-1.5 px-4 py-2.5 neu-button-primary text-on-primary rounded-xl font-bold text-sm active:scale-[0.97] transition-transform"

@@ -49,6 +49,146 @@
   --color-surface-tint: #ff7a00;
 }
 
+[data-theme="dark"] {
+  /* ── Colors: Stitch Tech-Glass Dark Theme ── */
+  --color-background: #010e24;
+  --color-surface: #061934;
+  --color-surface-dim: #02132b;
+  --color-surface-bright: #152c4e;
+  --color-surface-variant: #0b203d;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #02132b;
+  --color-surface-container: #061934;
+  --color-surface-container-high: #0b203d;
+  --color-surface-container-highest: #152c4e;
+
+  --color-primary: #00f5ff;
+  --color-primary-container: #00575b;
+  --color-on-primary: #010e24;
+  --color-on-primary-container: #a1faff;
+  --color-primary-fixed: #00f4fe;
+  --color-primary-fixed-dim: #00e5ee;
+  --color-inverse-primary: #00f5ff;
+
+  --color-secondary: #39ff14;
+  --color-secondary-container: #106e00;
+  --color-on-secondary: #010e24;
+  --color-on-secondary-container: #e7ffd9;
+
+  --color-tertiary: #a855f7;
+  --color-tertiary-container: #6f00be;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #d6a9ff;
+
+  --color-error: #ff716c;
+  --color-error-container: #9f0519;
+  --color-on-error: #490006;
+  --color-on-error-container: #ffa8a3;
+
+  --color-on-surface: #dbe6ff;
+  --color-on-surface-variant: #9eabc8;
+  --color-on-background: #dbe6ff;
+  --color-inverse-surface: #f9f9ff;
+  --color-inverse-on-surface: #010e24;
+
+  --color-outline: #3b4861;
+  --color-outline-variant: #102645;
+  --color-surface-tint: #00f5ff;
+}
+
+[data-theme="dark"] body {
+  background-color: #010e24;
+  background-image: radial-gradient(circle at 50% 0%, #0b203d 0%, #010e24 100%) !important;
+}
+
+[data-theme="dark"] .neu-surface {
+  background: linear-gradient(135deg, #0b203d 0%, #061934 100%) !important;
+  box-shadow:
+    6px 6px 12px rgba(0, 0, 0, 0.4),
+    -6px -6px 12px rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .neu-pressed {
+  background: #02132b !important;
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.5),
+    inset -3px -3px 6px rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme="dark"] .neu-raised-sm {
+  background: #061934 !important;
+  box-shadow:
+    3px 3px 6px rgba(0, 0, 0, 0.4),
+    -3px -3px 6px rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .neu-button-primary {
+  background: linear-gradient(135deg, #00f5ff 0%, #00e5ee 100%) !important;
+  color: #010e24 !important;
+  box-shadow:
+    0 10px 20px rgba(0, 245, 255, 0.2),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .neu-button-primary:hover {
+  box-shadow:
+    0 14px 28px rgba(0, 245, 255, 0.3),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] .orange-glow {
+  filter: drop-shadow(0 0 8px rgba(0, 245, 255, 0.5)) !important;
+}
+
+[data-theme="dark"] .progress-bar {
+  background: linear-gradient(90deg, #00f5ff, #39ff14) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 255, 0.5) !important;
+}
+
+[data-theme="dark"] .glass-header {
+  background: rgba(6, 25, 52, 0.75) !important;
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--color-outline);
+}
+
+[data-theme="dark"] .glass-card {
+  background: rgba(6, 25, 52, 0.4) !important;
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme="dark"] .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+[data-theme="dark"] .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .hover\:bg-white\/5:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .hover\:bg-white\/10:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] input:-webkit-autofill,
+[data-theme="dark"] input:-webkit-autofill:hover,
+[data-theme="dark"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #02132b inset !important;
+}
+
 /* ── Base styles ── */
 * {
   margin: 0;
@@ -242,6 +382,53 @@ input:-webkit-autofill:focus {
   font-weight: 700;
   letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+/* ── 3D Raised Buttons ── */
+.btn-3d-raised {
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
+  box-shadow: 3px 3px 6px rgba(148, 163, 184, 0.25), -3px -3px 6px rgba(255,255,255,0.95);
+  border-top: 1px solid rgba(255,255,255,0.8);
+  border-left: 1px solid rgba(255,255,255,0.6);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-3d-raised:hover {
+  color: var(--color-primary);
+}
+.btn-3d-active {
+  background: rgba(255, 92, 0, 0.05) !important;
+  box-shadow: inset 3px 3px 6px rgba(148, 163, 184, 0.3), 0 0 8px rgba(255, 92, 0, 0.15) !important;
+  border: 1px solid var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+.btn-3d-active span {
+  color: var(--color-primary) !important;
+}
+
+[data-theme="dark"] .btn-3d-raised {
+  background: #0b203d !important;
+  color: #dbe6ff !important;
+  box-shadow: 3px 3px 6px rgba(0, 0, 0, 0.45), -3px -3px 6px rgba(255,255,255,0.02) !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  border-left: 1px solid rgba(255,255,255,0.05) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.3) !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+}
+[data-theme="dark"] .btn-3d-active {
+  background: rgba(0, 245, 255, 0.08) !important;
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 245, 255, 0.3) !important;
+  border: 1px solid #00f5ff !important;
+  color: #00f5ff !important;
+}
+[data-theme="dark"] .btn-3d-active span {
+  color: #00f5ff !important;
+}
+[data-theme="dark"] .led-glow-active {
+  background-color: #00f5ff !important;
+  box-shadow: 0 0 8px #00f5ff;
 }
 
 /* ── Animations ── */

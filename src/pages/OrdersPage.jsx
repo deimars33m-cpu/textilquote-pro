@@ -571,28 +571,6 @@ export default function OrdersPage() {
     return (
       <div className="space-y-6">
         <style dangerouslySetInnerHTML={{__html: `
-          .btn-3d-raised {
-            background: #f1f5f9;
-            box-shadow: 3px 3px 6px rgba(148, 163, 184, 0.25), -3px -3px 6px rgba(255,255,255,0.95);
-            border-top: 1px solid rgba(255,255,255,0.8);
-            border-left: 1px solid rgba(255,255,255,0.6);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-            border-right: 1px solid rgba(148, 163, 184, 0.2);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          }
-          .btn-3d-active {
-            background: rgba(255, 92, 0, 0.05) !important;
-            box-shadow: inset 3px 3px 6px rgba(148, 163, 184, 0.3), 0 0 8px rgba(255, 92, 0, 0.15) !important;
-            border: 1px solid #ff5c00 !important;
-            color: #ff5c00 !important;
-          }
-          .btn-3d-active span {
-            color: #ff5c00 !important;
-          }
-          .led-glow-active {
-            background-color: #ff5c00 !important;
-            box-shadow: 0 0 8px #ff5c00;
-          }
           .sizes-scroll-container {
             display: grid;
             grid-template-rows: repeat(2, minmax(0, 1fr));
