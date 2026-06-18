@@ -1,9 +1,9 @@
-// Service Worker básico para habilitar el comportamiento PWA (Instalación y modo standalone sin barra de direcciones)
-const CACHE_NAME = 'textilquote-pro-v1';
+// Service Worker con estrategia Network-First para evitar pantallas en blanco tras despliegues
+const CACHE_NAME = 'nyx-pro-v2';
 const ASSETS = [
   '/',
   '/index.html',
-  '/favicon.svg'
+  '/icon.jpg'
 ];
 
 self.addEventListener('install', (e) => {
@@ -30,20 +30,31 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Solo gestiona peticiones locales
+  // Solo gestiona peticiones locales del mismo origen
   if (e.request.url.startsWith(self.location.origin)) {
+    // Para peticiones POST o peticiones que no sean GET, usamos solo red
+    if (e.request.method !== 'GET') {
+      e.respondWith(fetch(e.request));
+      return;
+    }
+
+    // Estrategia: Network First (Red primero, cae en caché si falla la conexión)
     e.respondWith(
-      caches.match(e.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(e.request).then((response) => {
-          // No cacheamos recursos dinámicos de base de datos o APIs para evitar inconsistencias
+      fetch(e.request)
+        .then((response) => {
+          // Si la respuesta es correcta, guardamos una copia en caché
+          if (response.status === 200 && response.type === 'basic') {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(e.request, responseClone);
+            });
+          }
           return response;
-        }).catch(() => {
-          // Offline fallback
-        });
-      })
+        })
+        .catch(() => {
+          // Si falla la red (offline), servimos desde la caché
+          return caches.match(e.request);
+        })
     );
   }
 });
