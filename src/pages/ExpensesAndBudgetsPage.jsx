@@ -798,31 +798,39 @@ export default function ExpensesAndBudgetsPage() {
                 {/* LISTA DE TRANSACCIONES */}
                 <Card className="flex-1 overflow-hidden flex flex-col w-full h-full">
                   <div className="flex-1 overflow-auto p-0">
-                    {loadingExpenses ? (
-                      <div className="text-center py-20 text-on-surface-variant text-sm flex flex-col items-center gap-2">
-                        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-                        Cargando transacciones...
-                      </div>
-                    ) : filteredExpenses.length === 0 ? (
-                      <div className="text-center py-20 text-on-surface-variant text-sm flex flex-col items-center gap-2">
-                        <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
-                        Aún no hay gastos registrados con estos filtros.
-                      </div>
-                    ) : (
-                      <table className="w-full text-left border-collapse min-w-[650px]">
-                        <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
-                          <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider">
-                            <th className="py-3 px-4 font-medium">Fecha</th>
-                            <th className="py-3 px-4 font-medium">Categoría</th>
-                            <th className="py-3 px-4 font-medium">Ítem</th>
-                            <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
-                            <th className="py-3 px-4 font-medium">Pago</th>
-                            <th className="py-3 px-4 font-medium text-right">Total</th>
-                            <th className="py-3 px-4 text-center">ACCIONES</th>
+                    <table className="w-full text-left border-collapse min-w-[650px]">
+                      <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
+                        <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider">
+                          <th className="py-3 px-4 font-medium">Fecha</th>
+                          <th className="py-3 px-4 font-medium">Categoría</th>
+                          <th className="py-3 px-4 font-medium">Ítem</th>
+                          <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
+                          <th className="py-3 px-4 font-medium">Pago</th>
+                          <th className="py-3 px-4 font-medium text-right">Total</th>
+                          <th className="py-3 px-4 text-center">ACCIONES</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-sm animate-fade-in text-on-surface">
+                        {loadingExpenses ? (
+                          <tr>
+                            <td colSpan="7" className="text-center py-20 text-on-surface-variant text-sm">
+                              <div className="flex flex-col items-center gap-2 justify-center">
+                                <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                                Cargando transacciones...
+                              </div>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5 text-sm animate-fade-in text-on-surface">
-                          {filteredExpenses.map((e) => {
+                        ) : filteredExpenses.length === 0 ? (
+                          <tr>
+                            <td colSpan="7" className="text-center py-20 text-on-surface-variant text-sm">
+                              <div className="flex flex-col items-center gap-2 justify-center">
+                                <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
+                                Aún no hay gastos registrados con estos filtros.
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredExpenses.map((e) => {
                             const catLabel = e.category_label || e.categoryLabel
                             const sub = e.subcategory
                             const item = e.specific_item || e.specificItem
@@ -880,10 +888,10 @@ export default function ExpensesAndBudgetsPage() {
                                 </td>
                               </tr>
                             )
-                          })}
-                        </tbody>
-                      </table>
-                    )}
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </Card>
               </div>

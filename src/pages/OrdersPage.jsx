@@ -1478,38 +1478,46 @@ export default function OrdersPage() {
           </Card>
 
           {/* Tabla de Resultados */}
-          {loading ? (
-            <LoadingSpinner />
-          ) : filteredOrders.length === 0 ? (
-            <EmptyState
-              icon="shopping_bag"
-              title="Sin pedidos registrados"
-              message={
-                dbError === 'orders_table_missing'
-                  ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                  : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
-                  ? 'No se encontraron pedidos con los filtros seleccionados.'
-                  : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
-              }
-            />
-          ) : (
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full zebra-table">
-                  <thead>
-                    <tr className="bg-surface-container-high">
-                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">N°</th>
-                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Cliente</th>
-                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-[26%] min-w-[220px]">Ítem Principal</th>
-                      <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Tipo</th>
-                      <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Monto</th>
-                      <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Producción</th>
-                      <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Pago</th>
-                      <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full zebra-table">
+                <thead>
+                  <tr className="bg-surface-container-high">
+                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">N°</th>
+                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Cliente</th>
+                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-[26%] min-w-[220px]">Ítem Principal</th>
+                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Tipo</th>
+                    <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Monto</th>
+                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Producción</th>
+                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Pago</th>
+                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {loading ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-12">
+                        <LoadingSpinner />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filteredOrders.map(order => {
+                  ) : filteredOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-12">
+                        <EmptyState
+                          icon="shopping_bag"
+                          title="Sin pedidos registrados"
+                          message={
+                            dbError === 'orders_table_missing'
+                              ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
+                              : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
+                              ? 'No se encontraron pedidos con los filtros seleccionados.'
+                              : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredOrders.map(order => {
                       const firstItem = order.order_items?.[0]
                       const orderNum = `#${order.order_number?.toString().padStart(4, '0')}`
 
@@ -1621,12 +1629,12 @@ export default function OrdersPage() {
                           </td>
                         </tr>
                       )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
         </div>
 
