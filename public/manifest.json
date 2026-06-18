@@ -1,21 +1,10 @@
 {
-  "short_name": "TextilQuote",
-  "name": "TextilQuote Pro",
+  "short_name": "NYX Pro",
+  "name": "NYX Pro",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any"
-    },
-    {
-      "src": "/favicon.svg",
-      "type": "image/svg+xml",
-      "sizes": "192x192",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/favicon.svg",
-      "type": "image/svg+xml",
+      "src": "/icon.jpg",
+      "type": "image/jpeg",
       "sizes": "512x512",
       "purpose": "any maskable"
     }

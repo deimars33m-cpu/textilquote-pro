@@ -1615,7 +1615,7 @@ export default function OrdersPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-3">
                               <Button
                                 variant="secondary"
                                 size="sm"
@@ -1624,14 +1624,13 @@ export default function OrdersPage() {
                                 <span className="material-symbols-outlined text-[16px]">visibility</span>
                                 Detalle
                               </Button>
-                              <Button
-                                variant="danger"
-                                size="sm"
+                              <button
                                 onClick={() => handleDeleteOrder(order.id)}
+                                className="text-error hover:text-error/80 transition-colors p-1 flex items-center justify-center"
+                                title="Eliminar pedido"
                               >
-                                <span className="material-symbols-outlined text-[16px]">delete</span>
-                                Eliminar
-                              </Button>
+                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                              </button>
                             </div>
                           </td>
                         </tr>

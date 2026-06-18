@@ -65,10 +65,10 @@ export default function LoginPage() {
             <span className="material-symbols-outlined text-primary text-[32px]">cut</span>
           </div>
           <h1 className="text-display-lg text-on-surface font-bold tracking-tight">
-            Textil<span className="text-primary">Quote</span> Pro
+            NYX <span className="text-primary">Pro</span>
           </h1>
           <p className="text-body-md text-on-surface-variant mt-2">
-            Sistema profesional de cotización textil
+            Sistema profesional de cotización
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-on-surface-variant/60 mt-6">
-          TextilQuote Pro &copy; {new Date().getFullYear()} — Cotización textil inteligente
+          NYX Pro &copy; {new Date().getFullYear()} — Cotización inteligente
         </p>
       </div>
     </div>

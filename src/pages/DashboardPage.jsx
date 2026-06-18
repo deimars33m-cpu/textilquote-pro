@@ -183,11 +183,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Bento Metrics Skeleton */}
-        <div className="grid grid-cols-6 gap-4">
-          <Skeleton variant="rectangular" className="h-[146px] col-span-6 lg:col-span-4" />
-          <Skeleton variant="rectangular" className="h-[146px] col-span-6 sm:col-span-3 lg:col-span-2" />
-          <Skeleton variant="rectangular" className="h-[146px] col-span-6 sm:col-span-3 lg:col-span-3" />
-          <Skeleton variant="rectangular" className="h-[146px] col-span-6 lg:col-span-3" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Skeleton variant="rectangular" className="h-[96px]" />
+          <Skeleton variant="rectangular" className="h-[96px]" />
+          <Skeleton variant="rectangular" className="h-[96px]" />
+          <Skeleton variant="rectangular" className="h-[96px]" />
         </div>
 
         {/* Content grid Skeleton */}
@@ -210,29 +210,29 @@ export default function DashboardPage() {
       label: 'Utilidad Proyectada Total',
       value: formatCurrency(metrics.totalProfit),
       icon: 'precision_manufacturing',
-      highlight: true,
-      colSpan: 'col-span-6 lg:col-span-4',
+      effectClass: 'border-l-4 border-l-primary border-t border-r border-b border-primary/20 shadow-[0_0_12px_rgba(255,122,0,0.15)] bg-white/10',
+      iconColor: 'text-primary'
     },
     {
       label: 'Promedio de Margen',
       value: formatPercent(metrics.avgMargin),
       icon: 'trending_up',
-      highlight: false,
-      colSpan: 'col-span-6 sm:col-span-3 lg:col-span-2',
+      effectClass: 'border-l-4 border-l-emerald-500 border-t border-r border-b border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.15)] bg-white/10',
+      iconColor: 'text-emerald-500'
     },
     {
       label: 'Total Cotizaciones',
       value: metrics.totalQuotes,
       icon: 'description',
-      highlight: false,
-      colSpan: 'col-span-6 sm:col-span-3 lg:col-span-3',
+      effectClass: 'border-l-4 border-l-cyan-500 border-t border-r border-b border-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.15)] bg-white/10',
+      iconColor: 'text-cyan-500'
     },
     {
       label: 'Cotizaciones del Mes',
       value: metrics.monthQuotes,
       icon: 'calendar_month',
-      highlight: false,
-      colSpan: 'col-span-6 lg:col-span-3',
+      effectClass: 'border-l-4 border-l-violet-500 border-t border-r border-b border-violet-500/20 shadow-[0_0_12px_rgba(139,92,246,0.15)] bg-white/10',
+      iconColor: 'text-violet-500'
     },
   ]
 
@@ -246,44 +246,29 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Metrics Bento Grid */}
-      <div className="grid grid-cols-6 gap-4">
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {metricCards.map((card) => (
           <Card
             key={card.label}
-            className={`relative overflow-hidden ${card.colSpan} ${
-              card.highlight
-                ? 'bg-primary-container/10 border-primary-container/30'
-                : ''
-            }`}
+            className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] ${card.effectClass}`}
           >
-            <div className="p-5 relative overflow-hidden h-full flex flex-col justify-between min-h-[120px]">
-              {/* Decorative icon */}
-              {card.highlight && (
-                <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-[96px] opacity-10 select-none text-primary">
-                  {card.icon}
-                </span>
-              )}
-              
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <p className="text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">
+            <div className="p-4 relative overflow-hidden h-full flex flex-col justify-between">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <p className="text-[10px] font-bold font-mono uppercase tracking-wider text-on-surface-variant truncate">
                     {card.label}
                   </p>
-                  <p className={`font-mono font-bold ${
-                    card.highlight ? 'text-headline-md text-primary' : 'text-headline-sm text-on-surface'
-                  }`}>
+                  <p className="font-mono font-bold text-headline-sm text-on-surface truncate">
                     {card.value}
                   </p>
                 </div>
                 
-                {!card.highlight && (
-                  <div className="w-10 h-10 bg-surface-container-high rounded-xl flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-primary text-[22px]">
-                      {card.icon}
-                    </span>
-                  </div>
-                )}
+                <div className="w-8 h-8 bg-surface-container-high rounded-lg flex items-center justify-center shrink-0">
+                  <span className={`material-symbols-outlined text-[18px] ${card.iconColor}`}>
+                    {card.icon}
+                  </span>
+                </div>
               </div>
             </div>
           </Card>

@@ -41,10 +41,10 @@ export default function Header() {
               <span className="material-symbols-outlined text-primary orange-glow text-[18px]">precision_manufacturing</span>
             </div>
             <span className="font-sans text-headline-sm font-bold text-on-surface hidden sm:inline tracking-tight">
-              TextilQuote Pro
+              NYX Pro
             </span>
             <span className="font-sans text-headline-sm font-bold text-on-surface sm:hidden">
-              TQP
+              NYX
             </span>
           </Link>
         </div>
