@@ -483,26 +483,38 @@ export default function ExpensesAndBudgetsPage() {
               <div className="space-y-3">
                 <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Ítem Específico</label>
                 {form.categoryKey && form.subcategory && expenseStructure[form.categoryKey]?.subcategories[form.subcategory] ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {expenseStructure[form.categoryKey].subcategories[form.subcategory].map(item => {
-                      const isActive = form.specificItem === item
-                      return (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => {
-                            updateForm('specificItem', item)
-                            setTimeout(() => setCurrentStep(5), 300)
-                          }}
-                          className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[36px] ${isActive ? 'btn-3d-active bg-secondary/10 border-secondary/50' : 'hover:bg-white/[0.02]'
-                            }`}
-                        >
-                          <span className={`text-[10px] font-bold tracking-wide leading-tight ${isActive ? 'text-secondary' : 'text-on-surface-variant'}`}>
-                            {item}
-                          </span>
-                        </button>
-                      )
-                    })}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {expenseStructure[form.categoryKey].subcategories[form.subcategory].map(item => {
+                        const isActive = form.specificItem === item
+                        return (
+                          <button
+                            key={item}
+                            type="button"
+                            onClick={() => {
+                              updateForm('specificItem', item)
+                              if (item.toLowerCase() !== 'otro') {
+                                setTimeout(() => setCurrentStep(5), 300)
+                              }
+                            }}
+                            className={`btn-3d-raised rounded-lg px-2 py-2 text-center cursor-pointer flex items-center justify-center min-h-[36px] ${isActive ? 'btn-3d-active bg-secondary/10 border-secondary/50' : 'hover:bg-white/[0.02]'
+                              }`}
+                          >
+                            <span className={`text-[10px] font-bold tracking-wide leading-tight ${isActive ? 'text-secondary' : 'text-on-surface-variant'}`}>
+                              {item}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="pt-2 border-t border-outline-variant/30">
+                      <Input
+                        label="Escribir ítem personalizado"
+                        value={form.specificItem}
+                        onChange={e => updateForm('specificItem', e.target.value)}
+                        placeholder="Escribe el nombre del ítem específico..."
+                      />
+                    </div>
                   </div>
                 ) : (
                   <p className="text-xs text-on-surface-variant">Por favor, regresa y selecciona categoría/subcategoría primero.</p>
@@ -643,7 +655,7 @@ export default function ExpensesAndBudgetsPage() {
               Atrás
             </button>
           )}
-          {([1, 5].includes(currentStep)) && (
+          {([1, 4, 5].includes(currentStep)) && (
             <button
               type="button"
               onClick={handleNext}
