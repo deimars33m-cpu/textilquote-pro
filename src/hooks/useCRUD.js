@@ -1,17 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 
 /**
- * Hook genérico para operaciones CRUD con Supabase
+ * Hook genérico para operaciones CRUD con Supabase optimizado con React Query
  * @param {string} table - Nombre de la tabla
  * @param {object} options - Opciones adicionales
  */
 export function useCRUD(table, options = {}) {
   const { user } = useAuth()
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const queryClient = useQueryClient()
 
   const {
     orderBy = 'created_at',
@@ -20,84 +19,101 @@ export function useCRUD(table, options = {}) {
     filters = {},
   } = options
 
-  const fetchData = useCallback(async () => {
-    if (!user) return
-    setLoading(true)
-    setError(null)
+  // Serializar filtros para incluirlos en la Query Key y evitar recargas infinitas si cambia la referencia
+  const serializedFilters = JSON.stringify(filters)
 
-    try {
-      let query = supabase
+  const queryKey = [table, user?.id, { orderBy, orderAsc, select, serializedFilters }]
+
+  // Query para obtener los datos con cache
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      if (!user) return []
+      let q = supabase
         .from(table)
         .select(select)
         .eq('user_id', user.id)
         .order(orderBy, { ascending: orderAsc })
 
-      // Apply additional filters
+      // Aplicar filtros adicionales
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
-          query = query.eq(key, value)
+          q = q.eq(key, value)
         }
       })
 
-      const { data: result, error: fetchError } = await query
-
+      const { data, error: fetchError } = await q
       if (fetchError) throw fetchError
-      setData(result || [])
-    } catch (err) {
-      console.error(`Error fetching ${table}:`, err)
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [user, table, select, orderBy, orderAsc, JSON.stringify(filters)])
+      return data || []
+    },
+    enabled: !!user,
+  })
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  // Mutación para crear registros
+  const createMutation = useMutation({
+    mutationFn: async (record) => {
+      if (!user) throw new Error('Usuario no autenticado')
+      const { data, error } = await supabase
+        .from(table)
+        .insert({ ...record, user_id: user.id })
+        .select()
+        .single()
 
-  const create = async (record) => {
-    if (!user) throw new Error('Usuario no autenticado')
-    const { data: result, error: createError } = await supabase
-      .from(table)
-      .insert({ ...record, user_id: user.id })
-      .select()
-      .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [table] })
+    },
+  })
 
-    if (createError) throw createError
-    setData(prev => [result, ...prev])
-    return result
-  }
+  // Mutación para actualizar registros
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, updates }) => {
+      const { data, error } = await supabase
+        .from(table)
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single()
 
-  const update = async (id, updates) => {
-    const { data: result, error: updateError } = await supabase
-      .from(table)
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [table] })
+    },
+  })
 
-    if (updateError) throw updateError
-    setData(prev => prev.map(item => item.id === id ? result : item))
-    return result
-  }
+  // Mutación para eliminar registros
+  const removeMutation = useMutation({
+    mutationFn: async (id) => {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id)
 
-  const remove = async (id) => {
-    const { error: deleteError } = await supabase
-      .from(table)
-      .delete()
-      .eq('id', id)
+      if (error) throw error
+      return id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [table] })
+    },
+  })
 
-    if (deleteError) throw deleteError
-    setData(prev => prev.filter(item => item.id !== id))
-  }
+  // Wrapper para mantener la firma original update(id, updates)
+  const handleUpdate = useCallback(async (id, updates) => {
+    return updateMutation.mutateAsync({ id, updates })
+  }, [updateMutation])
 
   return {
-    data,
-    loading,
-    error,
-    create,
-    update,
-    remove,
-    refresh: fetchData,
+    data: query.data || [],
+    loading: query.isLoading,
+    error: query.error ? query.error.message : null,
+    create: createMutation.mutateAsync,
+    update: handleUpdate,
+    remove: removeMutation.mutateAsync,
+    refresh: query.refetch,
   }
 }
+

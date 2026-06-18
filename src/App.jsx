@@ -17,6 +17,16 @@ import CompanySettingsPage from '@/pages/CompanySettingsPage'
 import OrdersPage from '@/pages/OrdersPage'
 import GlobalSettingsPage from '@/pages/GlobalSettingsPage'
 import { GlobalSettingsProvider } from '@/context/GlobalSettingsContext'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes cache
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -84,14 +94,16 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <CategoryProvider>
-          <GlobalSettingsProvider>
-            <AppRoutes />
-          </GlobalSettingsProvider>
-        </CategoryProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <CategoryProvider>
+            <GlobalSettingsProvider>
+              <AppRoutes />
+            </GlobalSettingsProvider>
+          </CategoryProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   )
 }

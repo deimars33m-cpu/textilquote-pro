@@ -1,204 +1,289 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import { useCompanySettings } from '@/hooks/useCompanySettings'
-import { calcTotalMonthlyExpenses, toMonthlyAmount } from '@/lib/calculations'
-import { formatCurrency, formatPercent, formatDate, formatQuoteNumber, daysSince, expenseCategories } from '@/lib/formatters'
-import { Card, StatusBadge, Skeleton, AlertBanner, EmptyState } from '@/components/ui/index.jsx'
+import { useGlobalSettings } from '@/context/GlobalSettingsContext'
+import { formatCurrency, formatDate } from '@/lib/formatters'
+import { Card, Skeleton, StatusBadge } from '@/components/ui/index.jsx'
+
+// --- Helpers de Fechas ---
+function getToday() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function getStartOfWeek() {
+  const d = new Date()
+  const day = d.getDay()
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Lunes
+  d.setDate(diff)
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().split('T')[0]
+}
+
+function getStartOfMonth() {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
+}
+
+// --- Progress Ring Component (SVG) ---
+function ProgressRing({ percent, size = 80, strokeWidth = 7, color = '#10b981', bgColor = 'rgba(255,255,255,0.08)' }) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = radius * 2 * Math.PI
+  const clampedPercent = Math.min(percent, 100)
+  const offset = circumference - (clampedPercent / 100) * circumference
+
+  return (
+    <svg width={size} height={size} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={bgColor} strokeWidth={strokeWidth} />
+      <circle
+        cx={size / 2} cy={size / 2} r={radius}
+        fill="none" stroke={color} strokeWidth={strokeWidth}
+        strokeDasharray={circumference} strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 0.8s ease', transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dy="0.35em" className="fill-on-surface text-[13px] font-mono font-bold">
+        {percent > 999 ? '999+' : `${Math.round(percent)}%`}
+      </text>
+    </svg>
+  )
+}
+
+// --- Budget Progress Bar ---
+function BudgetBar({ label, spent, limit, categoryLabel }) {
+  const percent = limit > 0 ? (spent / limit) * 100 : 0
+  const remaining = limit - spent
+  const barColor = percent >= 100 ? '#ef4444' : percent >= 80 ? '#f59e0b' : '#10b981'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-on-surface truncate">{label}</p>
+          <p className="text-[10px] text-on-surface-variant">{categoryLabel}</p>
+        </div>
+        <div className="text-right shrink-0 ml-3">
+          <p className="font-mono text-xs text-on-surface">{formatCurrency(spent)} / {formatCurrency(limit)}</p>
+          <p className={`font-mono text-[10px] font-bold ${remaining < 0 ? 'text-error' : 'text-emerald-500'}`}>
+            {remaining < 0 ? `Excedido: ${formatCurrency(Math.abs(remaining))}` : `Restante: ${formatCurrency(remaining)}`}
+          </p>
+        </div>
+      </div>
+      <div className="w-full h-2.5 bg-surface-container-high rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: barColor }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function GoalBar({ label, current, target, period }) {
+  const percent = target > 0 ? (current / target) * 100 : 0
+  const remaining = target - current
+  const barColor = percent >= 100 ? '#10b981' : percent >= 80 ? '#34d399' : '#60a5fa'
+  const periodLabel = period === 'diario' ? 'Diario' : period === 'semanal' ? 'Semanal' : 'Mensual'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-on-surface truncate">{label}</p>
+          <p className="text-[10px] text-on-surface-variant">Meta {periodLabel}</p>
+        </div>
+        <div className="text-right shrink-0 ml-3">
+          <p className="font-mono text-xs text-on-surface">{formatCurrency(current)} / {formatCurrency(target)}</p>
+          <p className={`font-mono text-[10px] font-bold ${remaining <= 0 ? 'text-emerald-500 font-extrabold animate-pulse' : 'text-on-surface-variant'}`}>
+            {remaining <= 0 ? '¡Meta Cumplida!' : `Restan: ${formatCurrency(remaining)}`}
+          </p>
+        </div>
+      </div>
+      <div className="w-full h-2.5 bg-surface-container-high rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: barColor }}
+        />
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const { settings } = useCompanySettings()
+  const { settings } = useGlobalSettings()
   const navigate = useNavigate()
 
-  const [loading, setLoading] = useState(true)
-  const [metrics, setMetrics] = useState({
-    totalQuotes: 0,
-    monthQuotes: 0,
-    avgMargin: 0,
-    totalProfit: 0,
+  const today = getToday()
+  const startOfWeek = getStartOfWeek()
+  const startOfMonth = getStartOfMonth()
+
+  const budgets = settings?.budgets || []
+  const salesGoals = Array.isArray(settings?.salesGoals) ? settings.salesGoals : []
+  const expenseStructure = settings?.expenseStructure || {}
+
+  // --- Queries con React Query (cacheados 5 min) ---
+
+  // Gastos del mes actual (para presupuestos)
+  const { data: monthExpenses = [], isLoading: loadingExpenses } = useQuery({
+    queryKey: ['dashboard_expenses', user?.id, startOfMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('category_key, subcategory, amount, date')
+        .gte('date', startOfMonth)
+        .order('date', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user,
   })
-  const [topProducts, setTopProducts] = useState([])
-  const [monthlyExpenses, setMonthlyExpenses] = useState({ total: 0, items: [] })
-  const [outdatedMaterials, setOutdatedMaterials] = useState([])
-  const [recentQuotes, setRecentQuotes] = useState([])
 
-  useEffect(() => {
-    if (!user) return
-    fetchDashboardData()
-  }, [user])
+  // Pedidos (para metas de ventas) — del mes con items para categorización
+  const { data: monthOrders = [], isLoading: loadingOrders } = useQuery({
+    queryKey: ['dashboard_orders', user?.id, startOfMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, total_amount, paid_amount, status, created_at, terceros(name), order_items(name, category, product_category, total_price)')
+        .gte('created_at', `${startOfMonth}T00:00:00`)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user,
+  })
 
-  async function fetchDashboardData() {
-    setLoading(true)
-    try {
-      await Promise.all([
-        fetchMetrics(),
-        fetchTopProducts(),
-        fetchExpenses(),
-        fetchOutdatedMaterials(),
-        fetchRecentQuotes(),
-      ])
-    } catch (err) {
-      console.error('Error loading dashboard:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Cotizaciones recientes
+  const { data: recentQuotes = [], isLoading: loadingQuotes } = useQuery({
+    queryKey: ['dashboard_quotes', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('id, quote_number, status, created_at, total_price, terceros(name)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user,
+  })
 
-  async function fetchMetrics() {
-    // Fetch all quotes for metrics
-    const { data: quotes, error } = await supabase
-      .from('quotes')
-      .select('id, created_at, status, quote_items(total_price, real_margin, profit)')
-      .eq('user_id', user.id)
+  const loading = loadingExpenses || loadingOrders || loadingQuotes
 
-    if (error) {
-      console.error('Error fetching quotes:', error)
-      return
-    }
+  // --- Cálculos de Metas de Ventas ---
+  const salesGoalsMetrics = useMemo(() => {
+    return salesGoals.map(goal => {
+      let currentSales = 0
+      const periodStart = goal.period === 'diario'
+        ? today
+        : goal.period === 'semanal'
+          ? startOfWeek
+          : startOfMonth
 
-    const allQuotes = quotes || []
-    const totalQuotes = allQuotes.length
+      monthOrders.forEach(o => {
+        if (!['pendiente', 'en_proceso', 'listo', 'entregado'].includes(o.status)) return
+        const orderDate = o.created_at?.split('T')[0]
+        if (orderDate < periodStart) return
 
-    // Quotes this month
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const monthQuotes = allQuotes.filter(q => q.created_at >= startOfMonth).length
+        if (goal.categoryId === 'global') {
+          // Meta global: suma el total de la orden
+          currentSales += parseFloat(o.total_amount) || 0
+        } else {
+          // Meta por categoría: suma solo el total de los ítems de esa categoría
+          const items = o.order_items || []
+          items.forEach(item => {
+            if (item.category === goal.categoryId) {
+              currentSales += parseFloat(item.total_price) || 0
+            }
+          })
+        }
+      })
 
-    // Average margin and total profit from quote items
-    let totalMargin = 0
-    let marginCount = 0
-    let totalProfit = 0
+      return {
+        ...goal,
+        current: currentSales,
+        percent: goal.targetAmount > 0 ? (currentSales / goal.targetAmount) * 100 : 0
+      }
+    })
+  }, [salesGoals, monthOrders, today, startOfWeek, startOfMonth])
 
-    allQuotes.forEach(q => {
-      if (q.quote_items && q.quote_items.length > 0) {
-        q.quote_items.forEach(item => {
-          if (item.real_margin != null) {
-            totalMargin += parseFloat(item.real_margin) || 0
-            marginCount++
+  // --- Cálculos de Presupuestos ---
+  const budgetMetrics = useMemo(() => {
+    return budgets.map(budget => {
+      let spent = 0
+
+      const periodStart = budget.period === 'semanal' ? startOfWeek : startOfMonth
+
+      monthExpenses.forEach(exp => {
+        // Evaluar a nivel de categoría solamente
+        if (exp.category_key === budget.categoryKey) {
+          if (exp.date >= periodStart) {
+            spent += parseFloat(exp.amount) || 0
           }
-          totalProfit += parseFloat(item.profit) || 0
-        })
+        }
+      })
+
+      return { ...budget, spent }
+    })
+  }, [budgets, monthExpenses, startOfWeek, startOfMonth])
+
+  // --- KPI Cards Financieros ---
+  const financialKPIs = useMemo(() => {
+    let totalRevenue = 0
+    let totalCollected = 0
+    let totalExpensesMonth = 0
+    let ordersCount = 0
+    let todayRevenue = 0
+
+    monthOrders.forEach(o => {
+      if (o.status !== 'cancelado') {
+        totalRevenue += parseFloat(o.total_amount) || 0
+        totalCollected += parseFloat(o.paid_amount) || 0
+        ordersCount++
+        if (o.created_at?.split('T')[0] === today) {
+          todayRevenue += parseFloat(o.total_amount) || 0
+        }
       }
     })
 
-    setMetrics({
-      totalQuotes,
-      monthQuotes,
-      avgMargin: marginCount > 0 ? Math.round((totalMargin / marginCount) * 10) / 10 : 0,
-      totalProfit,
-    })
-  }
-
-  async function fetchTopProducts() {
-    const { data, error } = await supabase
-      .from('quote_items')
-      .select('product_name, quantity, total_price, quotes!inner(user_id)')
-      .eq('quotes.user_id', user.id)
-
-    if (error) {
-      console.error('Error fetching top products:', error)
-      return
-    }
-
-    // Group by product_name and aggregate
-    const grouped = {}
-    ;(data || []).forEach(item => {
-      const name = item.product_name || 'Sin nombre'
-      if (!grouped[name]) {
-        grouped[name] = { name, count: 0, totalQty: 0, totalRevenue: 0 }
-      }
-      grouped[name].count++
-      grouped[name].totalQty += parseInt(item.quantity) || 0
-      grouped[name].totalRevenue += parseFloat(item.total_price) || 0
+    monthExpenses.forEach(exp => {
+      totalExpensesMonth += parseFloat(exp.amount) || 0
     })
 
-    const sorted = Object.values(grouped)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-
-    setTopProducts(sorted)
-  }
-
-  async function fetchExpenses() {
-    const { data, error } = await supabase
-      .from('fixed_expenses')
-      .select('*')
-      .eq('user_id', user.id)
-
-    if (error) {
-      console.error('Error fetching expenses:', error)
-      return
+    return {
+      totalRevenue,
+      totalCollected,
+      totalExpensesMonth,
+      pendingBalance: totalRevenue - totalCollected,
+      ordersCount,
+      todayRevenue,
+      netProfit: totalCollected - totalExpensesMonth
     }
+  }, [monthOrders, monthExpenses, today])
 
-    const expenses = data || []
-    const total = calcTotalMonthlyExpenses(expenses)
-    const activeExpenses = expenses.filter(e => e.is_active).map(e => ({
-      ...e,
-      monthlyAmount: toMonthlyAmount(e.amount, e.frequency),
-    }))
-
-    setMonthlyExpenses({ total, items: activeExpenses })
-  }
-
-  async function fetchOutdatedMaterials() {
-    const { data, error } = await supabase
-      .from('materials')
-      .select('id, name, category, unit_price, price_updated_at')
-      .eq('user_id', user.id)
-
-    if (error) {
-      console.error('Error fetching materials:', error)
-      return
-    }
-
-    const outdated = (data || []).filter(m => daysSince(m.price_updated_at) > 30)
-    setOutdatedMaterials(outdated)
-  }
-
-  async function fetchRecentQuotes() {
-    const { data, error } = await supabase
-      .from('quotes')
-      .select('id, quote_number, status, created_at, clients(name), quote_items(product_name, quantity, total_price, real_margin)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    if (error) {
-      console.error('Error fetching recent quotes:', error)
-      return
-    }
-
-    setRecentQuotes(data || [])
-  }
-
+  // --- Loading State ---
   if (loading) {
     return (
       <div className="space-y-6 animate-fade-in">
-        {/* Header Skeleton */}
         <div className="space-y-2">
           <Skeleton variant="text" className="h-8 w-48" />
           <Skeleton variant="text" className="h-4 w-96 opacity-60" />
         </div>
-
-        {/* Bento Metrics Skeleton */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
         </div>
-
-        {/* Content grid Skeleton */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Skeleton variant="rectangular" className="h-64" />
-            <Skeleton variant="rectangular" className="h-72" />
           </div>
           <div className="space-y-6">
             <Skeleton variant="rectangular" className="h-80" />
-            <Skeleton variant="rectangular" className="h-64" />
           </div>
         </div>
       </div>
@@ -207,34 +292,38 @@ export default function DashboardPage() {
 
   const metricCards = [
     {
-      label: 'Utilidad Proyectada Total',
-      value: formatCurrency(metrics.totalProfit),
-      icon: 'precision_manufacturing',
-      effectClass: 'border-l-4 border-l-primary border-t border-r border-b border-primary/20 shadow-[0_0_12px_rgba(255,122,0,0.15)] bg-white/10',
-      iconColor: 'text-primary'
-    },
-    {
-      label: 'Promedio de Margen',
-      value: formatPercent(metrics.avgMargin),
+      label: 'Ventas del Mes',
+      value: formatCurrency(financialKPIs.totalRevenue),
       icon: 'trending_up',
       effectClass: 'border-l-4 border-l-emerald-500 border-t border-r border-b border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.15)] bg-white/10',
       iconColor: 'text-emerald-500'
     },
     {
-      label: 'Total Cotizaciones',
-      value: metrics.totalQuotes,
-      icon: 'description',
+      label: 'Cobrado del Mes',
+      value: formatCurrency(financialKPIs.totalCollected),
+      icon: 'payments',
       effectClass: 'border-l-4 border-l-cyan-500 border-t border-r border-b border-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.15)] bg-white/10',
       iconColor: 'text-cyan-500'
     },
     {
-      label: 'Cotizaciones del Mes',
-      value: metrics.monthQuotes,
-      icon: 'calendar_month',
-      effectClass: 'border-l-4 border-l-violet-500 border-t border-r border-b border-violet-500/20 shadow-[0_0_12px_rgba(139,92,246,0.15)] bg-white/10',
-      iconColor: 'text-violet-500'
+      label: 'Gastos del Mes',
+      value: formatCurrency(financialKPIs.totalExpensesMonth),
+      icon: 'account_balance_wallet',
+      effectClass: 'border-l-4 border-l-error border-t border-r border-b border-error/20 shadow-[0_0_12px_rgba(239,68,68,0.15)] bg-white/10',
+      iconColor: 'text-error'
+    },
+    {
+      label: 'Utilidad Neta',
+      value: formatCurrency(financialKPIs.netProfit),
+      icon: 'savings',
+      effectClass: `border-l-4 ${financialKPIs.netProfit >= 0 ? 'border-l-primary border-primary/20 shadow-[0_0_12px_rgba(255,122,0,0.15)]' : 'border-l-error border-error/20 shadow-[0_0_12px_rgba(239,68,68,0.15)]'} border-t border-r border-b bg-white/10`,
+      iconColor: financialKPIs.netProfit >= 0 ? 'text-primary' : 'text-error'
     },
   ]
+
+  const globalGoals = salesGoalsMetrics.filter(g => g.categoryId === 'global')
+  const categoryGoals = salesGoalsMetrics.filter(g => g.categoryId !== 'global')
+  const hasGoals = salesGoalsMetrics.length > 0
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -242,7 +331,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-headline-md font-semibold text-on-surface">Dashboard</h1>
         <p className="text-body-md text-on-surface-variant mt-1">
-          Resumen general de tu negocio textil
+          Resumen financiero del mes en curso
         </p>
       </div>
 
@@ -263,7 +352,6 @@ export default function DashboardPage() {
                     {card.value}
                   </p>
                 </div>
-                
                 <div className="w-8 h-8 bg-surface-container-high rounded-lg flex items-center justify-center shrink-0">
                   <span className={`material-symbols-outlined text-[18px] ${card.iconColor}`}>
                     {card.icon}
@@ -277,106 +365,106 @@ export default function DashboardPage() {
 
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: Top products + Recent quotes */}
+        {/* Left column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Top products */}
-          <Card className="p-0">
-            <div className="px-5 py-4 border-b border-outline-variant">
-              <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">star</span>
-                Productos Más Cotizados
-              </h2>
-            </div>
-            {topProducts.length === 0 ? (
-              <EmptyState
-                icon="inventory_2"
-                title="Sin productos aún"
-                message="Las estadísticas de productos aparecerán al crear cotizaciones."
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full zebra-table">
-                  <thead>
-                    <tr className="border-b border-outline-variant">
-                      <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">#</th>
-                      <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Producto</th>
-                      <th className="text-right px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Cotizaciones</th>
-                      <th className="text-right px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Unidades</th>
-                      <th className="text-right px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Ingreso Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topProducts.map((p, idx) => (
-                      <tr key={p.name}>
-                        <td className="px-5 py-3 font-mono text-data-mono-md text-on-surface-variant">{idx + 1}</td>
-                        <td className="px-5 py-3 text-body-md text-on-surface font-medium">{p.name}</td>
-                        <td className="px-5 py-3 text-right font-mono text-data-mono-md text-on-surface">{p.count}</td>
-                        <td className="px-5 py-3 text-right font-mono text-data-mono-md text-on-surface">{p.totalQty.toLocaleString()}</td>
-                        <td className="px-5 py-3 text-right font-mono text-data-mono-md text-primary">{formatCurrency(p.totalRevenue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
 
-          {/* Recent quotes */}
+          {/* === METAS DE VENTAS === */}
+          {hasGoals && (
+            <Card className="p-0">
+              <div className="px-5 py-4 border-b border-outline-variant">
+                <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-500 text-[20px]">flag</span>
+                  Metas de Ventas — Logros
+                </h2>
+              </div>
+              <div className="p-5 space-y-6">
+                {/* Global Goals (Rings) */}
+                {globalGoals.length > 0 && (
+                  <div className={`grid grid-cols-1 ${globalGoals.length === 2 ? 'sm:grid-cols-2' : globalGoals.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-1'} gap-6 justify-items-center`}>
+                    {globalGoals.map(g => (
+                      <div key={g.id} className="flex flex-col items-center gap-3">
+                        <ProgressRing
+                          percent={g.percent}
+                          color={g.percent >= 100 ? '#10b981' : g.period === 'diario' ? '#06b6d4' : g.period === 'semanal' ? '#8b5cf6' : '#ff7a00'}
+                          size={90}
+                        />
+                        <div className="text-center">
+                          <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">
+                            {g.period === 'diario' ? 'Hoy (Global)' : g.period === 'semanal' ? 'Semana (Global)' : 'Mes (Global)'}
+                          </p>
+                          <p className="font-mono text-sm text-on-surface">{formatCurrency(g.current)}</p>
+                          <p className="font-mono text-[10px] text-on-surface-variant">Meta: {formatCurrency(g.targetAmount)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Category-Specific Goals (Bars) */}
+                {categoryGoals.length > 0 && (
+                  <div className={`${globalGoals.length > 0 ? 'pt-5 border-t border-outline-variant' : ''} space-y-4`}>
+                    <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Metas por Categoría</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {categoryGoals.map(g => {
+                        const catData = settings?.categories?.find(c => c.id === g.categoryId)
+                        return (
+                          <GoalBar
+                            key={g.id}
+                            label={catData?.label || g.categoryId}
+                            current={g.current}
+                            target={g.targetAmount}
+                            period={g.period}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* === PEDIDOS RECIENTES DEL MES === */}
           <Card className="p-0">
             <div className="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
               <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary text-[20px]">history</span>
-                Cotizaciones Recientes
+                <span className="material-symbols-outlined text-primary text-[20px]">shopping_bag</span>
+                Pedidos del Mes ({financialKPIs.ordersCount})
               </h2>
               <button
-                onClick={() => navigate('/quotes')}
+                onClick={() => navigate('/orders')}
                 className="text-body-md text-primary hover:text-primary-container transition-colors font-medium"
               >
-                Ver todas →
+                Ver todos →
               </button>
             </div>
-            {recentQuotes.length === 0 ? (
-              <EmptyState
-                icon="receipt_long"
-                title="Sin cotizaciones"
-                message="Crea tu primera cotización para comenzar."
-              />
+            {monthOrders.length === 0 ? (
+              <div className="text-center py-10">
+                <span className="material-symbols-outlined text-on-surface-variant/40 text-[40px] mb-2 block">inventory_2</span>
+                <p className="text-body-md text-on-surface-variant">Sin pedidos este mes.</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full zebra-table">
                   <thead>
                     <tr className="border-b border-outline-variant">
-                      <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant"># Cotización</th>
                       <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Cliente</th>
-                      <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Producto</th>
+                      <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Categoría</th>
                       <th className="text-left px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Estado</th>
                       <th className="text-right px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Monto</th>
+                      <th className="text-right px-5 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Pagado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {recentQuotes.map(q => {
-                      const item = q.quote_items?.[0]
+                    {monthOrders.slice(0, 8).map(o => {
+                      const firstItem = o.order_items?.[0]
                       return (
-                        <tr
-                          key={q.id}
-                          className="cursor-pointer"
-                          onClick={() => navigate(`/quotes/${q.id}`)}
-                        >
-                          <td className="px-5 py-3 font-mono text-data-mono-md text-primary">
-                            {formatQuoteNumber(q.quote_number)}
-                          </td>
-                          <td className="px-5 py-3 text-body-md text-on-surface">
-                            {q.clients?.name || '—'}
-                          </td>
-                          <td className="px-5 py-3 text-body-md text-on-surface-variant">
-                            {item?.product_name || '—'}
-                          </td>
-                          <td className="px-5 py-3">
-                            <StatusBadge status={q.status} />
-                          </td>
-                          <td className="px-5 py-3 text-right font-mono text-data-mono-md text-on-surface">
-                            {item ? formatCurrency(item.total_price) : '—'}
-                          </td>
+                        <tr key={o.id} className="cursor-pointer" onClick={() => navigate('/orders')}>
+                          <td className="px-5 py-3 text-body-md text-on-surface">{o.terceros?.name || '—'}</td>
+                          <td className="px-5 py-3 text-body-md text-on-surface-variant">{firstItem?.name || firstItem?.category || '—'}</td>
+                          <td className="px-5 py-3"><StatusBadge status={o.status} /></td>
+                          <td className="px-5 py-3 text-right font-mono text-data-mono-md text-on-surface">{formatCurrency(o.total_amount)}</td>
+                          <td className="px-5 py-3 text-right font-mono text-data-mono-md text-emerald-500">{formatCurrency(o.paid_amount)}</td>
                         </tr>
                       )
                     })}
@@ -387,113 +475,107 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Right column: Expenses + Alerts */}
+        {/* Right column */}
         <div className="space-y-6">
-          {/* Monthly expenses */}
+
+          {/* === CONTROL DE PRESUPUESTOS === */}
+          {budgetMetrics.length > 0 && (
+            <Card className="p-0">
+              <div className="px-5 py-4 border-b border-outline-variant">
+                <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-error text-[20px]">account_balance_wallet</span>
+                  Control de Presupuestos
+                </h2>
+              </div>
+              <div className="p-5 space-y-5">
+                {budgetMetrics.map(bm => (
+                  <BudgetBar
+                    key={bm.id}
+                    label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
+                    categoryLabel={bm.period === 'semanal' ? 'Presupuesto Semanal' : 'Presupuesto Mensual'}
+                    spent={bm.spent}
+                    limit={bm.limitAmount}
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* === RESUMEN RÁPIDO === */}
           <Card className="p-0">
             <div className="px-5 py-4 border-b border-outline-variant">
               <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">account_balance</span>
-                Gastos Fijos Mensuales
+                <span className="material-symbols-outlined text-cyan-500 text-[20px]">summarize</span>
+                Resumen Rápido
               </h2>
             </div>
             <div className="p-5 space-y-3">
               <div className="flex items-center justify-between p-3 bg-surface-container-high rounded-lg">
-                <span className="text-body-md text-on-surface-variant">Total Mensual</span>
-                <span className="font-mono text-data-mono-lg text-primary font-medium">
-                  {formatCurrency(monthlyExpenses.total)}
+                <span className="text-body-md text-on-surface-variant">Ventas Hoy</span>
+                <span className="font-mono text-data-mono-md text-primary font-medium">
+                  {formatCurrency(financialKPIs.todayRevenue)}
                 </span>
               </div>
-
-              {monthlyExpenses.items.length > 0 ? (
-                <div className="space-y-1">
-                  {monthlyExpenses.items.slice(0, 6).map(exp => (
-                    <div key={exp.id} className="flex items-center justify-between px-3 py-2">
-                      <span className="text-body-md text-on-surface-variant truncate">
-                        {exp.name || expenseCategories[exp.category] || exp.category}
-                      </span>
-                      <span className="font-mono text-data-mono-md text-on-surface shrink-0 ml-3">
-                        {formatCurrency(exp.monthlyAmount)}
-                      </span>
-                    </div>
-                  ))}
-                  {monthlyExpenses.items.length > 6 && (
-                    <p className="text-xs text-on-surface-variant px-3 pt-1">
-                      +{monthlyExpenses.items.length - 6} más...
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-body-md text-on-surface-variant text-center py-4">
-                  No hay gastos fijos registrados.
-                </p>
-              )}
-
-              <div className="pt-2 border-t border-outline-variant">
-                <div className="flex items-center justify-between px-3 py-1">
-                  <span className="text-body-md text-on-surface-variant">Costo/Unidad</span>
-                  <span className="font-mono text-data-mono-md text-on-surface">
-                    {formatCurrency(
-                      settings.monthly_capacity_units
-                        ? monthlyExpenses.total / settings.monthly_capacity_units
-                        : monthlyExpenses.total / 1000
-                    )}
-                  </span>
-                </div>
-                <p className="text-xs text-on-surface-variant/60 px-3">
-                  Capacidad: {settings.monthly_capacity_units?.toLocaleString() || '1,000'} unidades/mes
-                </p>
+              <div className="flex items-center justify-between p-3 bg-surface-container-high rounded-lg">
+                <span className="text-body-md text-on-surface-variant">Saldo Pendiente</span>
+                <span className="font-mono text-data-mono-md text-amber-500 font-medium">
+                  {formatCurrency(financialKPIs.pendingBalance)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-surface-container-high rounded-lg">
+                <span className="text-body-md text-on-surface-variant">Pedidos del Mes</span>
+                <span className="font-mono text-data-mono-md text-on-surface font-medium">
+                  {financialKPIs.ordersCount}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-surface-container-high rounded-lg">
+                <span className="text-body-md text-on-surface-variant">Presupuestos Activos</span>
+                <span className="font-mono text-data-mono-md text-on-surface font-medium">
+                  {budgets.length}
+                </span>
               </div>
             </div>
           </Card>
 
-          {/* Outdated materials alerts */}
+          {/* === COTIZACIONES RECIENTES === */}
           <Card className="p-0">
-            <div className="px-5 py-4 border-b border-outline-variant">
+            <div className="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
               <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-error text-[20px]">notifications_active</span>
-                Alertas de Precios
+                <span className="material-symbols-outlined text-violet-500 text-[20px]">description</span>
+                Cotizaciones
               </h2>
+              <button
+                onClick={() => navigate('/quotes')}
+                className="text-body-md text-primary hover:text-primary-container transition-colors font-medium"
+              >
+                Ver →
+              </button>
             </div>
-            <div className="p-5">
-              {outdatedMaterials.length === 0 ? (
-                <div className="text-center py-4">
-                  <span className="material-symbols-outlined text-tertiary text-[32px] mb-2 block">check_circle</span>
-                  <p className="text-body-md text-on-surface-variant">
-                    Todos los precios están actualizados.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <AlertBanner type="warning">
-                    {outdatedMaterials.length} material(es) con precios desactualizados ({'>'}30 días)
-                  </AlertBanner>
-                  <div className="mt-3 space-y-1">
-                    {outdatedMaterials.slice(0, 8).map(m => (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-surface-container-high transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-body-md text-on-surface truncate">{m.name}</p>
-                          <p className="text-xs text-on-surface-variant">
-                            {formatCurrency(m.unit_price)} · hace {daysSince(m.price_updated_at)} días
-                          </p>
-                        </div>
-                        <span className="material-symbols-outlined text-error text-[18px] shrink-0 ml-2">
-                          warning
-                        </span>
-                      </div>
-                    ))}
-                    {outdatedMaterials.length > 8 && (
-                      <p className="text-xs text-on-surface-variant text-center pt-2">
-                        +{outdatedMaterials.length - 8} materiales más...
-                      </p>
-                    )}
+            {recentQuotes.length === 0 ? (
+              <div className="text-center py-8">
+                <span className="material-symbols-outlined text-on-surface-variant/40 text-[32px] mb-2 block">receipt_long</span>
+                <p className="text-body-md text-on-surface-variant">Sin cotizaciones.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-outline-variant/50">
+                {recentQuotes.map(q => (
+                  <div
+                    key={q.id}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-surface-container-high transition-colors cursor-pointer"
+                    onClick={() => navigate(`/quotes/${q.id}`)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-on-surface font-medium truncate">{q.terceros?.name || 'Sin cliente'}</p>
+                      <p className="text-[10px] text-on-surface-variant">{formatDate(q.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <StatusBadge status={q.status} />
+                      <span className="font-mono text-xs text-on-surface">{formatCurrency(q.total_price)}</span>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>

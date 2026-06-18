@@ -126,7 +126,11 @@ const INITIAL_CATALOG = {
   sizes: INITIAL_SIZES,
   sizesBySubcategory: {}, // Nuevo
   panels: INITIAL_PANELS,
-  expenseStructure: INITIAL_EXPENSE_STRUCTURE
+  expenseStructure: INITIAL_EXPENSE_STRUCTURE,
+  // Presupuestos de gastos: [{id, categoryKey, limitAmount, period}]
+  budgets: [],
+  // Metas de ventas: [{id, categoryId, period, targetAmount}]
+  salesGoals: []
 }
 
 export function GlobalSettingsProvider({ children }) {
@@ -146,7 +150,9 @@ export function GlobalSettingsProvider({ children }) {
           sizes: { ...INITIAL_CATALOG.sizes, ...(parsed.sizes || {}) },
           sizesBySubcategory: parsed.sizesBySubcategory || {},
           panels: { ...INITIAL_CATALOG.panels, ...(parsed.panels || {}) },
-          expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure
+          expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure,
+          budgets: Array.isArray(parsed.budgets) ? parsed.budgets : [],
+          salesGoals: Array.isArray(parsed.salesGoals) ? parsed.salesGoals : []
         })
       } catch (e) {
         console.error('Error parsing settings from LocalStorage', e)
@@ -168,7 +174,9 @@ export function GlobalSettingsProvider({ children }) {
           setSettings(prev => ({
             ...prev,
             ...data.settings,
-            expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure
+            expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure,
+            budgets: Array.isArray(data.settings.budgets) ? data.settings.budgets : [],
+            salesGoals: Array.isArray(data.settings.salesGoals) ? data.settings.salesGoals : []
           }))
         }
       } catch (e) {
@@ -436,6 +444,37 @@ export function GlobalSettingsProvider({ children }) {
     })
   }
 
+  // --- CRUD Presupuestos de Gastos ---
+  const addBudget = (budget) => {
+    setSettings(prev => ({
+      ...prev,
+      budgets: [...prev.budgets, { ...budget, id: Date.now().toString() }]
+    }))
+  }
+
+  const updateBudget = (id, updates) => {
+    setSettings(prev => ({
+      ...prev,
+      budgets: prev.budgets.map(b => b.id === id ? { ...b, ...updates } : b)
+    }))
+  }
+
+  const deleteBudget = (id) => {
+    setSettings(prev => ({
+      ...prev,
+      budgets: prev.budgets.filter(b => b.id !== id)
+    }))
+  }
+
+  // --- Guardar Presupuestos y Metas de Ventas Transaccional ---
+  const saveBudgetsAndGoals = (newBudgets, newSalesGoals) => {
+    setSettings(prev => ({
+      ...prev,
+      budgets: newBudgets,
+      salesGoals: newSalesGoals
+    }))
+  }
+
   return (
     <GlobalSettingsContext.Provider value={{
       settings,
@@ -458,6 +497,7 @@ export function GlobalSettingsProvider({ children }) {
       deleteExpenseSubcategory,
       addExpenseSpecificItem,
       deleteExpenseSpecificItem,
+      saveBudgetsAndGoals,
       isLoaded
     }}>
       {children}

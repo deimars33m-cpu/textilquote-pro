@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { Card, Button, Input, Select, Textarea } from '@/components/ui/index.jsx'
 import { formatCurrency } from '@/lib/formatters'
@@ -40,7 +40,8 @@ export default function GlobalSettingsPage() {
     addExpenseSubcategory,
     deleteExpenseSubcategory,
     addExpenseSpecificItem,
-    deleteExpenseSpecificItem
+    deleteExpenseSpecificItem,
+    saveBudgetsAndGoals
   } = useGlobalSettings()
   
   const [activeTab, setActiveTab] = useState('orders_structure') // 'orders_structure', 'sizes', 'expenses_structure'
@@ -136,7 +137,8 @@ export default function GlobalSettingsPage() {
         {[
           { id: 'orders_structure', label: 'Estructura de Pedidos', icon: 'category' },
           { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
-          { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' }
+          { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' },
+          { id: 'budgets_goals', label: 'Metas y Presupuestos', icon: 'savings' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -286,6 +288,16 @@ export default function GlobalSettingsPage() {
             deleteExpenseSubcategory={deleteExpenseSubcategory}
             addExpenseSpecificItem={addExpenseSpecificItem}
             deleteExpenseSpecificItem={deleteExpenseSpecificItem}
+            showSavedIndicator={showSavedIndicator}
+            savedStatus={savedStatus}
+          />
+        )}
+
+        {/* --- TAB: BUDGETS & GOALS --- */}
+        {activeTab === 'budgets_goals' && (
+          <BudgetsAndGoalsEditor
+            settings={settings}
+            saveBudgetsAndGoals={saveBudgetsAndGoals}
             showSavedIndicator={showSavedIndicator}
             savedStatus={savedStatus}
           />
@@ -1088,6 +1100,367 @@ function OrdersStructureEditor({
           )}
         </div>
 
+      </div>
+    </div>
+  )
+}
+
+function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicator, savedStatus }) {
+  const [localBudgets, setLocalBudgets] = useState([])
+  const [localSalesGoals, setLocalSalesGoals] = useState([])
+
+  const [newBudgetCatKey, setNewBudgetCatKey] = useState('')
+  const [newBudgetLimit, setNewBudgetLimit] = useState('')
+  const [newBudgetPeriod, setNewBudgetPeriod] = useState('mensual')
+
+  const [editingBudgetId, setEditingBudgetId] = useState(null)
+  const [editBudgetLimit, setEditBudgetLimit] = useState('')
+  const [editBudgetPeriod, setEditBudgetPeriod] = useState('mensual')
+
+  const [newGoalCatId, setNewGoalCatId] = useState('global')
+  const [newGoalTarget, setNewGoalTarget] = useState('')
+  const [newGoalPeriod, setNewGoalPeriod] = useState('diario')
+
+  const [editingGoalId, setEditingGoalId] = useState(null)
+  const [editGoalTarget, setEditGoalTarget] = useState('')
+  const [editGoalPeriod, setEditGoalPeriod] = useState('diario')
+
+  const expenseStructure = settings.expenseStructure || {}
+
+  useEffect(() => {
+    if (settings.budgets) {
+      setLocalBudgets(settings.budgets)
+    }
+    if (settings.salesGoals) {
+      setLocalSalesGoals(Array.isArray(settings.salesGoals) ? settings.salesGoals : [])
+    }
+  }, [settings.budgets, settings.salesGoals])
+
+  const handleAddBudget = () => {
+    if (!newBudgetCatKey || !newBudgetLimit) return
+    const newBudget = {
+      id: Date.now().toString(),
+      categoryKey: newBudgetCatKey,
+      limitAmount: parseFloat(newBudgetLimit),
+      period: newBudgetPeriod
+    }
+    setLocalBudgets(prev => [...prev, newBudget])
+    setNewBudgetCatKey('')
+    setNewBudgetLimit('')
+    setNewBudgetPeriod('mensual')
+  }
+
+  const handleStartEditBudget = (budget) => {
+    setEditingBudgetId(budget.id)
+    setEditBudgetLimit(budget.limitAmount.toString())
+    setEditBudgetPeriod(budget.period)
+  }
+
+  const handleSaveEditBudget = (id) => {
+    setLocalBudgets(prev => prev.map(b => b.id === id ? { ...b, limitAmount: parseFloat(editBudgetLimit), period: editBudgetPeriod } : b))
+    setEditingBudgetId(null)
+  }
+
+  const handleDeleteBudget = (id) => {
+    setLocalBudgets(prev => prev.filter(b => b.id !== id))
+  }
+
+  const handleAddSalesGoal = () => {
+    if (!newGoalCatId || !newGoalTarget) return
+    const newGoal = {
+      id: Date.now().toString(),
+      categoryId: newGoalCatId,
+      period: newGoalPeriod,
+      targetAmount: parseFloat(newGoalTarget)
+    }
+    setLocalSalesGoals(prev => [...prev, newGoal])
+    setNewGoalCatId('global')
+    setNewGoalTarget('')
+    setNewGoalPeriod('diario')
+  }
+
+  const handleStartEditGoal = (goal) => {
+    setEditingGoalId(goal.id)
+    setEditGoalTarget(goal.targetAmount.toString())
+    setEditGoalPeriod(goal.period)
+  }
+
+  const handleSaveEditGoal = (id) => {
+    setLocalSalesGoals(prev => prev.map(g => g.id === id ? { ...g, targetAmount: parseFloat(editGoalTarget), period: editGoalPeriod } : g))
+    setEditingGoalId(null)
+  }
+
+  const handleDeleteGoal = (id) => {
+    setLocalSalesGoals(prev => prev.filter(g => g.id !== id))
+  }
+
+  const handleSaveAll = () => {
+    saveBudgetsAndGoals(localBudgets, localSalesGoals)
+    showSavedIndicator('budgets_goals_save')
+    alert('Cambios guardados y aplicados correctamente.')
+  }
+
+  const allSalesCategories = [
+    { id: 'global', label: 'Ventas Globales (Todo)' },
+    ...(settings.categories || [])
+  ]
+
+  return (
+    <div className="space-y-8 animate-fade-in text-on-surface">
+      {/* Header status */}
+      <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+        <h3 className="text-lg font-bold text-on-surface">Metas de Ventas y Presupuestos de Gastos</h3>
+        {savedStatus['budgets_goals_save'] && (
+          <span className="text-tertiary text-xs font-bold animate-pulse flex items-center gap-1">
+            <span className="material-symbols-outlined text-sm">check_circle</span> Cambios guardados
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* === COLUMNA 1: PRESUPUESTOS DE GASTOS === */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-error/10 rounded-lg flex items-center justify-center">
+              <span className="material-symbols-outlined text-error text-[20px]">account_balance_wallet</span>
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-on-surface">Presupuestos de Gastos</h4>
+              <p className="text-xs text-on-surface-variant">Límites de gastos por categoría principal (semanal/mensual).</p>
+            </div>
+          </div>
+
+          {/* List of budgets */}
+          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+            {localBudgets.map(budget => {
+              const catData = expenseStructure[budget.categoryKey]
+              const isEditing = editingBudgetId === budget.id
+
+              return (
+                <div key={budget.id} className="bg-surface-container-low rounded-xl border border-outline-variant p-3">
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-on-surface">
+                        {catData?.label || budget.categoryKey}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={editBudgetLimit}
+                          onChange={e => setEditBudgetLimit(e.target.value)}
+                          className="flex-1 bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
+                          placeholder="Límite Bs"
+                        />
+                        <select
+                          value={editBudgetPeriod}
+                          onChange={e => setEditBudgetPeriod(e.target.value)}
+                          className="bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
+                        >
+                          <option value="mensual">Mensual</option>
+                          <option value="semanal">Semanal</option>
+                        </select>
+                        <button onClick={() => handleSaveEditBudget(budget.id)} className="px-2.5 py-1.5 bg-primary text-on-primary text-xs font-bold rounded hover:brightness-110">Guardar</button>
+                        <button onClick={() => setEditingBudgetId(null)} className="px-2.5 py-1.5 bg-surface-container text-xs rounded hover:bg-surface-container-high text-on-surface-variant">Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="material-symbols-outlined text-[18px] text-primary">pie_chart</span>
+                        <div>
+                          <p className="text-sm font-medium text-on-surface">{catData?.label || budget.categoryKey}</p>
+                          <p className="text-xs text-on-surface-variant">Límite: Bs {budget.limitAmount?.toLocaleString()} / {budget.period}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleStartEditBudget(budget)} className="p-1.5 rounded hover:bg-surface-container-high text-on-surface-variant">
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        <button onClick={() => handleDeleteBudget(budget.id)} className="p-1.5 rounded hover:bg-error/10 text-error/60 hover:text-error">
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {localBudgets.length === 0 && (
+              <p className="text-xs text-on-surface-variant/50 italic py-4 text-center">No hay presupuestos configurados.</p>
+            )}
+          </div>
+
+          {/* Add budget form */}
+          <div className="bg-surface-container-low rounded-xl border border-primary/20 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Agregar Presupuesto</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <select
+                value={newBudgetCatKey}
+                onChange={e => setNewBudgetCatKey(e.target.value)}
+                className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+              >
+                <option value="">Seleccionar categoría...</option>
+                {Object.entries(expenseStructure).map(([key, val]) => (
+                  <option key={key} value={key}>{val.label}</option>
+                ))}
+              </select>
+              <select
+                value={newBudgetPeriod}
+                onChange={e => setNewBudgetPeriod(e.target.value)}
+                className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+              >
+                <option value="mensual">Mensual</option>
+                <option value="semanal">Semanal</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={newBudgetLimit}
+                onChange={e => setNewBudgetLimit(e.target.value)}
+                placeholder="Límite (Bs)"
+                className="flex-1 bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                min="0"
+              />
+              <button
+                onClick={handleAddBudget}
+                disabled={!newBudgetCatKey || !newBudgetLimit}
+                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                Añadir Presupuesto
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* === COLUMNA 2: METAS DE VENTAS === */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+              <span className="material-symbols-outlined text-emerald-500 text-[20px]">flag</span>
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-on-surface">Metas de Ventas</h4>
+              <p className="text-xs text-on-surface-variant">Objetivos de facturación global o por categoría (diario/semanal/mensual).</p>
+            </div>
+          </div>
+
+          {/* List of goals */}
+          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+            {localSalesGoals.map(goal => {
+              const catData = allSalesCategories.find(c => c.id === goal.categoryId)
+              const isEditing = editingGoalId === goal.id
+
+              return (
+                <div key={goal.id} className="bg-surface-container-low rounded-xl border border-outline-variant p-3">
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-on-surface">
+                        {catData?.label || goal.categoryId}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={editGoalTarget}
+                          onChange={e => setEditGoalTarget(e.target.value)}
+                          className="flex-1 bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
+                          placeholder="Meta Bs"
+                        />
+                        <select
+                          value={editGoalPeriod}
+                          onChange={e => setEditGoalPeriod(e.target.value)}
+                          className="bg-surface border border-outline rounded px-2.5 py-1.5 text-xs text-on-surface"
+                        >
+                          <option value="diario">Diario</option>
+                          <option value="semanal">Semanal</option>
+                          <option value="mensual">Mensual</option>
+                        </select>
+                        <button onClick={() => handleSaveEditGoal(goal.id)} className="px-2.5 py-1.5 bg-primary text-on-primary text-xs font-bold rounded hover:brightness-110">Guardar</button>
+                        <button onClick={() => setEditingGoalId(null)} className="px-2.5 py-1.5 bg-surface-container text-xs rounded hover:bg-surface-container-high text-on-surface-variant">Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="material-symbols-outlined text-[18px] text-emerald-500">trending_up</span>
+                        <div>
+                          <p className="text-sm font-medium text-on-surface">{catData?.label || goal.categoryId}</p>
+                          <p className="text-xs text-on-surface-variant">Objetivo: Bs {goal.targetAmount?.toLocaleString()} / {goal.period}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleStartEditGoal(goal)} className="p-1.5 rounded hover:bg-surface-container-high text-on-surface-variant">
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        <button onClick={() => handleDeleteGoal(goal.id)} className="p-1.5 rounded hover:bg-error/10 text-error/60 hover:text-error">
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {localSalesGoals.length === 0 && (
+              <p className="text-xs text-on-surface-variant/50 italic py-4 text-center">No hay metas de ventas configuradas.</p>
+            )}
+          </div>
+
+          {/* Add goal form */}
+          <div className="bg-surface-container-low rounded-xl border border-primary/20 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Agregar Meta de Ventas</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <select
+                value={newGoalCatId}
+                onChange={e => setNewGoalCatId(e.target.value)}
+                className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+              >
+                {allSalesCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+              <select
+                value={newGoalPeriod}
+                onChange={e => setNewGoalPeriod(e.target.value)}
+                className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+              >
+                <option value="diario">Diario</option>
+                <option value="semanal">Semanal</option>
+                <option value="mensual">Mensual</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={newGoalTarget}
+                onChange={e => setNewGoalTarget(e.target.value)}
+                placeholder="Meta (Bs)"
+                className="flex-1 bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                min="0"
+              />
+              <button
+                onClick={handleAddSalesGoal}
+                disabled={!newGoalCatId || !newGoalTarget}
+                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                Añadir Meta
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="pt-6 border-t border-outline-variant flex justify-end">
+        <Button
+          onClick={handleSaveAll}
+          className="px-6 py-2.5 bg-primary text-on-primary font-bold shadow-md hover:brightness-110 flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined">save</span>
+          Guardar y Aplicar Cambios
+        </Button>
       </div>
     </div>
   )
