@@ -43,16 +43,8 @@ export default function GlobalSettingsPage() {
     deleteExpenseSpecificItem
   } = useGlobalSettings()
   
-  const [activeTab, setActiveTab] = useState('categories') // 'categories', 'subcategories', 'sizes', 'panels'
+  const [activeTab, setActiveTab] = useState('orders_structure') // 'orders_structure', 'sizes', 'expenses_structure'
   const [savedStatus, setSavedStatus] = useState({})
-  
-  // Category Form State
-  const [editingCategory, setEditingCategory] = useState(null)
-  const [catForm, setCatForm] = useState({ id: '', label: '', icon: '' })
-
-  const [selectedCatForSub, setSelectedCatForSub] = useState('')
-  const [editingSub, setEditingSub] = useState(null)
-  const [subForm, setSubForm] = useState({ id: '', label: '', icon: '', description: '', unit: 'unidad', unitPrice: 0 })
 
   // Sizes Form State
   const [sizeSubcategory, setSizeSubcategory] = useState('default')
@@ -117,37 +109,7 @@ export default function GlobalSettingsPage() {
     }
   }
 
-  // --- Categories Logic ---
-  const handleSaveCategory = () => {
-    if (!catForm.id || !catForm.label || !catForm.icon) return alert('Llene todos los campos')
-    
-    if (editingCategory) {
-      updateCategory(editingCategory.id, catForm)
-    } else {
-      if (settings.categories.find(c => c.id === catForm.id)) return alert('El ID ya existe')
-      addCategory(catForm)
-    }
-    setEditingCategory(null)
-    setCatForm({ id: '', label: '', icon: '' })
-    showSavedIndicator('category_save')
-  }
 
-  // --- Subcategories Logic ---
-  const handleSaveSubcategory = () => {
-    if (!selectedCatForSub) return alert('Seleccione una categoría principal')
-    if (!subForm.id || !subForm.label || !subForm.icon) return alert('Llene los campos obligatorios')
-    
-    if (editingSub) {
-      updateSubcategory(selectedCatForSub, editingSub.id, subForm)
-    } else {
-      const existing = settings.subcategories[selectedCatForSub] || []
-      if (existing.find(s => s.id === subForm.id)) return alert('El ID ya existe')
-      addSubcategory(selectedCatForSub, subForm)
-    }
-    setEditingSub(null)
-    setSubForm({ id: '', label: '', icon: '', description: '', unit: 'unidad', unitPrice: 0 })
-    showSavedIndicator('subcategory_save')
-  }
 
   return (
     <div className="animate-fade-in space-y-6 max-w-5xl mx-auto pb-10">
@@ -172,8 +134,7 @@ export default function GlobalSettingsPage() {
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-2 bg-surface-container-low p-1.5 rounded-xl border border-outline-variant w-fit">
         {[
-          { id: 'categories', label: 'Categorías Principales', icon: 'category' },
-          { id: 'subcategories', label: 'Subcategorías y Servicios', icon: 'account_tree' },
+          { id: 'orders_structure', label: 'Estructura de Pedidos', icon: 'category' },
           { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
           { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' }
         ].map(tab => (
@@ -181,8 +142,6 @@ export default function GlobalSettingsPage() {
             key={tab.id}
             onClick={() => {
               setActiveTab(tab.id)
-              setEditingCategory(null)
-              setEditingSub(null)
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === tab.id 
@@ -197,248 +156,19 @@ export default function GlobalSettingsPage() {
       </div>
 
       <Card className="p-6 min-h-[400px]">
-        {/* --- TAB: CATEGORIES --- */}
-        {activeTab === 'categories' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <h3 className="text-body-lg font-bold text-on-surface">Categorías Actuales</h3>
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                  {settings.categories.map(cat => (
-                    <div key={cat.id} className="flex items-center justify-between p-3 bg-surface border border-outline-variant rounded-xl">
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-primary">{cat.icon}</span>
-                        <div>
-                          <p className="font-bold text-sm text-on-surface">{cat.label}</p>
-                          <p className="text-[10px] text-on-surface-variant font-mono">{cat.id}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => {
-                          setEditingCategory(cat)
-                          setCatForm(cat)
-                        }} className="p-1.5 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded">
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
-                        </button>
-                        <button onClick={() => {
-                          if(window.confirm('¿Eliminar categoría? Se perderán sus subcategorías.')) deleteCategory(cat.id)
-                        }} className="p-1.5 hover:bg-error/10 text-error rounded">
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 h-fit">
-                <h3 className="text-body-lg font-bold text-on-surface">
-                  {editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}
-                </h3>
-                <Input
-                  label="ID Único (sin espacios)"
-                  value={catForm.id}
-                  onChange={e => setCatForm({...catForm, id: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_')})}
-                  disabled={!!editingCategory}
-                  placeholder="ej_categoria_nueva"
-                />
-                <Input
-                  label="Nombre a mostrar"
-                  value={catForm.label}
-                  onChange={e => setCatForm({...catForm, label: e.target.value})}
-                  placeholder="Ej. Producción Textil"
-                />
-                <Input
-                  label="Icono (Material Symbols)"
-                  value={catForm.icon}
-                  onChange={e => setCatForm({...catForm, icon: e.target.value})}
-                  placeholder="Ej. factory, diamond, print..."
-                />
-                 <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
-                   {editingCategory && (
-                     <Button variant="secondary" onClick={() => {
-                       setEditingCategory(null)
-                       setCatForm({ id: '', label: '', icon: '' })
-                     }}>Cancelar</Button>
-                   )}
-                   <Button onClick={handleSaveCategory}>
-                     Guardar
-                   </Button>
-                 </div>
-                 {savedStatus['category_save'] && <p className="text-tertiary text-xs text-right animate-pulse">Guardado exitosamente!</p>}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* --- TAB: SUBCATEGORIES --- */}
-        {activeTab === 'subcategories' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="flex gap-4 mb-4">
-              <div className="w-64">
-                <Select
-                  label="Selecciona la Categoría Principal"
-                  value={selectedCatForSub}
-                  onChange={e => {
-                    setSelectedCatForSub(e.target.value)
-                    setEditingSub(null)
-                    setSubForm({ id: '', label: '', icon: '', description: '', unit: 'unidad', unitPrice: 0 })
-                  }}
-                  options={[
-                    { value: '', label: 'Seleccionar...' },
-                    ...settings.categories.map(c => ({ value: c.id, label: c.label }))
-                  ]}
-                />
-              </div>
-            </div>
-
-            {selectedCatForSub ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-body-lg font-bold text-on-surface">Subcategorías y Servicios</h3>
-                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2">
-                    {(settings.subcategories[selectedCatForSub] || []).map(sub => (
-                      <div key={sub.id} className="flex items-center justify-between p-3 bg-surface border border-outline-variant rounded-xl hover:border-primary/20">
-                        <div className="flex items-center gap-3">
-                          <span className="material-symbols-outlined text-primary">{sub.icon}</span>
-                          <div>
-                            <p className="font-bold text-sm text-on-surface">{sub.label}</p>
-                            <p className="text-[10px] text-on-surface-variant font-mono">
-                              {sub.id} | {sub.unit === 'tallas' ? 'Tallas' : sub.unit === 'unidad' ? 'Unidad' : sub.unit === 'metro' ? 'Metro' : sub.unit === '1000_puntadas' ? '1K Puntadas' : sub.unit}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {/* Toggle Switch Tallas ON/OFF */}
-                          <div className="flex items-center gap-1.5 mr-2 bg-surface-container border border-outline-variant rounded-lg px-2 py-1">
-                            <span className="text-[9px] text-on-surface-variant/80 font-mono font-bold">TALLAS:</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newUnit = sub.unit === 'tallas' ? 'unidad' : 'tallas';
-                                updateSubcategory(selectedCatForSub, sub.id, {
-                                  ...sub,
-                                  unit: newUnit
-                                });
-                              }}
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                                sub.unit === 'tallas' ? 'bg-[#ff5c00]' : 'bg-slate-300'
-                              }`}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                  sub.unit === 'tallas' ? 'translate-x-4' : 'translate-x-0'
-                                }`}
-                              />
-                            </button>
-                            <span className={`text-[9px] font-bold font-mono ${sub.unit === 'tallas' ? 'text-primary' : 'text-on-surface-variant/50'}`}>
-                              {sub.unit === 'tallas' ? 'ON' : 'OFF'}
-                            </span>
-                          </div>
-
-                          {sub.unitPrice !== undefined && sub.unit !== 'tallas' && (
-                            <span className="text-xs text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">
-                              Bs {sub.unitPrice}
-                            </span>
-                          )}
-                          <button onClick={() => {
-                            setEditingSub(sub)
-                            setSubForm({
-                              id: sub.id, label: sub.label, icon: sub.icon, 
-                              description: sub.description || '', 
-                              unit: sub.unit || 'unidad', 
-                              unitPrice: sub.unitPrice || 0
-                            })
-                          }} className="p-1.5 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded">
-                            <span className="material-symbols-outlined text-[16px]">edit</span>
-                          </button>
-                          <button onClick={() => {
-                            if(window.confirm('¿Eliminar subcategoría?')) deleteSubcategory(selectedCatForSub, sub.id)
-                          }} className="p-1.5 hover:bg-error/10 text-error rounded">
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {!(settings.subcategories[selectedCatForSub] || []).length && (
-                       <p className="text-sm text-on-surface-variant italic py-4 text-center">No hay subcategorías registradas.</p>
-                    )}
-                  </div>
-                </div>
- 
-                <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 h-fit">
-                  <h3 className="text-body-lg font-bold text-on-surface">
-                    {editingSub ? 'Editar Subcategoría' : 'Nueva Subcategoría'}
-                  </h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input
-                      label="ID Único"
-                      value={subForm.id}
-                      onChange={e => setSubForm({...subForm, id: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_')})}
-                      disabled={!!editingSub}
-                      placeholder="ej_subcat"
-                    />
-                    <Input
-                      label="Icono"
-                      value={subForm.icon}
-                      onChange={e => setSubForm({...subForm, icon: e.target.value})}
-                      placeholder="Ej. apparel"
-                    />
-                  </div>
-                  <Input
-                    label="Nombre a mostrar"
-                    value={subForm.label}
-                    onChange={e => setSubForm({...subForm, label: e.target.value})}
-                    placeholder="Ej. Camisetas"
-                  />
-                  <Textarea
-                    label="Descripción corta"
-                    value={subForm.description}
-                    onChange={e => setSubForm({...subForm, description: e.target.value})}
-                    rows={2}
-                  />
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-outline-variant">
-                     <Select
-                        label="Unidad de Cobro"
-                        value={subForm.unit}
-                        onChange={e => setSubForm({...subForm, unit: e.target.value})}
-                        options={[
-                           { value: 'tallas', label: 'Por Tallas (Textil)' },
-                           { value: 'unidad', label: 'Por Unidad / General' },
-                           { value: 'metro', label: 'Por Metro (DTF/Sublimación)' },
-                           { value: '1000_puntadas', label: 'Por 1,000 Puntadas (Bordado)' }
-                        ]}
-                     />
-                     <Input
-                        label="Precio Sugerido (Bs)"
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={subForm.unitPrice}
-                        onChange={e => setSubForm({...subForm, unitPrice: parseFloat(e.target.value) || 0})}
-                     />
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
-                    {editingSub && (
-                      <Button variant="secondary" onClick={() => {
-                        setEditingSub(null)
-                        setSubForm({ id: '', label: '', icon: '', description: '', unit: 'unidad', unitPrice: 0 })
-                      }}>Cancelar</Button>
-                    )}
-                    <Button onClick={handleSaveSubcategory}>
-                      Guardar
-                    </Button>
-                  </div>
-                  {savedStatus['subcategory_save'] && <p className="text-tertiary text-xs text-right animate-pulse">Guardado exitosamente!</p>}
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 text-center bg-surface-container-low rounded-xl border border-outline-variant">
-                <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-2">category</span>
-                <p className="text-on-surface-variant">Selecciona una categoría principal para ver y editar sus subcategorías o servicios.</p>
-              </div>
-            )}
-          </div>
+        {/* --- TAB: ORDERS STRUCTURE --- */}
+        {activeTab === 'orders_structure' && (
+          <OrdersStructureEditor 
+            settings={settings}
+            addCategory={addCategory}
+            updateCategory={updateCategory}
+            deleteCategory={deleteCategory}
+            addSubcategory={addSubcategory}
+            updateSubcategory={updateSubcategory}
+            deleteSubcategory={deleteSubcategory}
+            showSavedIndicator={showSavedIndicator}
+            savedStatus={savedStatus}
+          />
         )}
 
         {/* --- TAB: SIZES --- */}
@@ -872,6 +602,489 @@ function ExpensesStructureEditor({
             </>
           ) : (
             <p className="text-xs text-on-surface-variant italic py-10 text-center">Seleccione categoría y subcategoría.</p>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
+function OrdersStructureEditor({
+  settings,
+  addCategory,
+  updateCategory,
+  deleteCategory,
+  addSubcategory,
+  updateSubcategory,
+  deleteSubcategory,
+  showSavedIndicator,
+  savedStatus
+}) {
+  const [selectedCat, setSelectedCat] = useState('')
+  
+  // Category Form States
+  const [newCatId, setNewCatId] = useState('')
+  const [newCatLabel, setNewCatLabel] = useState('')
+  const [newCatIcon, setNewCatIcon] = useState('')
+  
+  const [editingCatId, setEditingCatId] = useState(null)
+  const [editingCatLabel, setEditingCatLabel] = useState('')
+  const [editingCatIcon, setEditingCatIcon] = useState('')
+
+  // Subcategory Form States
+  const [newSubId, setNewSubId] = useState('')
+  const [newSubLabel, setNewSubLabel] = useState('')
+  const [newSubIcon, setNewSubIcon] = useState('')
+  const [newSubDesc, setNewSubDesc] = useState('')
+  const [newSubUnit, setNewSubUnit] = useState('unidad')
+  const [newSubPrice, setNewSubPrice] = useState(0)
+
+  const [editingSubId, setEditingSubId] = useState(null)
+  const [editingSubLabel, setEditingSubLabel] = useState('')
+  const [editingSubIcon, setEditingSubIcon] = useState('')
+  const [editingSubDesc, setEditingSubDesc] = useState('')
+  const [editingSubUnit, setEditingSubUnit] = useState('unidad')
+  const [editingSubPrice, setEditingSubPrice] = useState(0)
+
+  // Actions for Categories
+  const handleAddCat = () => {
+    if (!newCatId.trim() || !newCatLabel.trim() || !newCatIcon.trim()) {
+      return alert('Llene todos los campos de la categoría')
+    }
+    const formattedId = newCatId.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    if (settings.categories.find(c => c.id === formattedId)) {
+      return alert('El ID de categoría ya existe')
+    }
+    addCategory({ id: formattedId, label: newCatLabel.trim(), icon: newCatIcon.trim() })
+    setNewCatId('')
+    setNewCatLabel('')
+    setNewCatIcon('')
+    setSelectedCat(formattedId)
+    showSavedIndicator('category_save')
+  }
+
+  const handleUpdateCat = (catId) => {
+    if (!editingCatLabel.trim() || !editingCatIcon.trim()) {
+      return alert('Llene todos los campos')
+    }
+    updateCategory(catId, { id: catId, label: editingCatLabel.trim(), icon: editingCatIcon.trim() })
+    setEditingCatId(null)
+    showSavedIndicator('category_save')
+  }
+
+  // Actions for Subcategories
+  const handleAddSub = () => {
+    if (!selectedCat) return alert('Seleccione una categoría primero')
+    if (!newSubId.trim() || !newSubLabel.trim() || !newSubIcon.trim()) {
+      return alert('Llene los campos obligatorios de la subcategoría')
+    }
+    const formattedId = newSubId.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    const existing = settings.subcategories[selectedCat] || []
+    if (existing.find(s => s.id === formattedId)) {
+      return alert('El ID de subcategoría ya existe')
+    }
+    addSubcategory(selectedCat, {
+      id: formattedId,
+      label: newSubLabel.trim(),
+      icon: newSubIcon.trim(),
+      description: newSubDesc.trim(),
+      unit: newSubUnit,
+      unitPrice: parseFloat(newSubPrice) || 0
+    })
+    setNewSubId('')
+    setNewSubLabel('')
+    setNewSubIcon('')
+    setNewSubDesc('')
+    setNewSubUnit('unidad')
+    setNewSubPrice(0)
+    showSavedIndicator('subcategory_save')
+  }
+
+  const handleUpdateSub = (subId) => {
+    if (!editingSubLabel.trim() || !editingSubIcon.trim()) {
+      return alert('Llene los campos obligatorios')
+    }
+    updateSubcategory(selectedCat, subId, {
+      id: subId,
+      label: editingSubLabel.trim(),
+      icon: editingSubIcon.trim(),
+      description: editingSubDesc.trim(),
+      unit: editingSubUnit,
+      unitPrice: parseFloat(editingSubPrice) || 0
+    })
+    setEditingSubId(null)
+    showSavedIndicator('subcategory_save')
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in text-on-surface">
+      <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+        <h3 className="text-lg font-bold text-on-surface">Estructura de Categorías de Pedidos</h3>
+        {(savedStatus['category_save'] || savedStatus['subcategory_save']) && (
+          <span className="text-tertiary text-xs font-bold animate-pulse flex items-center gap-1">
+            <span className="material-symbols-outlined text-sm">check_circle</span> Cambios guardados
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        {/* COLUMNA 1: Categorías Principales */}
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
+          <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">1. Categorías de Pedidos</h4>
+          
+          <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+            {settings.categories.map(cat => {
+              const isActive = selectedCat === cat.id
+              const isEditing = editingCatId === cat.id
+
+              if (isEditing) {
+                return (
+                  <div key={cat.id} className="p-3 bg-surface-container border border-primary/30 rounded-xl space-y-2" onClick={e => e.stopPropagation()}>
+                    <p className="text-[10px] font-bold uppercase text-primary font-mono">Editar Categoría: {cat.id}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nombre"
+                        value={editingCatLabel}
+                        onChange={e => setEditingCatLabel(e.target.value)}
+                        className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Icono"
+                        value={editingCatIcon}
+                        onChange={e => setEditingCatIcon(e.target.value)}
+                        className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-1">
+                      <button 
+                        onClick={() => setEditingCatId(null)} 
+                        className="px-2 py-1 bg-surface-container-high text-[10px] rounded hover:bg-outline-variant text-on-surface-variant"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        onClick={() => handleUpdateCat(cat.id)} 
+                        className="px-2.5 py-1 bg-primary text-[10px] font-bold text-on-primary rounded hover:brightness-110"
+                      >
+                        Guardar
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <div 
+                  key={cat.id} 
+                  className={`flex items-center justify-between p-3 rounded-xl border text-sm transition-all cursor-pointer ${
+                    isActive 
+                      ? 'bg-primary/10 border-primary/40 text-primary' 
+                      : 'bg-surface border-outline-variant text-on-surface-variant hover:text-on-surface hover:border-outline'
+                  }`}
+                  onClick={() => setSelectedCat(cat.id)}
+                >
+                  <div className="flex items-center gap-3 truncate">
+                    <span className="material-symbols-outlined text-primary">{cat.icon}</span>
+                    <div className="truncate">
+                      <p className="font-bold text-xs">{cat.label}</p>
+                      <p className="text-[9px] font-mono opacity-50">{cat.id}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <button 
+                      onClick={() => {
+                        setEditingCatId(cat.id)
+                        setEditingCatLabel(cat.label)
+                        setEditingCatIcon(cat.icon)
+                      }}
+                      className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (window.confirm(`¿Eliminar la categoría "${cat.label}" y todas sus subcategorías?`)) {
+                          deleteCategory(cat.id)
+                          if (selectedCat === cat.id) {
+                            setSelectedCat('')
+                          }
+                          showSavedIndicator('category_save')
+                        }
+                      }}
+                      className="p-1 hover:bg-error/10 rounded text-error"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Formulario Agregar Categoría (Inline al final de la columna) */}
+          <div className="bg-surface-container p-3 rounded-xl border border-outline-variant space-y-2">
+            <p className="text-[10px] font-bold uppercase text-on-surface-variant font-mono">Nueva Categoría</p>
+            <input
+              type="text"
+              placeholder="id_unico (ej: camisetas)"
+              value={newCatId}
+              onChange={e => setNewCatId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+              className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs font-mono text-on-surface"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder="Nombre (ej: Camisetas)"
+                value={newCatLabel}
+                onChange={e => setNewCatLabel(e.target.value)}
+                className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+              />
+              <input
+                type="text"
+                placeholder="Icono (ej: apparel)"
+                value={newCatIcon}
+                onChange={e => setNewCatIcon(e.target.value)}
+                className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+              />
+            </div>
+            <button 
+              onClick={handleAddCat}
+              className="w-full py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-xs font-bold transition-all"
+            >
+              Agregar Categoría
+            </button>
+          </div>
+        </div>
+
+        {/* COLUMNA 2: Subcategorías */}
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
+          <h4 className="text-xs font-bold text-primary font-mono uppercase tracking-wider">2. Subcategorías y Servicios</h4>
+          
+          {selectedCat ? (
+            <>
+              <p className="text-[11px] text-on-surface-variant">
+                En categoría: <strong className="text-on-surface">{settings.categories.find(c => c.id === selectedCat)?.label}</strong>
+              </p>
+              
+              <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                {(settings.subcategories[selectedCat] || []).map(sub => {
+                  const isEditing = editingSubId === sub.id
+
+                  if (isEditing) {
+                    return (
+                      <div key={sub.id} className="p-3 bg-surface-container border border-primary/30 rounded-xl space-y-2" onClick={e => e.stopPropagation()}>
+                        <p className="text-[10px] font-bold uppercase text-primary font-mono">Editar Subcategoría: {sub.id}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            placeholder="Nombre"
+                            value={editingSubLabel}
+                            onChange={e => setEditingSubLabel(e.target.value)}
+                            className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Icono"
+                            value={editingSubIcon}
+                            onChange={e => setEditingSubIcon(e.target.value)}
+                            className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                          />
+                        </div>
+                        <textarea
+                          placeholder="Descripción corta"
+                          value={editingSubDesc}
+                          onChange={e => setEditingSubDesc(e.target.value)}
+                          rows={2}
+                          className="w-full bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <select
+                            value={editingSubUnit}
+                            onChange={e => setEditingSubUnit(e.target.value)}
+                            className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface"
+                          >
+                            <option value="tallas">Por Tallas (Textil)</option>
+                            <option value="unidad">Por Unidad / General</option>
+                            <option value="metro">Por Metro (DTF/Sub)</option>
+                            <option value="1000_puntadas">Por 1K Puntadas</option>
+                          </select>
+                          <input
+                            type="number"
+                            placeholder="Precio (Bs)"
+                            value={editingSubPrice}
+                            onChange={e => setEditingSubPrice(e.target.value)}
+                            className="bg-surface border border-outline-variant rounded px-2 py-1 text-xs text-on-surface font-mono"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-1">
+                          <button 
+                            onClick={() => setEditingSubId(null)} 
+                            className="px-2 py-1 bg-surface-container-high text-[10px] rounded hover:bg-outline-variant text-on-surface-variant"
+                          >
+                            Cancelar
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateSub(sub.id)} 
+                            className="px-2.5 py-1 bg-primary text-[10px] font-bold text-on-primary rounded hover:brightness-110"
+                          >
+                            Guardar
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div 
+                      key={sub.id} 
+                      className="flex flex-col p-3 bg-surface border border-outline-variant rounded-xl hover:border-primary/20 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 truncate">
+                          <span className="material-symbols-outlined text-primary">{sub.icon}</span>
+                          <div className="truncate">
+                            <p className="font-bold text-xs text-on-surface">{sub.label}</p>
+                            <p className="text-[9px] text-on-surface-variant font-mono">
+                              {sub.id} | {sub.unit === 'tallas' ? 'Tallas' : sub.unit === 'unidad' ? 'Unidad' : sub.unit === 'metro' ? 'Metro' : sub.unit === '1000_puntadas' ? '1K Puntadas' : sub.unit}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                          {/* Toggle Switch Tallas ON/OFF */}
+                          <div className="flex items-center gap-1 mr-2 bg-surface-container-low border border-outline-variant rounded-lg px-2 py-0.5">
+                            <span className="text-[8px] text-on-surface-variant/80 font-mono font-bold">TALLAS:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newUnit = sub.unit === 'tallas' ? 'unidad' : 'tallas';
+                                updateSubcategory(selectedCat, sub.id, {
+                                  ...sub,
+                                  unit: newUnit
+                                });
+                              }}
+                              className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                                sub.unit === 'tallas' ? 'bg-[#ff5c00]' : 'bg-slate-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                  sub.unit === 'tallas' ? 'translate-x-3' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          {sub.unitPrice !== undefined && sub.unit !== 'tallas' && (
+                            <span className="text-[10px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded mr-1">
+                              Bs {sub.unitPrice}
+                            </span>
+                          )}
+
+                          <button 
+                            onClick={() => {
+                              setEditingSubId(sub.id)
+                              setEditingSubLabel(sub.label)
+                              setEditingSubIcon(sub.icon)
+                              setEditingSubDesc(sub.description || '')
+                              setEditingSubUnit(sub.unit || 'unidad')
+                              setEditingSubPrice(sub.unitPrice || 0)
+                            }} 
+                            className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-primary"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">edit</span>
+                          </button>
+                          <button 
+                            onClick={() => {
+                              if(window.confirm('¿Eliminar subcategoría?')) {
+                                deleteSubcategory(selectedCat, sub.id)
+                                showSavedIndicator('subcategory_save')
+                              }
+                            }} 
+                            className="p-1 hover:bg-error/10 text-error rounded"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                      {sub.description && (
+                        <p className="text-[11px] text-on-surface-variant bg-surface-container-low p-1.5 rounded border border-outline-variant/50 leading-relaxed italic">
+                          {sub.description}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+                {!(settings.subcategories[selectedCat] || []).length && (
+                  <p className="text-xs text-on-surface-variant italic py-4 text-center">No hay subcategorías registradas.</p>
+                )}
+              </div>
+
+              {/* Formulario Agregar Subcategoría */}
+              <div className="bg-surface-container p-3 rounded-xl border border-outline-variant space-y-2">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant font-mono">Nueva Subcategoría</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="id_unico (ej: polo_manga_corta)"
+                    value={newSubId}
+                    onChange={e => setNewSubId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+                    className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs font-mono text-on-surface"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Icono (ej: apparel)"
+                    value={newSubIcon}
+                    onChange={e => setNewSubIcon(e.target.value)}
+                    className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Nombre a mostrar (ej: Polo Manga Corta)"
+                  value={newSubLabel}
+                  onChange={e => setNewSubLabel(e.target.value)}
+                  className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+                />
+                <textarea
+                  placeholder="Descripción corta"
+                  value={newSubDesc}
+                  onChange={e => setNewSubDesc(e.target.value)}
+                  rows={1}
+                  className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newSubUnit}
+                    onChange={e => setNewSubUnit(e.target.value)}
+                    className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface"
+                  >
+                    <option value="tallas">Por Tallas (Textil)</option>
+                    <option value="unidad">Por Unidad / General</option>
+                    <option value="metro">Por Metro (DTF/Sublimación)</option>
+                    <option value="1000_puntadas">Por 1,000 Puntadas (Bordado)</option>
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Precio (Bs)"
+                    value={newSubPrice}
+                    onChange={e => setNewSubPrice(e.target.value)}
+                    className="w-full bg-surface border border-outline-variant rounded px-2.5 py-1.5 text-xs text-on-surface font-mono"
+                  />
+                </div>
+                <button 
+                  onClick={handleAddSub}
+                  className="w-full py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-xs font-bold transition-all"
+                >
+                  Agregar Subcategoría
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-on-surface-variant italic py-10 text-center">Seleccione una categoría principal.</p>
           )}
         </div>
 
