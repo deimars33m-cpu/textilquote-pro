@@ -4,14 +4,18 @@ import { useAuth } from '@/context/AuthContext'
 
 const navItems = [
   { path: '/', icon: 'dashboard', label: 'Dashboard' },
+  { type: 'divider' },
+  { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos y Presup.' },
+  { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
+  { path: '/terceros', icon: 'groups', label: 'Terceros' },
+  { type: 'divider' },
   { path: '/materials', icon: 'inventory_2', label: 'Materiales' },
   { path: '/processes', icon: 'precision_manufacturing', label: 'Procesos' },
-  { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos y Presup.' },
+  { type: 'divider' },
   { path: '/templates', icon: 'category', label: 'Plantillas' },
-  { path: '/terceros', icon: 'groups', label: 'Terceros' },
   { path: '/quotes/new', icon: 'calculate', label: 'Cotizador' },
   { path: '/quotes', icon: 'description', label: 'Historial' },
-  { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
+  { type: 'divider' },
   { path: '/settings/global', icon: 'admin_panel_settings', label: 'Configuración Global' },
 ]
 
@@ -96,24 +100,29 @@ export default function Header() {
 
             {/* Links de Navegación */}
             <nav className="flex-1 flex flex-col gap-1 overflow-y-auto pr-1">
-              {navItems.map(item => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setMenuOpen(false)}
-                  end={item.path === '/'}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200
-                    ${isActive
-                      ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_10px_rgba(255,92,0,0.1)]'
-                      : 'text-on-surface-variant hover:bg-white/5 hover:text-primary'
-                    }`
-                  }
-                >
-                  <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
+              {navItems.map((item, idx) => {
+                if (item.type === 'divider') {
+                  return <div key={`div-${idx}`} className="border-t border-outline-variant/40 my-1.5 mx-2" />
+                }
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setMenuOpen(false)}
+                    end={item.path === '/'}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200
+                      ${isActive
+                        ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_10px_rgba(255,92,0,0.1)]'
+                        : 'text-on-surface-variant hover:bg-white/5 hover:text-primary'
+                      }`
+                    }
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </NavLink>
+                )
+              })}
             </nav>
 
             {/* Bottom Config & Logout */}
