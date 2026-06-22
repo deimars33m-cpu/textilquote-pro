@@ -682,15 +682,27 @@ export default function ExpensesAndBudgetsPage() {
                       Pagar 100%
                     </button>
                   </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    placeholder="0.00"
-                    value={form.advanceAmount}
-                    onChange={(e) => updateForm('advanceAmount', e.target.value)}
-                    className="font-mono"
-                  />
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="0.00"
+                      value={form.advanceAmount}
+                      onChange={(e) => updateForm('advanceAmount', e.target.value)}
+                      className={`w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none transition-all duration-200 font-mono ${
+                        (!form.advanceAmount || Number(form.advanceAmount) === 0)
+                          ? 'ring-2 ring-red-500/80 shadow-[0_0_12px_rgba(239,68,68,0.3)] bg-red-500/5'
+                          : 'ring-1 ring-emerald-500/50 bg-emerald-500/5 focus:ring-2 focus:ring-emerald-500'
+                      }`}
+                    />
+                  </div>
+                  {(!form.advanceAmount || Number(form.advanceAmount) === 0) && (
+                    <p className="text-[10px] text-red-400 mt-1.5 ml-1 flex items-center gap-1 animate-pulse">
+                      <span className="material-symbols-outlined text-[12px]">warning</span>
+                      Alerta: Monto de pago en Bs 0 (Se registrará como pendiente)
+                    </p>
+                  )}
                 </div>
               </div>
 
