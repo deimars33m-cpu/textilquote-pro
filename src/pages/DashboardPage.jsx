@@ -223,6 +223,163 @@ function GoalRingCard({ label, current, target, period }) {
   )
 }
 
+// --- Doughnut Chart Component (SVG with Hover Interaction) ---
+function DoughnutChart({ data, total, title, icon, iconColor }) {
+  const [hoveredIndex, setHoveredIndex] = useState(-1)
+  
+  const radius = 50
+  const strokeWidth = 14
+  const size = 130
+  const circumference = 2 * Math.PI * radius // ~314.16
+  
+  const colors = [
+    'var(--color-primary)',
+    'var(--color-secondary)',
+    'var(--color-tertiary)',
+    '#38bdf8', // Light blue
+    '#f59e0b', // Amber
+    '#ec4899', // Pink
+    '#a855f7'  // Purple
+  ]
+
+  let accumulatedPercent = 0
+
+  return (
+    <Card className="p-5 flex flex-col justify-between h-full bg-surface-container-low/30 backdrop-blur-sm border border-outline-variant/40 hover:border-primary/10 transition-all duration-300">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-4">
+        <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+          <span className={`material-symbols-outlined text-[18px] ${iconColor}`}>
+            {icon}
+          </span>
+          {title}
+        </h3>
+        <span className="font-mono text-xs font-bold text-on-surface bg-surface-container-high/40 px-2 py-0.5 rounded-full">
+          Total: {formatCurrency(total)}
+        </span>
+      </div>
+
+      {total === 0 ? (
+        <div className="flex-grow flex flex-col items-center justify-center py-6 text-center">
+          <span className="material-symbols-outlined text-on-surface-variant/20 text-[48px] mb-2 block">
+            payments
+          </span>
+          <p className="text-xs text-on-surface-variant italic">Sin gastos registrados este mes</p>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row items-center gap-6 flex-grow">
+          {/* SVG Doughnut */}
+          <div className="relative flex items-center justify-center shrink-0 select-none">
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform rotate-[-90deg]">
+              {/* Background Track */}
+              <circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                stroke="var(--color-outline-variant)"
+                strokeWidth={strokeWidth}
+                opacity="0.1"
+              />
+              {/* Slices */}
+              {data.map((item, idx) => {
+                const percent = item.value / total
+                const dashArray = `${percent * circumference} ${circumference}`
+                const dashOffset = circumference - (accumulatedPercent * circumference)
+                accumulatedPercent += percent
+
+                const isHovered = hoveredIndex === idx
+                const color = colors[idx % colors.length]
+
+                return (
+                  <circle
+                    key={item.name}
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={isHovered ? strokeWidth + 2 : strokeWidth}
+                    strokeDasharray={dashArray}
+                    strokeDashoffset={dashOffset}
+                    strokeLinecap="round"
+                    className="cursor-pointer transition-all duration-300 origin-center"
+                    style={{
+                      transition: 'stroke-width 0.2s ease, stroke-dashoffset 0.8s ease'
+                    }}
+                    onMouseEnter={() => setHoveredIndex(idx)}
+                    onMouseLeave={() => setHoveredIndex(-1)}
+                  />
+                )
+              })}
+            </svg>
+            
+            {/* Center Info Panel */}
+            <div className="absolute flex flex-col items-center justify-center text-center max-w-[85px] pointer-events-none">
+              {hoveredIndex === -1 ? (
+                <>
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant/80 tracking-tight leading-none mb-0.5">Gastos</span>
+                  <span className="font-mono text-xs font-black text-on-surface leading-none truncate w-full">
+                    {formatCurrency(total)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-[9px] uppercase font-bold text-primary tracking-tight leading-none mb-0.5 truncate w-full">
+                    {data[hoveredIndex].name}
+                  </span>
+                  <span className="font-mono text-xs font-black text-on-surface leading-none">
+                    {formatCurrency(data[hoveredIndex].value)}
+                  </span>
+                  <span className="text-[9px] text-on-surface-variant/80 font-mono mt-0.5 font-bold leading-none">
+                    {Math.round((data[hoveredIndex].value / total) * 100)}%
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Legend Items */}
+          <div className="flex-1 w-full space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
+            {data.map((item, idx) => {
+              const percent = Math.round((item.value / total) * 100)
+              const color = colors[idx % colors.length]
+              const isHovered = hoveredIndex === idx
+
+              return (
+                <div
+                  key={item.name}
+                  className={`flex items-center justify-between text-xs p-1.5 rounded-lg border transition-all duration-200 cursor-pointer ${
+                    isHovered
+                      ? 'bg-primary/10 border-primary/20 scale-[1.02]'
+                      : 'bg-transparent border-transparent hover:bg-surface-container-high/30'
+                  }`}
+                  onMouseEnter={() => setHoveredIndex(idx)}
+                  onMouseLeave={() => setHoveredIndex(-1)}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="font-medium text-on-surface truncate pr-1">
+                      {item.name}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0 flex items-center gap-1.5 pl-2 font-mono">
+                    <span className="text-on-surface font-semibold">{formatCurrency(item.value)}</span>
+                    <span className="text-on-surface-variant/60 text-[10px] w-6 text-right font-bold">{percent}%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function DashboardPage() {
   const { user } = useAuth()
   const { settings } = useGlobalSettings()
@@ -345,6 +502,55 @@ export default function DashboardPage() {
       return { ...budget, spent }
     })
   }, [budgets, monthExpenses, startOfWeek, startOfMonth])
+
+  // --- Cálculos de Gastos Personales y de Casa ---
+  const personalData = useMemo(() => {
+    const subcats = expenseStructure.PERSONAL?.subcategories ? Object.keys(expenseStructure.PERSONAL.subcategories) : []
+    const totals = {}
+    subcats.forEach(s => { totals[s] = 0 })
+    
+    let totalAll = 0
+    monthExpenses.forEach(exp => {
+      if (exp.category_key === 'PERSONAL') {
+        const amt = parseFloat(exp.amount) || 0
+        totalAll += amt
+        const subName = exp.subcategory || 'Otro'
+        totals[subName] = (totals[subName] || 0) + amt
+      }
+    })
+    
+    return {
+      total: totalAll,
+      breakdown: Object.entries(totals)
+        .map(([name, value]) => ({ name, value }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+    }
+  }, [monthExpenses, expenseStructure])
+
+  const casaData = useMemo(() => {
+    const subcats = expenseStructure.CASA_FAMILIA?.subcategories ? Object.keys(expenseStructure.CASA_FAMILIA.subcategories) : []
+    const totals = {}
+    subcats.forEach(s => { totals[s] = 0 })
+    
+    let totalAll = 0
+    monthExpenses.forEach(exp => {
+      if (exp.category_key === 'CASA_FAMILIA') {
+        const amt = parseFloat(exp.amount) || 0
+        totalAll += amt
+        const subName = exp.subcategory || 'Otro'
+        totals[subName] = (totals[subName] || 0) + amt
+      }
+    })
+    
+    return {
+      total: totalAll,
+      breakdown: Object.entries(totals)
+        .map(([name, value]) => ({ name, value }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+    }
+  }, [monthExpenses, expenseStructure])
 
   // --- KPI Cards Financieros ---
   const financialKPIs = useMemo(() => {
@@ -632,6 +838,23 @@ export default function DashboardPage() {
               </div>
             </Card>
           )}
+          {/* === GRÁFICOS RESUMEN DE GASTOS === */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <DoughnutChart
+              data={personalData.breakdown}
+              total={personalData.total}
+              title="Gastos Personales (Mes)"
+              icon="person"
+              iconColor="text-primary"
+            />
+            <DoughnutChart
+              data={casaData.breakdown}
+              total={casaData.total}
+              title="Gastos Casa y Familia (Mes)"
+              icon="home"
+              iconColor="text-cyan-500"
+            />
+          </div>
 
           {/* === PEDIDOS RECIENTES DEL MES === */}
           <Card className="p-0">
