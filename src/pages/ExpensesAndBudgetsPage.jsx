@@ -22,6 +22,267 @@ const CATEGORY_ICONS = {
   CASA_FAMILIA: 'home'
 }
 
+// --- Neural line chart component for futuristic trend ---
+function NeuralLineChart({ data, total }) {
+  const maxAmount = Math.max(...data.map(d => d.amount), 100)
+  const width = 500
+  const height = 160
+  const padding = 20
+  
+  const points = data.map((d, i) => {
+    const x = padding + (i * (width - 2 * padding)) / (data.length - 1)
+    const y = height - padding - (d.amount / maxAmount) * (height - 2 * padding)
+    return { x, y, ...d }
+  })
+  
+  const pathD = points.reduce((acc, p, i) => {
+    return i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`
+  }, '')
+
+  const areaD = points.length > 0 
+    ? `${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
+    : ''
+
+  const [hoveredPoint, setHoveredPoint] = useState(null)
+
+  return (
+    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-full">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,122,0,0.07),rgba(255,255,255,0))] pointer-events-none" />
+      <div className="flex items-center justify-between mb-4 z-10">
+        <div>
+          <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-primary animate-pulse">insights</span>
+            Flujo Neural de Gastos (Últimos 15 Días)
+          </h3>
+          <p className="text-[10px] text-on-surface-variant">Monitoreo continuo de egresos por día</p>
+        </div>
+        {hoveredPoint ? (
+          <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 animate-fade-in whitespace-nowrap">
+            Día {hoveredPoint.label}: {formatCurrency(hoveredPoint.amount)}
+          </span>
+        ) : (
+          <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">Promedio: {formatCurrency(total / 15)}/día</span>
+        )}
+      </div>
+
+      <div className="relative h-[130px] w-full z-10">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+          <defs>
+            <linearGradient id="neon-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="var(--color-primary)" />
+              <stop offset="100%" stopColor="var(--color-secondary)" />
+            </linearGradient>
+            <linearGradient id="area-glow" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.0" />
+            </linearGradient>
+            <filter id="glow-effect" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+
+          {/* Grid lines */}
+          {[0, 0.25, 0.5, 0.75, 1].map((p, idx) => {
+            const y = padding + p * (height - 2 * padding)
+            return (
+              <line 
+                key={idx} 
+                x1={padding} 
+                y1={y} 
+                x2={width - padding} 
+                y2={y} 
+                stroke="var(--color-outline-variant)" 
+                strokeWidth="1" 
+                opacity="0.06" 
+                strokeDasharray="4 4"
+              />
+            )
+          })}
+
+          {/* Area under the line */}
+          {areaD && (
+            <path d={areaD} fill="url(#area-glow)" />
+          )}
+
+          {/* Spark Line */}
+          {pathD && (
+            <path 
+              d={pathD} 
+              fill="none" 
+              stroke="url(#neon-glow)" 
+              strokeWidth="3" 
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter="url(#glow-effect)"
+            />
+          )}
+
+          {/* Points */}
+          {points.map((p, i) => (
+            <circle
+              key={i}
+              cx={p.x}
+              cy={p.y}
+              r={hoveredPoint?.date === p.date ? 5.5 : 3}
+              fill={hoveredPoint?.date === p.date ? 'var(--color-secondary)' : 'var(--color-primary)'}
+              stroke="var(--color-surface)"
+              strokeWidth={hoveredPoint?.date === p.date ? 2 : 1}
+              className="cursor-pointer transition-all duration-200"
+              onMouseEnter={() => setHoveredPoint(p)}
+              onMouseLeave={() => setHoveredPoint(null)}
+            />
+          ))}
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+// --- Neural donut chart component ---
+function NeuralDonut({ data, total }) {
+  const [hoveredIndex, setHoveredIndex] = useState(-1)
+  
+  const radius = 50
+  const strokeWidth = 12
+  const size = 120
+  const circumference = 2 * Math.PI * radius // ~314.16
+  
+  const colors = [
+    'var(--color-primary)',
+    'var(--color-secondary)',
+    'var(--color-tertiary)',
+    '#38bdf8', // Light blue
+    '#f59e0b', // Amber
+    '#ec4899', // Pink
+    '#a855f7'  // Purple
+  ]
+
+  let accumulatedPercent = 0
+
+  return (
+    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 flex flex-col justify-between h-full relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.05),rgba(255,255,255,0))] pointer-events-none" />
+      <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-3 z-10">
+        <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px] text-tertiary animate-spin-slow">donut_large</span>
+          Distribución de Egresos
+        </h3>
+      </div>
+
+      {total === 0 ? (
+        <div className="flex-grow flex flex-col items-center justify-center py-6 text-center z-10">
+          <span className="material-symbols-outlined text-on-surface-variant/20 text-[40px] mb-1 block">payments</span>
+          <p className="text-xs text-on-surface-variant italic">Sin datos registrados</p>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row items-center gap-4 flex-grow z-10">
+          {/* SVG Doughnut */}
+          <div className="relative flex items-center justify-center shrink-0 select-none">
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform rotate-[-90deg]">
+              <circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                stroke="var(--color-outline-variant)"
+                strokeWidth={strokeWidth}
+                opacity="0.08"
+              />
+              {data.map((item, idx) => {
+                const percent = item.value / total
+                const dashArray = `${percent * circumference} ${circumference}`
+                const dashOffset = circumference - (accumulatedPercent * circumference)
+                accumulatedPercent += percent
+
+                const isHovered = hoveredIndex === idx
+                const color = colors[idx % colors.length]
+
+                return (
+                  <circle
+                    key={item.key}
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={isHovered ? strokeWidth + 2 : strokeWidth}
+                    strokeDasharray={dashArray}
+                    strokeDashoffset={dashOffset}
+                    strokeLinecap="round"
+                    className="cursor-pointer transition-all duration-300 origin-center"
+                    onMouseEnter={() => setHoveredIndex(idx)}
+                    onMouseLeave={() => setHoveredIndex(-1)}
+                  />
+                )
+              })}
+            </svg>
+            
+            <div className="absolute flex flex-col items-center justify-center text-center max-w-[75px] pointer-events-none">
+              {hoveredIndex === -1 ? (
+                <>
+                  <span className="text-[8px] uppercase font-bold text-on-surface-variant/80 tracking-tight leading-none mb-0.5">Total</span>
+                  <span className="font-mono text-[10px] font-black text-on-surface leading-none truncate w-full">
+                    {formatCurrency(total, 0)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-[8px] uppercase font-bold text-primary tracking-tight leading-none mb-0.5 truncate w-full">
+                    {data[hoveredIndex].name}
+                  </span>
+                  <span className="font-mono text-[10px] font-black text-on-surface leading-none">
+                    {formatCurrency(data[hoveredIndex].value, 0)}
+                  </span>
+                  <span className="text-[8px] text-on-surface-variant/80 font-mono mt-0.5 font-bold leading-none">
+                    {Math.round((data[hoveredIndex].value / total) * 100)}%
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Legend Items */}
+          <div className="flex-1 w-full space-y-1 max-h-[120px] overflow-y-auto pr-1">
+            {data.slice(0, 5).map((item, idx) => {
+              const percent = Math.round((item.value / total) * 100)
+              const color = colors[idx % colors.length]
+              const isHovered = hoveredIndex === idx
+
+              return (
+                <div
+                  key={item.key}
+                  className={`flex items-center justify-between text-[11px] p-1 rounded transition-all duration-200 cursor-pointer ${
+                    isHovered
+                      ? 'bg-primary/10 border-primary/20 scale-[1.01]'
+                      : 'bg-transparent border-transparent hover:bg-surface-container-high/30'
+                  }`}
+                  onMouseEnter={() => setHoveredIndex(idx)}
+                  onMouseLeave={() => setHoveredIndex(-1)}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="font-medium text-on-surface truncate pr-1">
+                      {item.name}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0 flex items-center gap-1 pl-1 font-mono">
+                    <span className="text-on-surface font-semibold">{formatCurrency(item.value, 0)}</span>
+                    <span className="text-on-surface-variant/60 text-[9px] text-right font-bold pl-1">{percent}%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ExpensesAndBudgetsPage() {
   const [activeTab, setActiveTab] = useState('registro') // 'registro', 'dashboard', 'analisis'
 
@@ -302,6 +563,127 @@ export default function ExpensesAndBudgetsPage() {
 
   const overheadCosts = (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
   const unitOverhead = productionAvg > 0 ? overheadCosts / productionAvg : 0
+
+  const budgets = useMemo(() => {
+    return settings?.budgets || []
+  }, [settings])
+
+  const budgetMetrics = useMemo(() => {
+    return budgets.map(budget => {
+      const spent = expenses
+        .filter(e => {
+          const d = new Date(e.date)
+          const now = new Date()
+          const isCurrentMonth = d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+          if (!isCurrentMonth) return false
+          
+          let eCat = e.category_key || e.categoryKey
+          if (!eCat) {
+            const matchedKey = Object.keys(expenseStructure).find(catKey => 
+              expenseStructure[catKey]?.subcategories &&
+              Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
+            )
+            if (matchedKey) {
+              eCat = matchedKey
+            }
+          }
+
+          return budget.categoryKey && eCat === budget.categoryKey
+        })
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+      
+      const pct = budget.limitAmount > 0 ? (spent / budget.limitAmount) * 100 : 0
+      
+      return {
+        ...budget,
+        spent,
+        pct,
+        remaining: Math.max(0, budget.limitAmount - spent),
+        isOver: spent > budget.limitAmount
+      }
+    })
+  }, [budgets, expenses, expenseStructure])
+
+  const totalBudget = useMemo(() => {
+    return budgets.reduce((sum, b) => sum + (Number(b.limitAmount) || 0), 0)
+  }, [budgets])
+
+  const totalSpentMonth = useMemo(() => {
+    return currentMonthExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+  }, [currentMonthExpenses])
+
+  const dailyTrendData = useMemo(() => {
+    const trend = []
+    const now = new Date()
+    for (let i = 14; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(now.getDate() - i)
+      const dateStr = d.toISOString().split('T')[0]
+      const label = d.getDate().toString()
+      const amount = expenses
+        .filter(e => e.date === dateStr)
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+      trend.push({ date: dateStr, label, amount })
+    }
+    return trend
+  }, [expenses])
+
+  const dailyTrendTotal = useMemo(() => {
+    return dailyTrendData.reduce((sum, d) => sum + d.amount, 0)
+  }, [dailyTrendData])
+
+  const categoryDistribution = useMemo(() => {
+    return Object.entries(totalsByCategory)
+      .map(([key, value]) => ({
+        key,
+        name: expenseStructure[key]?.label || key,
+        value
+      }))
+      .filter(item => item.value > 0)
+  }, [totalsByCategory, expenseStructure])
+
+  const forecastData = useMemo(() => {
+    const now = new Date()
+    const currentDay = now.getDate()
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const daysRemaining = lastDayOfMonth - currentDay
+    
+    const burnRate = currentDay > 0 ? totalSpentMonth / currentDay : 0
+    const projectedSpent = totalSpentMonth + (burnRate * daysRemaining)
+    
+    let statusColor = 'text-emerald-400'
+    let statusBg = 'bg-emerald-500/10'
+    let statusBorder = 'border-emerald-500/30'
+    let statusText = 'DENTRO DEL LÍMITE'
+    let progressPct = 0
+    
+    if (totalBudget > 0) {
+      progressPct = (projectedSpent / totalBudget) * 100
+      if (projectedSpent > totalBudget) {
+        statusColor = 'text-red-400'
+        statusBg = 'bg-red-500/10'
+        statusBorder = 'border-red-500/30'
+        statusText = 'EXCEDERÁ EL PRESUPUESTO'
+      } else if (projectedSpent > totalBudget * 0.8) {
+        statusColor = 'text-amber-400'
+        statusBg = 'bg-amber-500/10'
+        statusBorder = 'border-amber-500/30'
+        statusText = 'RIESGO DE EXCESO'
+      }
+    }
+    
+    return {
+      burnRate,
+      projectedSpent,
+      daysRemaining,
+      statusColor,
+      statusBg,
+      statusBorder,
+      statusText,
+      progressPct,
+      lastDayOfMonth
+    }
+  }, [totalSpentMonth, totalBudget])
 
   // --- FILTROS DE LISTA ---
   const filteredExpenses = useMemo(() => {
@@ -999,31 +1381,239 @@ export default function ExpensesAndBudgetsPage() {
 
           {/* PESTAÑA 2: DASHBOARD Y PRESUPUESTOS */}
           {activeTab === 'dashboard' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <Card className="col-span-full">
-                <div className="p-5">
-                  <h2 className="text-lg font-bold text-on-surface mb-1">Resumen del Mes Actual</h2>
-                  <p className="text-sm text-on-surface-variant mb-6">Totales agrupados por categoría principal.</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    {Object.entries(expenseStructure).map(([key, data]) => {
-                      const total = totalsByCategory[key] || 0
-                      return (
-                        <div key={key} className="bg-surface-container/60 p-4 rounded-xl border border-outline-variant hover:border-primary/20 transition-colors shadow-sm">
-                          <p className="text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-wider">{data.label}</p>
-                          <p className="text-lg font-mono font-bold text-on-surface">{formatCurrency(total)}</p>
-                        </div>
-                      )
-                    })}
+            <div className="space-y-6 animate-fade-in w-full pb-8">
+              
+              {/* HEADING HERO */}
+              <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-surface-container-low/30 backdrop-blur-md p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_-20%,rgba(0,245,255,0.08),transparent)] pointer-events-none" />
+                <div className="z-10 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                    <span className="text-[10px] font-mono font-bold tracking-widest text-primary uppercase">Núcleo Neural Operativo</span>
+                  </div>
+                  <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                    NÚCLEO DE INTELIGENCIA FINANCIERA
+                  </h2>
+                  <p className="text-xs text-on-surface-variant max-w-2xl leading-relaxed">
+                    Análisis predictivo en tiempo real de egresos de capital, control presupuestario y flujos neurales dinámicos.
+                  </p>
+                </div>
+                <div className="z-10 flex items-center gap-2 bg-surface-container/40 border border-outline-variant/30 rounded-xl px-4 py-2 font-mono text-xs text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[16px] text-primary animate-pulse">sync</span>
+                  Status: Operativo
+                </div>
+              </div>
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* KPI Card 1: Egresos Consolidados */}
+                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(0,245,255,0.04),transparent)] pointer-events-none" />
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Egresos Consolidados</span>
+                    <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-primary text-[16px]">payments</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="font-mono text-2xl font-black text-white leading-none block">
+                      {formatCurrency(totalSpentMonth)}
+                    </span>
+                    <p className="text-[10px] text-on-surface-variant mt-1.5">Total de egresos registrados en el ciclo mensual.</p>
                   </div>
                 </div>
-              </Card>
 
-              <Card className="col-span-full flex items-center justify-center py-20 text-on-surface-variant">
-                <div className="text-center">
-                  <span className="material-symbols-outlined text-4xl mb-2 opacity-50">data_usage</span>
-                  <p>Módulo de Metas de Presupuesto en desarrollo.</p>
+                {/* KPI Card 2: Límite Presupuestado */}
+                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(168,85,247,0.04),transparent)] pointer-events-none" />
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Límite Presupuestado</span>
+                    <div className="w-7 h-7 rounded-lg bg-tertiary/10 border border-tertiary/20 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-tertiary text-[16px]">account_balance_wallet</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="font-mono text-2xl font-black text-white leading-none">
+                        {formatCurrency(totalBudget)}
+                      </span>
+                      {totalBudget > 0 && (
+                        <span className="text-[10px] font-mono font-bold text-on-surface-variant">
+                          ({Math.round((totalSpentMonth / totalBudget) * 100)}%)
+                        </span>
+                      )}
+                    </div>
+                    {totalBudget > 0 ? (
+                      <div className="h-1.5 w-full bg-white/[0.04] rounded-full overflow-hidden mt-2 p-[1px]">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            totalSpentMonth > totalBudget ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]' : 'bg-primary shadow-[0_0_6px_rgba(0,245,255,0.5)]'
+                          }`} 
+                          style={{ width: `${Math.min(100, (totalSpentMonth / totalBudget) * 100)}%` }} 
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-on-surface-variant mt-1.5">Sin límites establecidos este mes.</p>
+                    )}
+                  </div>
                 </div>
-              </Card>
+
+                {/* KPI Card 3: Velocidad Diaria */}
+                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(57,255,20,0.04),transparent)] pointer-events-none" />
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Velocidad Diaria (Burn Rate)</span>
+                    <div className="w-7 h-7 rounded-lg bg-secondary/10 border border-secondary/20 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-secondary text-[16px]">speed</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="font-mono text-2xl font-black text-white leading-none block">
+                      {formatCurrency(forecastData.burnRate)} <span className="text-xs text-on-surface-variant">/ día</span>
+                    </span>
+                    <p className="text-[10px] text-on-surface-variant mt-1.5">Consumo promedio diario durante el mes actual.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Left/Center Area (Sparkline & Budgets) */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Trend chart */}
+                  <NeuralLineChart data={dailyTrendData} total={dailyTrendTotal} />
+
+                  {/* Active budgets progress */}
+                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300">
+                    <div className="flex items-center justify-between mb-6 pb-3 border-b border-outline-variant/40">
+                      <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px] text-primary">pie_chart</span>
+                        Control de Presupuestos de Gastos
+                      </h3>
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
+                        {budgetMetrics.length} Configurados
+                      </span>
+                    </div>
+
+                    {budgetMetrics.length === 0 ? (
+                      <div className="text-center py-12">
+                        <span className="material-symbols-outlined text-on-surface-variant/20 text-4xl mb-2">savings</span>
+                        <p className="text-xs text-on-surface-variant italic">No hay presupuestos configurados en la pestaña "Metas y Presupuestos" de Configuración Global.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {budgetMetrics.map(b => {
+                          const catData = expenseStructure[b.categoryKey]
+                          const pct = Math.min(100, b.pct)
+                          
+                          // Color matching theme
+                          let colorClass = 'bg-[#39ff14] shadow-[0_0_8px_rgba(57,255,20,0.5)]'
+                          let textClass = 'text-[#39ff14]'
+                          let glowBg = 'bg-[#39ff14]/10'
+                          if (b.pct > 100) {
+                            colorClass = 'bg-[#ff716c] shadow-[0_0_8px_rgba(255,113,108,0.5)] animate-pulse'
+                            textClass = 'text-[#ff716c]'
+                            glowBg = 'bg-[#ff716c]/10'
+                          } else if (b.pct > 80) {
+                            colorClass = 'bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                            textClass = 'text-[#f59e0b]'
+                            glowBg = 'bg-[#f59e0b]/10'
+                          }
+
+                          return (
+                            <div key={b.id} className="relative group p-4 rounded-xl bg-surface-container/20 border border-outline-variant/30 hover:border-primary/20 transition-all duration-300">
+                              <div className="flex items-start justify-between mb-2">
+                                <div className="min-w-0 pr-2">
+                                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider block">Categoría</span>
+                                  <span className="text-sm font-bold text-white truncate block">{catData?.label || b.categoryKey}</span>
+                                </div>
+                                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-current/25 shrink-0 ${textClass} ${glowBg}`}>
+                                  {Math.round(b.pct)}%
+                                </span>
+                              </div>
+                              
+                              <div className="h-2 w-full bg-white/[0.04] rounded-full overflow-hidden mb-3 p-[1px] border border-white/[0.02]">
+                                <div className={`h-full rounded-full transition-all duration-500 ${colorClass}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              
+                              <div className="flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
+                                <span>Gastado: <strong className="text-white">{formatCurrency(b.spent)}</strong></span>
+                                <span>Límite: <strong>{formatCurrency(b.limitAmount)}</strong></span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Area (Donut Chart & Forecast) */}
+                <div className="space-y-6 flex flex-col">
+                  {/* Donut Chart */}
+                  <div className="flex-1">
+                    <NeuralDonut data={categoryDistribution} total={totalSpentMonth} />
+                  </div>
+
+                  {/* AI Prediction Card */}
+                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-full min-h-[220px]">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(168,85,247,0.05),transparent)] pointer-events-none" />
+                    <div>
+                      <div className="flex items-center justify-between mb-5 pb-3 border-b border-outline-variant/40">
+                        <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-primary animate-pulse">psychology</span>
+                          Asistente Predictivo Neural
+                        </h3>
+                        <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${forecastData.statusColor} ${forecastData.statusBg} ${forecastData.statusBorder} animate-fade-in`}>
+                          {forecastData.statusText}
+                        </span>
+                      </div>
+
+                      <div className="space-y-5">
+                        <div>
+                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Cierre Proyectado de Mes</span>
+                          <span className="font-mono text-2xl font-black text-white leading-none">
+                            {formatCurrency(forecastData.projectedSpent)}
+                          </span>
+                          <p className="text-[10px] text-on-surface-variant mt-1.5 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[12px]">calendar_today</span>
+                            Ciclo de {forecastData.lastDayOfMonth} días ({forecastData.daysRemaining} restantes)
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-surface-container/20 border border-outline-variant/30 space-y-2">
+                          <span className="text-[10px] font-mono text-primary uppercase tracking-wider font-bold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">settings_suggest</span>
+                            Análisis de Tendencia
+                          </span>
+                          <p className="text-xs text-on-surface-variant leading-relaxed">
+                            {totalBudget > 0 ? (
+                              <>
+                                El ritmo de gasto actual es de <strong className="text-white">{formatCurrency(forecastData.burnRate)}</strong> por día. A esta velocidad, se proyecta un cierre de mes que representa el <strong className="text-white">{Math.round(forecastData.progressPct)}%</strong> de tu presupuesto total configurado de <strong className="text-white">{formatCurrency(totalBudget)}</strong>.
+                              </>
+                            ) : (
+                              <>
+                                El ritmo de gasto actual es de <strong className="text-white">{formatCurrency(forecastData.burnRate)}</strong> por día. Registras un total mensual de <strong className="text-white">{formatCurrency(totalSpentMonth)}</strong>. No tienes presupuestos activos para realizar una comparación predictiva de límites.
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-outline-variant/30 flex items-center justify-between text-[10px] font-mono text-on-surface-variant">
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#ff7a00] animate-ping" />
+                        Procesador Neural Operativo
+                      </span>
+                      <span>v1.2.0</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
             </div>
           )}
 
