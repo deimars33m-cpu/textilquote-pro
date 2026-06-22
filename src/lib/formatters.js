@@ -199,6 +199,7 @@ export const terceroTypes = {
   proveedor_materia_prima: 'Materia Prima',
   proveedor_insumos: 'Insumos',
   proveedor_servicios: 'Servicios Externos',
+  dependiente: 'Empleado Interno / Dependiente',
   otro: 'Otro',
 }
 

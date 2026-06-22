@@ -26,13 +26,18 @@ const providerTypeOptions = [
   { value: 'otro', label: 'Otro' }
 ]
 
+const dependienteTypeOptions = [
+  { value: 'dependiente', label: 'Empleado Interno / Dependiente' },
+  { value: 'otro', label: 'Otro' }
+]
+
 export default function TercerosPage() {
   const { data: terceros, loading, error, create, update, remove } = useCRUD('terceros', {
     orderBy: 'name',
     orderAsc: true,
   })
 
-  const [roleFilter, setRoleFilter] = useState('todos') // 'todos', 'cliente', 'proveedor'
+  const [roleFilter, setRoleFilter] = useState('todos') // 'todos', 'cliente', 'proveedor', 'dependiente'
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -59,7 +64,8 @@ export default function TercerosPage() {
     setEditingItem(null)
     setForm({
       ...EMPTY_FORM,
-      role: roleFilter === 'todos' ? 'cliente' : roleFilter
+      role: roleFilter === 'todos' ? 'cliente' : roleFilter,
+      client_type: roleFilter === 'dependiente' ? 'dependiente' : 'otro'
     })
     setErrors({})
     setModalOpen(true)
@@ -136,8 +142,8 @@ export default function TercerosPage() {
     setForm((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'role') {
-        // Reset client_type to default if changing role
-        next.client_type = 'otro'
+        // Reset client_type depending on role
+        next.client_type = value === 'dependiente' ? 'dependiente' : 'otro'
       }
       return next
     })
@@ -181,7 +187,8 @@ export default function TercerosPage() {
         {[
           { id: 'todos', label: 'Todos', icon: 'groups' },
           { id: 'cliente', label: 'Clientes', icon: 'person' },
-          { id: 'proveedor', label: 'Proveedores', icon: 'local_shipping' }
+          { id: 'proveedor', label: 'Proveedores', icon: 'local_shipping' },
+          { id: 'dependiente', label: 'Dependientes', icon: 'badge' }
         ].map(filter => (
           <button
             key={filter.id}
@@ -250,12 +257,14 @@ export default function TercerosPage() {
                       <span className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
                         c.role === 'proveedor' 
                           ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
-                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : c.role === 'dependiente'
+                            ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
+                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                       }`}>
                         <span className="material-symbols-outlined text-[12px]">
-                          {c.role === 'proveedor' ? 'local_shipping' : 'person'}
+                          {c.role === 'proveedor' ? 'local_shipping' : c.role === 'dependiente' ? 'badge' : 'person'}
                         </span>
-                        {c.role === 'proveedor' ? 'Proveedor' : 'Cliente'}
+                        {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : 'Cliente'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm">
@@ -325,11 +334,12 @@ export default function TercerosPage() {
               className="sm:col-span-2"
             />
 
-            <Select
+             <Select
               label="Rol"
               options={[
                 { value: 'cliente', label: 'Cliente' },
-                { value: 'proveedor', label: 'Proveedor' }
+                { value: 'proveedor', label: 'Proveedor' },
+                { value: 'dependiente', label: 'Dependiente (Empleado)' }
               ]}
               value={form.role}
               onChange={(e) => updateField('role', e.target.value)}
@@ -338,7 +348,13 @@ export default function TercerosPage() {
 
             <Select
               label="Tipo / Rubro"
-              options={form.role === 'proveedor' ? providerTypeOptions : clientTypeOptions}
+              options={
+                form.role === 'proveedor' 
+                  ? providerTypeOptions 
+                  : form.role === 'dependiente'
+                    ? dependienteTypeOptions
+                    : clientTypeOptions
+              }
               value={form.client_type}
               onChange={(e) => updateField('client_type', e.target.value)}
               placeholder="Seleccionar..."
