@@ -896,9 +896,9 @@ export default function ExpensesAndBudgetsPage() {
                       <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
                         <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider">
                           <th className="py-3 px-4 font-medium">Fecha</th>
+                          <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
                           <th className="py-3 px-4 font-medium">Categoría</th>
                           <th className="py-3 px-4 font-medium">Ítem</th>
-                          <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
                           <th className="py-3 px-4 font-medium">Pago</th>
                           <th className="py-3 px-4 font-medium text-right">Total</th>
                           <th className="py-3 px-4 text-center">ACCIONES</th>
@@ -935,16 +935,16 @@ export default function ExpensesAndBudgetsPage() {
                             return (
                               <tr key={e.id} className="hover:bg-white/[0.02] transition-colors group">
                                 <td className="py-2.5 px-4 text-on-surface-variant whitespace-nowrap">{formatDate(e.date)}</td>
+                                <td className="py-2.5 px-4 text-on-surface-variant max-w-[200px]">
+                                  <span className="block text-white text-xs truncate">{e.provider}</span>
+                                  <span className="block text-[10px] truncate">{e.description || '-'}</span>
+                                </td>
                                 <td className="py-2.5 px-4">
                                   <span className="font-semibold text-white block leading-tight">{catLabel}</span>
                                   <span className="text-[10px] text-primary/80 font-mono block uppercase">{sub}</span>
                                 </td>
                                 <td className="py-2.5 px-4">
                                   <span className="text-xs text-on-surface font-semibold">{item}</span>
-                                </td>
-                                <td className="py-2.5 px-4 text-on-surface-variant max-w-[200px]">
-                                  <span className="block text-white text-xs truncate">{e.provider}</span>
-                                  <span className="block text-[10px] truncate">{e.description || '-'}</span>
                                 </td>
                                 <td className="py-2.5 px-4">
                                   <span className="block text-xs font-semibold text-white uppercase font-mono">{method}</span>
