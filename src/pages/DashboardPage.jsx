@@ -26,27 +26,51 @@ function getStartOfMonth() {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
 }
 
-// --- Progress Ring Component (SVG) ---
-function ProgressRing({ percent, size = 80, strokeWidth = 7, color = '#10b981', bgColor = 'rgba(255,255,255,0.08)' }) {
+// --- Progress Ring Component (SVG with CSS Variables & Gradients) ---
+function ProgressRing({ percent, size = 90, strokeWidth = 8, color = 'url(#grad-primary-secondary)' }) {
   const radius = (size - strokeWidth) / 2
   const circumference = radius * 2 * Math.PI
   const clampedPercent = Math.min(percent, 100)
   const offset = circumference - (clampedPercent / 100) * circumference
 
   return (
-    <svg width={size} height={size} className="shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={bgColor} strokeWidth={strokeWidth} />
-      <circle
-        cx={size / 2} cy={size / 2} r={radius}
-        fill="none" stroke={color} strokeWidth={strokeWidth}
-        strokeDasharray={circumference} strokeDashoffset={offset}
-        strokeLinecap="round"
-        style={{ transition: 'stroke-dashoffset 0.8s ease', transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }}
-      />
-      <text x="50%" y="50%" textAnchor="middle" dy="0.35em" className="fill-on-surface text-[13px] font-mono font-bold">
-        {percent > 999 ? '999+' : `${Math.round(percent)}%`}
-      </text>
-    </svg>
+    <div className="relative flex items-center justify-center select-none hover:scale-105 transition-transform duration-300">
+      <svg width={size} height={size} className="shrink-0">
+        {/* Track */}
+        <circle 
+          cx={size / 2} 
+          cy={size / 2} 
+          r={radius} 
+          fill="none" 
+          stroke="var(--color-outline-variant)" 
+          strokeWidth={strokeWidth} 
+          opacity="0.15"
+        />
+        {/* Progress */}
+        <circle
+          cx={size / 2} 
+          cy={size / 2} 
+          r={radius}
+          fill="none" 
+          stroke={color} 
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference} 
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ 
+            transition: 'stroke-dashoffset 1.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+            transform: 'rotate(-90deg)', 
+            transformOrigin: '50% 50%' 
+          }}
+        />
+      </svg>
+      {/* Inner Label */}
+      <div className="absolute flex flex-col items-center justify-center">
+        <span className="text-body-md font-mono font-black text-on-surface tracking-tighter">
+          {percent > 999 ? '999+' : `${Math.round(percent)}%`}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -54,57 +78,146 @@ function ProgressRing({ percent, size = 80, strokeWidth = 7, color = '#10b981', 
 function BudgetBar({ label, spent, limit, categoryLabel }) {
   const percent = limit > 0 ? (spent / limit) * 100 : 0
   const remaining = limit - spent
-  const barColor = percent >= 100 ? '#ef4444' : percent >= 80 ? '#f59e0b' : '#10b981'
+  const clampedPercent = Math.min(percent, 100)
+  
+  let barGradientClass = 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]'
+  let glowClass = 'shadow-[0_0_10px_rgba(0,245,255,0.25)]'
+  
+  if (percent >= 100) {
+    barGradientClass = 'bg-[var(--color-error)]'
+    glowClass = 'shadow-[0_0_10px_rgba(255,113,108,0.4)]'
+  } else if (percent >= 80) {
+    barGradientClass = 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-tertiary)]'
+    glowClass = 'shadow-[0_0_10px_rgba(168,85,247,0.25)]'
+  }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2 p-3.5 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">{label}</p>
-          <p className="text-[10px] text-on-surface-variant">{categoryLabel}</p>
+          <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
+          <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase">{categoryLabel}</p>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <p className="font-mono text-xs text-on-surface">{formatCurrency(spent)} / {formatCurrency(limit)}</p>
+          <p className="font-mono text-xs font-bold text-on-surface">{formatCurrency(spent)} <span className="text-on-surface-variant font-normal">/ {formatCurrency(limit)}</span></p>
           <p className={`font-mono text-[10px] font-bold ${remaining < 0 ? 'text-error' : 'text-emerald-500'}`}>
             {remaining < 0 ? `Excedido: ${formatCurrency(Math.abs(remaining))}` : `Restante: ${formatCurrency(remaining)}`}
           </p>
         </div>
       </div>
-      <div className="w-full h-2.5 bg-surface-container-high rounded-full overflow-hidden">
+      <div className="w-full h-3 bg-surface-container-high/40 rounded-full overflow-hidden border border-outline-variant/20">
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: barColor }}
+          className={`h-full rounded-full transition-all duration-1000 ease-out ${barGradientClass} ${glowClass}`}
+          style={{ width: `${clampedPercent}%` }}
         />
       </div>
     </div>
   )
 }
 
+// --- Sales Goal Progress Bar ---
 function GoalBar({ label, current, target, period }) {
   const percent = target > 0 ? (current / target) * 100 : 0
   const remaining = target - current
-  const barColor = percent >= 100 ? '#10b981' : percent >= 80 ? '#34d399' : '#60a5fa'
+  const clampedPercent = Math.min(percent, 100)
   const periodLabel = period === 'diario' ? 'Diario' : period === 'semanal' ? 'Semanal' : 'Mensual'
 
+  let barGradientClass = 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]'
+  let glowClass = 'shadow-[0_0_10px_rgba(0,245,255,0.25)]'
+  
+  if (percent >= 100) {
+    barGradientClass = 'bg-gradient-to-r from-[var(--color-secondary)] to-emerald-500'
+    glowClass = 'shadow-[0_0_10px_rgba(57,255,20,0.3)]'
+  }
+
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2 p-3.5 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-emerald-500/20 transition-all duration-300">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">{label}</p>
-          <p className="text-[10px] text-on-surface-variant">Meta {periodLabel}</p>
+          <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
+          <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase">Meta {periodLabel}</p>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <p className="font-mono text-xs text-on-surface">{formatCurrency(current)} / {formatCurrency(target)}</p>
+          <p className="font-mono text-xs font-bold text-on-surface">{formatCurrency(current)} <span className="text-on-surface-variant font-normal">/ {formatCurrency(target)}</span></p>
           <p className={`font-mono text-[10px] font-bold ${remaining <= 0 ? 'text-emerald-500 font-extrabold animate-pulse' : 'text-on-surface-variant'}`}>
             {remaining <= 0 ? '¡Meta Cumplida!' : `Restan: ${formatCurrency(remaining)}`}
           </p>
         </div>
       </div>
-      <div className="w-full h-2.5 bg-surface-container-high rounded-full overflow-hidden">
+      <div className="w-full h-3 bg-surface-container-high/40 rounded-full overflow-hidden border border-outline-variant/20">
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: barColor }}
+          className={`h-full rounded-full transition-all duration-1000 ease-out ${barGradientClass} ${glowClass}`}
+          style={{ width: `${clampedPercent}%` }}
         />
+      </div>
+    </div>
+  )
+}
+
+// --- Budget Progress Ring Card ---
+function BudgetRingCard({ label, spent, limit, categoryLabel }) {
+  const percent = limit > 0 ? (spent / limit) * 100 : 0
+  const remaining = limit - spent
+  
+  let ringColor = 'url(#grad-primary-secondary)'
+  if (percent >= 100) {
+    ringColor = 'url(#grad-error)'
+  } else if (percent >= 80) {
+    ringColor = 'url(#grad-primary-tertiary)'
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-between p-4 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 text-center space-y-3">
+      <div className="min-w-0 w-full">
+        <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
+        <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase truncate">{categoryLabel}</p>
+      </div>
+      <ProgressRing 
+        percent={percent} 
+        size={85} 
+        strokeWidth={7} 
+        color={ringColor} 
+      />
+      <div className="w-full">
+        <p className="font-mono text-xs font-bold text-on-surface truncate">{formatCurrency(spent)}</p>
+        <p className="text-[10px] text-on-surface-variant truncate">Límite: {formatCurrency(limit)}</p>
+        <p className={`font-mono text-[10px] font-bold mt-1 truncate ${remaining < 0 ? 'text-error' : 'text-emerald-500'}`}>
+          {remaining < 0 ? `Excedido: ${formatCurrency(Math.abs(remaining))}` : `Resta: ${formatCurrency(remaining)}`}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// --- Sales Goal Progress Ring Card ---
+function GoalRingCard({ label, current, target, period }) {
+  const percent = target > 0 ? (current / target) * 100 : 0
+  const remaining = target - current
+  const periodLabel = period === 'diario' ? 'Diario' : period === 'semanal' ? 'Semanal' : 'Mensual'
+
+  let ringColor = 'url(#grad-primary-secondary)'
+  if (percent >= 100) {
+    ringColor = 'url(#grad-secondary-emerald)'
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-between p-4 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-emerald-500/20 transition-all duration-300 text-center space-y-3">
+      <div className="min-w-0 w-full">
+        <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
+        <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase truncate">Meta {periodLabel}</p>
+      </div>
+      <ProgressRing 
+        percent={percent} 
+        size={85} 
+        strokeWidth={7} 
+        color={ringColor} 
+      />
+      <div className="w-full">
+        <p className="font-mono text-xs font-bold text-on-surface truncate">{formatCurrency(current)}</p>
+        <p className="text-[10px] text-on-surface-variant truncate">Meta: {formatCurrency(target)}</p>
+        <p className={`font-mono text-[10px] font-bold mt-1 truncate ${remaining <= 0 ? 'text-emerald-500 font-extrabold animate-pulse' : 'text-on-surface-variant'}`}>
+          {remaining <= 0 ? '¡Meta Cumplida!' : `Resta: ${formatCurrency(remaining)}`}
+        </p>
       </div>
     </div>
   )
@@ -114,6 +227,9 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const { settings } = useGlobalSettings()
   const navigate = useNavigate()
+
+  const [budgetViewMode, setBudgetViewMode] = useState('bars') // 'bars' | 'rings'
+  const [goalsViewMode, setGoalsViewMode] = useState('rings') // 'rings' | 'bars'
 
   const today = getToday()
   const startOfWeek = getStartOfWeek()
@@ -327,6 +443,28 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Global SVG Gradients for Progress Rings */}
+      <svg width="0" height="0" className="absolute pointer-events-none">
+        <defs>
+          <linearGradient id="grad-primary-secondary" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--color-primary)" />
+            <stop offset="100%" stopColor="var(--color-secondary)" />
+          </linearGradient>
+          <linearGradient id="grad-primary-tertiary" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--color-primary)" />
+            <stop offset="100%" stopColor="var(--color-tertiary)" />
+          </linearGradient>
+          <linearGradient id="grad-secondary-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--color-secondary)" />
+            <stop offset="100%" stopColor="#10b981" />
+          </linearGradient>
+          <linearGradient id="grad-error" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--color-error)" />
+            <stop offset="100%" stopColor="var(--color-error)" stopOpacity="0.6" />
+          </linearGradient>
+        </defs>
+      </svg>
+
       {/* Page header */}
       <div>
         <h1 className="text-headline-md font-semibold text-on-surface">Dashboard</h1>
@@ -371,53 +509,124 @@ export default function DashboardPage() {
           {/* === METAS DE VENTAS === */}
           {hasGoals && (
             <Card className="p-0">
-              <div className="px-5 py-4 border-b border-outline-variant">
+              <div className="px-5 py-3 border-b border-outline-variant flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-emerald-500 text-[20px]">flag</span>
-                  Metas de Ventas — Logros
+                  Metas de Ventas
                 </h2>
+                <div className="flex bg-surface-container-high/40 p-0.5 rounded-lg border border-outline-variant/30 select-none w-fit">
+                  <button
+                    onClick={() => setGoalsViewMode('bars')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                      goalsViewMode === 'bars'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">align_horizontal_left</span>
+                    Barras
+                  </button>
+                  <button
+                    onClick={() => setGoalsViewMode('rings')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                      goalsViewMode === 'rings'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">progress_activity</span>
+                    Anillos
+                  </button>
+                </div>
               </div>
               <div className="p-5 space-y-6">
-                {/* Global Goals (Rings) */}
-                {globalGoals.length > 0 && (
-                  <div className={`grid grid-cols-1 ${globalGoals.length === 2 ? 'sm:grid-cols-2' : globalGoals.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-1'} gap-6 justify-items-center`}>
-                    {globalGoals.map(g => (
-                      <div key={g.id} className="flex flex-col items-center gap-3">
-                        <ProgressRing
-                          percent={g.percent}
-                          color={g.percent >= 100 ? '#10b981' : g.period === 'diario' ? '#06b6d4' : g.period === 'semanal' ? '#8b5cf6' : '#ff7a00'}
-                          size={90}
-                        />
-                        <div className="text-center">
-                          <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">
-                            {g.period === 'diario' ? 'Hoy (Global)' : g.period === 'semanal' ? 'Semana (Global)' : 'Mes (Global)'}
-                          </p>
-                          <p className="font-mono text-sm text-on-surface">{formatCurrency(g.current)}</p>
-                          <p className="font-mono text-[10px] text-on-surface-variant">Meta: {formatCurrency(g.targetAmount)}</p>
+                {goalsViewMode === 'rings' ? (
+                  <>
+                    {/* Global Goals (Rings) */}
+                    {globalGoals.length > 0 && (
+                      <div className={`grid grid-cols-1 ${globalGoals.length === 2 ? 'sm:grid-cols-2' : globalGoals.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-1'} gap-6 justify-items-center`}>
+                        {globalGoals.map(g => (
+                          <div key={g.id} className="flex flex-col items-center gap-3">
+                            <ProgressRing
+                              percent={g.percent}
+                              color={g.percent >= 100 ? 'url(#grad-secondary-emerald)' : g.period === 'diario' ? 'url(#grad-primary-secondary)' : g.period === 'semanal' ? 'url(#grad-primary-tertiary)' : 'var(--color-primary)'}
+                              size={95}
+                              strokeWidth={8}
+                            />
+                            <div className="text-center">
+                              <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">
+                                {g.period === 'diario' ? 'Hoy (Global)' : g.period === 'semanal' ? 'Semana (Global)' : 'Mes (Global)'}
+                              </p>
+                              <p className="font-mono text-sm text-on-surface mt-0.5">{formatCurrency(g.current)}</p>
+                              <p className="font-mono text-[10px] text-on-surface-variant">Meta: {formatCurrency(g.targetAmount)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Category Goals (Rings in Grid) */}
+                    {categoryGoals.length > 0 && (
+                      <div className={`${globalGoals.length > 0 ? 'pt-5 border-t border-outline-variant' : ''} space-y-3`}>
+                        <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Metas por Categoría</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                          {categoryGoals.map(g => {
+                            const catData = settings?.categories?.find(c => c.id === g.categoryId)
+                            return (
+                              <GoalRingCard
+                                key={g.id}
+                                label={catData?.label || g.categoryId}
+                                current={g.current}
+                                target={g.targetAmount}
+                                period={g.period}
+                              />
+                            )
+                          })}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
+                  </>
+                ) : (
+                  // BARS VIEW
+                  <div className="space-y-6">
+                    {/* Global Goals (Bars) */}
+                    {globalGoals.length > 0 && (
+                      <div className="space-y-4">
+                        <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Metas Globales</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {globalGoals.map(g => (
+                            <GoalBar
+                              key={g.id}
+                              label="Ventas Globales"
+                              current={g.current}
+                              target={g.targetAmount}
+                              period={g.period}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-                {/* Category-Specific Goals (Bars) */}
-                {categoryGoals.length > 0 && (
-                  <div className={`${globalGoals.length > 0 ? 'pt-5 border-t border-outline-variant' : ''} space-y-4`}>
-                    <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Metas por Categoría</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {categoryGoals.map(g => {
-                        const catData = settings?.categories?.find(c => c.id === g.categoryId)
-                        return (
-                          <GoalBar
-                            key={g.id}
-                            label={catData?.label || g.categoryId}
-                            current={g.current}
-                            target={g.targetAmount}
-                            period={g.period}
-                          />
-                        )
-                      })}
-                    </div>
+                    {/* Category Goals (Bars) */}
+                    {categoryGoals.length > 0 && (
+                      <div className={`${globalGoals.length > 0 ? 'pt-5 border-t border-outline-variant' : ''} space-y-4`}>
+                        <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Metas por Categoría</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {categoryGoals.map(g => {
+                            const catData = settings?.categories?.find(c => c.id === g.categoryId)
+                            return (
+                              <GoalBar
+                                key={g.id}
+                                label={catData?.label || g.categoryId}
+                                current={g.current}
+                                target={g.targetAmount}
+                                period={g.period}
+                              />
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -481,22 +690,62 @@ export default function DashboardPage() {
           {/* === CONTROL DE PRESUPUESTOS === */}
           {budgetMetrics.length > 0 && (
             <Card className="p-0">
-              <div className="px-5 py-4 border-b border-outline-variant">
+              <div className="px-5 py-3 border-b border-outline-variant flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-error text-[20px]">account_balance_wallet</span>
-                  Control de Presupuestos
+                  Presupuestos
                 </h2>
+                <div className="flex bg-surface-container-high/40 p-0.5 rounded-lg border border-outline-variant/30 select-none w-fit">
+                  <button
+                    onClick={() => setBudgetViewMode('bars')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                      budgetViewMode === 'bars'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">align_horizontal_left</span>
+                    Barras
+                  </button>
+                  <button
+                    onClick={() => setBudgetViewMode('rings')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                      budgetViewMode === 'rings'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">progress_activity</span>
+                    Anillos
+                  </button>
+                </div>
               </div>
-              <div className="p-5 space-y-5">
-                {budgetMetrics.map(bm => (
-                  <BudgetBar
-                    key={bm.id}
-                    label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
-                    categoryLabel={bm.period === 'semanal' ? 'Presupuesto Semanal' : 'Presupuesto Mensual'}
-                    spent={bm.spent}
-                    limit={bm.limitAmount}
-                  />
-                ))}
+              <div className="p-5">
+                {budgetViewMode === 'rings' ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    {budgetMetrics.map(bm => (
+                      <BudgetRingCard
+                        key={bm.id}
+                        label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
+                        categoryLabel={bm.period === 'semanal' ? 'Semanal' : 'Mensual'}
+                        spent={bm.spent}
+                        limit={bm.limitAmount}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {budgetMetrics.map(bm => (
+                      <BudgetBar
+                        key={bm.id}
+                        label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
+                        categoryLabel={bm.period === 'semanal' ? 'Presupuesto Semanal' : 'Presupuesto Mensual'}
+                        spent={bm.spent}
+                        limit={bm.limitAmount}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </Card>
           )}
