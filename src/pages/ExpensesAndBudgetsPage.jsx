@@ -256,13 +256,33 @@ export default function ExpensesAndBudgetsPage() {
 
   const totalsByCategory = useMemo(() => {
     const totals = {}
+    
+    // Inicializar todas las categorías de la estructura con 0
+    Object.keys(expenseStructure).forEach(key => {
+      totals[key] = 0
+    })
+
     currentMonthExpenses.forEach(e => {
-      const key = e.category_key || e.categoryKey
-      if (!totals[key]) totals[key] = 0
-      totals[key] += Number(e.amount) || 0
+      let foundKey = e.category_key || e.categoryKey
+      
+      // Si la key no está en la estructura, buscar por subcategoría
+      if (!expenseStructure[foundKey]) {
+        const matchedKey = Object.keys(expenseStructure).find(catKey => 
+          expenseStructure[catKey]?.subcategories &&
+          Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
+        )
+        if (matchedKey) {
+          foundKey = matchedKey
+        }
+      }
+
+      if (foundKey) {
+        if (!totals[foundKey]) totals[foundKey] = 0
+        totals[foundKey] += Number(e.amount) || 0
+      }
     })
     return totals
-  }, [currentMonthExpenses])
+  }, [currentMonthExpenses, expenseStructure])
 
   const overheadCosts = (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
   const unitOverhead = productionAvg > 0 ? overheadCosts / productionAvg : 0
@@ -273,12 +293,19 @@ export default function ExpensesAndBudgetsPage() {
       const catKey = e.category_key || e.categoryKey
       const sub = e.subcategory
       const item = e.specific_item || e.specificItem || ''
-      if (selectedCategoryFilter && catKey !== selectedCategoryFilter) return false
+      
+      if (selectedCategoryFilter) {
+        const isMatchedCat = catKey === selectedCategoryFilter || 
+          (expenseStructure[selectedCategoryFilter]?.subcategories &&
+           Object.keys(expenseStructure[selectedCategoryFilter].subcategories).includes(sub))
+        if (!isMatchedCat) return false
+      }
+      
       if (selectedSubcategoryFilter && sub !== selectedSubcategoryFilter) return false
       if (itemSearch && !item.toLowerCase().includes(itemSearch.toLowerCase())) return false
       return true
     })
-  }, [expenses, selectedCategoryFilter, selectedSubcategoryFilter, itemSearch])
+  }, [expenses, selectedCategoryFilter, selectedSubcategoryFilter, itemSearch, expenseStructure])
 
   const allSubcategories = useMemo(() => {
     if (selectedCategoryFilter && expenseStructure[selectedCategoryFilter]) {

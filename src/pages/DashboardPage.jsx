@@ -461,18 +461,8 @@ export default function DashboardPage() {
         const orderDate = o.created_at?.split('T')[0]
         if (orderDate < periodStart) return
 
-        if (goal.categoryId === 'global') {
-          // Meta global: suma el total de la orden
-          currentSales += parseFloat(o.total_amount) || 0
-        } else {
-          // Meta por categoría: suma solo el total de los ítems de esa categoría
-          const items = o.order_items || []
-          items.forEach(item => {
-            if (item.category === goal.categoryId) {
-              currentSales += parseFloat(item.total_price) || 0
-            }
-          })
-        }
+        // En las metas, deben tomarse en cuenta todas las ventas
+        currentSales += parseFloat(o.total_amount) || 0
       })
 
       return {
@@ -491,8 +481,13 @@ export default function DashboardPage() {
       const periodStart = budget.period === 'semanal' ? startOfWeek : startOfMonth
 
       monthExpenses.forEach(exp => {
-        // Evaluar a nivel de categoría solamente
-        if (exp.category_key === budget.categoryKey) {
+        // En los presupuestos deben tomarse en cuenta los gastos respectivos de cada sub categoría
+        const subcategoriesOfBudgetCategory = expenseStructure[budget.categoryKey]?.subcategories 
+          ? Object.keys(expenseStructure[budget.categoryKey].subcategories)
+          : []
+        const matchesSubcategory = subcategoriesOfBudgetCategory.includes(exp.subcategory)
+
+        if (exp.category_key === budget.categoryKey || matchesSubcategory) {
           if (exp.date >= periodStart) {
             spent += parseFloat(exp.amount) || 0
           }
@@ -501,7 +496,7 @@ export default function DashboardPage() {
 
       return { ...budget, spent }
     })
-  }, [budgets, monthExpenses, startOfWeek, startOfMonth])
+  }, [budgets, monthExpenses, startOfWeek, startOfMonth, expenseStructure])
 
   // --- Cálculos de Gastos Personales y de Casa ---
   const personalData = useMemo(() => {
@@ -511,7 +506,8 @@ export default function DashboardPage() {
     
     let totalAll = 0
     monthExpenses.forEach(exp => {
-      if (exp.category_key === 'PERSONAL') {
+      const isPersonal = exp.category_key === 'PERSONAL' || subcats.includes(exp.subcategory)
+      if (isPersonal) {
         const amt = parseFloat(exp.amount) || 0
         totalAll += amt
         const subName = exp.subcategory || 'Otro'
@@ -535,7 +531,8 @@ export default function DashboardPage() {
     
     let totalAll = 0
     monthExpenses.forEach(exp => {
-      if (exp.category_key === 'CASA_FAMILIA') {
+      const isCasa = exp.category_key === 'CASA_FAMILIA' || subcats.includes(exp.subcategory)
+      if (isCasa) {
         const amt = parseFloat(exp.amount) || 0
         totalAll += amt
         const subName = exp.subcategory || 'Otro'
