@@ -34,6 +34,8 @@ export default function ExpensesAndBudgetsPage() {
 
   const [productionAvg, setProductionAvg] = useState(1000)
   const [providers, setProviders] = useState([])
+  const [dependientes, setDependientes] = useState([])
+  const [terceroType, setTerceroType] = useState('proveedor')
   const [saving, setSaving] = useState(false)
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('')
@@ -44,23 +46,24 @@ export default function ExpensesAndBudgetsPage() {
   const expenseStructure = settings?.expenseStructure || defaultExpenseStructure
 
   useEffect(() => {
-    async function fetchProviders() {
+    async function fetchTerceros() {
       if (!user) return
       try {
         const { data, error } = await supabase
           .from('terceros')
           .select('*')
           .eq('user_id', user.id)
-          .eq('role', 'proveedor')
+          .in('role', ['proveedor', 'dependiente'])
           .order('name')
         if (!error && data) {
-          setProviders(data)
+          setProviders(data.filter(t => t.role === 'proveedor'))
+          setDependientes(data.filter(t => t.role === 'dependiente'))
         }
       } catch (err) {
-        console.error('Error fetching providers:', err)
+        console.error('Error fetching terceros:', err)
       }
     }
-    fetchProviders()
+    fetchTerceros()
   }, [user])
 
   // --- FORMULARIO WIZARD ---
@@ -84,11 +87,13 @@ export default function ExpensesAndBudgetsPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const providerSuggestions = useMemo(() => {
+  const suggestions = useMemo(() => {
     const q = form.providerName.trim().toLowerCase()
-    if (!q || q === 'proveedor genérico') return []
-    return providers.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
-  }, [providers, form.providerName])
+    const genericName = terceroType === 'proveedor' ? 'proveedor genérico' : 'empleado genérico'
+    if (!q || q === genericName) return []
+    const list = terceroType === 'proveedor' ? providers : dependientes
+    return list.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
+  }, [providers, dependientes, form.providerName, terceroType])
 
   const updateForm = (field, value) => {
     setForm(prev => {
@@ -110,7 +115,11 @@ export default function ExpensesAndBudgetsPage() {
 
   const validateStep = (step) => {
     if (step === 1) {
-      if (!form.providerName) return 'Ingresa el nombre del proveedor o usa el Genérico'
+      if (!form.providerName) {
+        return terceroType === 'proveedor'
+          ? 'Ingresa el nombre del proveedor o usa el Genérico'
+          : 'Ingresa el nombre del empleado o usa el Genérico'
+      }
     }
     if (step === 2) {
       if (!form.categoryKey) return 'Selecciona una categoría principal'
@@ -158,30 +167,36 @@ export default function ExpensesAndBudgetsPage() {
     setSaving(true)
     setError(null)
     try {
-      const trimmedProvider = form.providerName.trim() || 'Proveedor Genérico'
+      const defaultGenericName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
+      const trimmedProvider = form.providerName.trim() || defaultGenericName
       let providerId = null
 
-      const existing = providers.find(p => p.name.toLowerCase() === trimmedProvider.toLowerCase())
+      const list = terceroType === 'proveedor' ? providers : dependientes
+      const existing = list.find(p => p.name.toLowerCase() === trimmedProvider.toLowerCase())
       if (existing) {
         providerId = existing.id
-      } else if (trimmedProvider !== 'Proveedor Genérico') {
+      } else if (trimmedProvider !== 'Proveedor Genérico' && trimmedProvider !== 'Empleado Genérico') {
         try {
           const { data: newProv, error: errProv } = await supabase
             .from('terceros')
             .insert({
               user_id: user.id,
               name: trimmedProvider,
-              role: 'proveedor',
+              role: terceroType,
               phone: form.providerPhone.trim() || null,
               email: form.providerEmail.trim() || null,
-              notes: form.providerNit ? `NIT: ${form.providerNit}` : null,
-              client_type: 'otro'
+              notes: form.providerNit ? (terceroType === 'proveedor' ? `NIT: ${form.providerNit}` : `CI: ${form.providerNit}`) : null,
+              client_type: terceroType === 'proveedor' ? 'otro' : 'dependiente'
             })
             .select()
             .single()
           if (!errProv && newProv) {
             providerId = newProv.id
-            setProviders(prev => [...prev, newProv])
+            if (terceroType === 'proveedor') {
+              setProviders(prev => [...prev, newProv])
+            } else {
+              setDependientes(prev => [...prev, newProv])
+            }
           }
         } catch (e) {
           console.error('Error inserting provider automatically:', e)
@@ -223,6 +238,7 @@ export default function ExpensesAndBudgetsPage() {
         advanceAmount: '',
         paymentMethod: 'efectivo'
       })
+      setTerceroType('proveedor')
       setCurrentStep(1)
       setSuccess('Transacción registrada con éxito')
       setFormOpen(false) // Cerrar modal si está en móvil
@@ -357,14 +373,53 @@ export default function ExpensesAndBudgetsPage() {
           {/* PASO 1: Proveedor */}
           {currentStep === 1 && (
             <div className="space-y-4 animate-fade-in">
+              {/* Selector de Tipo de Beneficiario */}
+              <div className="flex bg-surface-container-high/40 p-0.5 rounded-lg border border-outline-variant/30 select-none w-full mb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTerceroType('proveedor')
+                    if (form.providerName === 'Empleado Genérico') {
+                      updateForm('providerName', '')
+                    }
+                  }}
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
+                    terceroType === 'proveedor'
+                      ? 'bg-[#ff5c00] text-white shadow-sm'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">local_shipping</span>
+                  Proveedor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTerceroType('dependiente')
+                    if (form.providerName === 'Proveedor Genérico') {
+                      updateForm('providerName', '')
+                    }
+                  }}
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
+                    terceroType === 'dependiente'
+                      ? 'bg-[#ff5c00] text-white shadow-sm'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">badge</span>
+                  Dependiente
+                </button>
+              </div>
+
               <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
                 <p className="text-[10px] text-on-surface-variant/80">
-                  ¿Proveedor rápido?
+                  {terceroType === 'proveedor' ? '¿Proveedor rápido?' : '¿Empleado rápido?'}
                 </p>
                 <button
                   type="button"
                   onClick={() => {
-                    updateForm('providerName', 'Proveedor Genérico')
+                    const defaultName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
+                    updateForm('providerName', defaultName)
                     updateForm('providerNit', '')
                     updateForm('providerPhone', '')
                     updateForm('providerEmail', '')
@@ -380,21 +435,21 @@ export default function ExpensesAndBudgetsPage() {
               <div className="space-y-3">
                 <div className="relative">
                   <Input
-                    label="Nombre o Razón Social"
+                    label={terceroType === 'proveedor' ? "Nombre o Razón Social" : "Nombre del Empleado"}
                     value={form.providerName}
                     onChange={e => updateForm('providerName', e.target.value)}
-                    placeholder="Ej. Comercializadora XYZ S.A."
+                    placeholder={terceroType === 'proveedor' ? "Ej. Comercializadora XYZ S.A." : "Ej. Juan Pérez"}
                     error={error && !form.providerName ? 'Requerido' : null}
                   />
-                  {providerSuggestions.length > 0 && (
+                  {suggestions.length > 0 && (
                     <div className="absolute z-30 w-full mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-outline-variant/30">
-                      {providerSuggestions.map(prov => (
+                      {suggestions.map(prov => (
                         <div
                           key={prov.id}
                           className="p-3 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors flex items-center justify-between"
                           onClick={() => {
                             updateForm('providerName', prov.name)
-                            updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || '')
+                            updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || prov.notes?.match(/CI:\s*([^\s,]+)/)?.[1] || '')
                             updateForm('providerPhone', prov.phone || '')
                             updateForm('providerEmail', prov.email || '')
                           }}
@@ -408,10 +463,10 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
 
                 <Input
-                  label="ID / NIT (Opcional)"
+                  label={terceroType === 'proveedor' ? "ID / NIT (Opcional)" : "CI / Documento (Opcional)"}
                   value={form.providerNit}
                   onChange={e => updateForm('providerNit', e.target.value)}
-                  placeholder="Ej. 10293847-5"
+                  placeholder={terceroType === 'proveedor' ? "Ej. 10293847-5" : "Ej. 8765432"}
                   className="font-mono"
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -427,7 +482,7 @@ export default function ExpensesAndBudgetsPage() {
                     type="email"
                     value={form.providerEmail}
                     onChange={e => updateForm('providerEmail', e.target.value)}
-                    placeholder="proveedor@correo.com"
+                    placeholder={terceroType === 'proveedor' ? "proveedor@correo.com" : "empleado@correo.com"}
                   />
                 </div>
               </div>
