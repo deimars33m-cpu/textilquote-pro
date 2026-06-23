@@ -460,6 +460,7 @@ export default function ExpensesAndBudgetsPage() {
   }
 
   const handleSaveExpense = async () => {
+    if (saving) return;
     const err = validateStep(5)
     if (err) return setError(err)
 

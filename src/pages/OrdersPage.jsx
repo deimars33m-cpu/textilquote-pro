@@ -73,6 +73,7 @@ export default function OrdersPage() {
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   // Asistente de registro de pedidos (5 pasos)
   const [currentStep, setCurrentStep] = useState(1)
@@ -449,12 +450,15 @@ export default function OrdersPage() {
   }
 
   const handleRegister = async () => {
+    if (saving) return; // Prevent double submit
+    
     const total = totalAmount
     const advance = parseFloat(orderForm.advanceAmount) || 0
     const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
     const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
     const isSublimacionPaneles = orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada'
 
+    setSaving(true)
     try {
       let clientId = null
       const clientName = orderForm.clientName.trim()
@@ -560,6 +564,8 @@ export default function OrdersPage() {
     } catch (err) {
       console.error('Error al registrar pedido:', err)
       alert(`Error al registrar el pedido: ${err.message || 'Error desconocido'}`)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1330,13 +1336,21 @@ export default function OrdersPage() {
                 variant="primary"
                 className="w-full flex items-center justify-center gap-1.5"
                 onClick={handleNext}
+                disabled={saving}
                 style={currentStep === 5 ? { backgroundColor: '#ff5c00', color: 'white' } : {}}
               >
                 {currentStep === 5 ? (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                    Registrar
-                  </>
+                  saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Registrando...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      Registrar
+                    </>
+                  )
                 ) : (
                   <>
                     Continuar
