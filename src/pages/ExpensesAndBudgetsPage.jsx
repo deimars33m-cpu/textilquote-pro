@@ -46,7 +46,7 @@ function NeuralLineChart({ data, total }) {
   const [hoveredPoint, setHoveredPoint] = useState(null)
 
   return (
-    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,122,0,0.07),rgba(255,255,255,0))] pointer-events-none" />
       <div className="flex items-center justify-between mb-4 z-10">
         <div>
@@ -161,7 +161,7 @@ function NeuralDonut({ data, total }) {
   let accumulatedPercent = 0
 
   return (
-    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 flex flex-col justify-between h-full relative overflow-hidden">
+    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 flex flex-col justify-between h-auto lg:h-full relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.05),rgba(255,255,255,0))] pointer-events-none" />
       <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-3 z-10">
         <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
@@ -1550,14 +1550,14 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
 
                 {/* Right Area (Donut Chart & Forecast) */}
-                <div className="space-y-6 flex flex-col">
+                <div className="space-y-6 flex flex-col lg:h-full">
                   {/* Donut Chart */}
-                  <div className="flex-1">
+                  <div className="lg:flex-1">
                     <NeuralDonut data={categoryDistribution} total={totalSpentMonth} />
                   </div>
 
                   {/* AI Prediction Card */}
-                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-full min-h-[220px]">
+                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full min-h-[220px]">
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(168,85,247,0.05),transparent)] pointer-events-none" />
                     <div>
                       <div className="flex items-center justify-between mb-5 pb-3 border-b border-outline-variant/40">
