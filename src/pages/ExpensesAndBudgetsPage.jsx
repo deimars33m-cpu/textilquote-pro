@@ -299,6 +299,8 @@ export default function ExpensesAndBudgetsPage() {
   const [terceroType, setTerceroType] = useState('proveedor')
   const [saving, setSaving] = useState(false)
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
+  const [orders, setOrders] = useState([])
+  const [loadingOrders, setLoadingOrders] = useState(false)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('')
   const [selectedSubcategoryFilter, setSelectedSubcategoryFilter] = useState('')
   const [selectedExpense, setSelectedExpense] = useState(null)
@@ -325,6 +327,42 @@ export default function ExpensesAndBudgetsPage() {
       }
     }
     fetchTerceros()
+  }, [user])
+
+  useEffect(() => {
+    async function fetchOrders() {
+      if (!user) return
+      setLoadingOrders(true)
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            created_at,
+            total_amount,
+            paid_amount,
+            status,
+            order_items (
+              id,
+              name,
+              category,
+              product_category,
+              quantity,
+              unit_price,
+              total_price
+            )
+          `)
+          .eq('user_id', user.id)
+        if (!error && data) {
+          setOrders(data)
+        }
+      } catch (err) {
+        console.error('Error fetching orders for sublimation:', err)
+      } finally {
+        setLoadingOrders(false)
+      }
+    }
+    fetchOrders()
   }, [user])
 
   // --- FORMULARIO WIZARD ---
@@ -684,6 +722,105 @@ export default function ExpensesAndBudgetsPage() {
       lastDayOfMonth
     }
   }, [totalSpentMonth, totalBudget])
+
+  const sublimationStats = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    
+    // Filter expenses for current year that are under category_key 'INSUMOS' and subcategory 'Sublimación'
+    const subExpenses = expenses.filter(e => {
+      const d = new Date(e.date)
+      const isCurrentYear = d.getFullYear() === currentYear
+      if (!isCurrentYear) return false
+      
+      let eCat = e.category_key || e.categoryKey
+      if (!eCat) {
+        const matchedKey = Object.keys(expenseStructure).find(catKey => 
+          expenseStructure[catKey]?.subcategories &&
+          Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
+        )
+        if (matchedKey) eCat = matchedKey
+      }
+      
+      return eCat === 'INSUMOS' && e.subcategory === 'Sublimación'
+    })
+    
+    let inkQuantity = 0
+    let inkCost = 0
+    let paperQuantity = 0
+    let paperCost = 0
+    let otherSubCost = 0
+    
+    subExpenses.forEach(e => {
+      const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
+      if (itemLower.includes('tinta')) {
+        inkQuantity += Number(e.quantity) || 0
+        inkCost += Number(e.amount) || 0
+      } else if (itemLower.includes('papel')) {
+        paperQuantity += Number(e.quantity) || 0
+        paperCost += Number(e.amount) || 0
+      } else {
+        otherSubCost += Number(e.amount) || 0
+      }
+    })
+    
+    const totalSubExpenses = inkCost + paperCost + otherSubCost
+    
+    let totalPanels = 0
+    let panelRevenue = 0
+    let totalSubRevenue = 0
+    let totalMeters = 0
+    let meterRevenue = 0
+    
+    orders.forEach(o => {
+      const d = new Date(o.created_at)
+      const isCurrentYear = d.getFullYear() === currentYear
+      if (!isCurrentYear) return
+      
+      if (o.order_items) {
+        o.order_items.forEach(item => {
+          const catLower = (item.category || '').toLowerCase()
+          const prodCatUpper = (item.product_category || '').toUpperCase()
+          
+          if (catLower.includes('sublimac') || catLower.includes('sublimación')) {
+            totalSubRevenue += Number(item.total_price) || 0
+            
+            if (prodCatUpper.includes('PANEL') || prodCatUpper.includes('PANELES')) {
+              totalPanels += Number(item.quantity) || 0
+              panelRevenue += Number(item.total_price) || 0
+            } else if (prodCatUpper.includes('METRO') || prodCatUpper.includes('METROS')) {
+              totalMeters += Number(item.quantity) || 0
+              meterRevenue += Number(item.total_price) || 0
+            }
+          }
+        })
+      }
+    })
+    
+    const avgInkCostPerPanel = totalPanels > 0 ? inkCost / totalPanels : 0
+    const avgPaperCostPerPanel = totalPanels > 0 ? paperCost / totalPanels : 0
+    const avgCombinedCostPerPanel = totalPanels > 0 ? (inkCost + paperCost) / totalPanels : 0
+    
+    const costToRevenueRatio = totalSubRevenue > 0 ? (totalSubExpenses / totalSubRevenue) * 100 : 0
+    
+    return {
+      inkQuantity,
+      inkCost,
+      paperQuantity,
+      paperCost,
+      otherSubCost,
+      totalSubExpenses,
+      totalPanels,
+      panelRevenue,
+      totalSubRevenue,
+      totalMeters,
+      meterRevenue,
+      avgInkCostPerPanel,
+      avgPaperCostPerPanel,
+      avgCombinedCostPerPanel,
+      costToRevenueRatio,
+      currentYear
+    }
+  }, [expenses, orders, expenseStructure])
 
   // --- FILTROS DE LISTA ---
   const filteredExpenses = useMemo(() => {
@@ -1619,7 +1756,9 @@ export default function ExpensesAndBudgetsPage() {
 
           {/* PESTAÑA 3: ANALISIS DE COSTOS (PRORRATEO) */}
           {activeTab === 'analisis' && (
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto space-y-6">
+              
+              {/* Overhead unit cost card */}
               <Card className="relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
                 <div className="p-8">
@@ -1666,9 +1805,136 @@ export default function ExpensesAndBudgetsPage() {
                       {formatCurrency(unitOverhead)} <span className="text-lg text-primary/50">/ u</span>
                     </div>
                   </div>
+                </div>
+              </Card>
+
+              {/* Sublimation Cost Analysis card */}
+              <Card className="relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-[#a855f7]" />
+                <div className="p-8">
+                  <div className="flex items-start gap-4 mb-8">
+                    <div className="w-12 h-12 rounded-xl bg-[#a855f7]/10 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[#a855f7] text-2xl">texture</span>
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Sublimación (Gestión {sublimationStats.currentYear})</h2>
+                      <p className="text-sm text-on-surface-variant leading-relaxed">
+                        Evaluación específica de la categoría de <strong>Sublimación</strong>. Relaciona los paneles estampados y los insumos (papel y tinta) con los ingresos totales del área para determinar costos unitarios estimados.
+                      </p>
+                    </div>
+                  </div>
+
+                  {loadingOrders ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-on-surface-variant gap-2">
+                      <div className="w-8 h-8 border-2 border-[#a855f7]/20 border-t-[#a855f7] rounded-full animate-spin" />
+                      <p className="text-xs">Cargando base de datos de gestión...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Sublimation metrics summary */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Paneles Producidos</span>
+                          <div>
+                            <span className="text-xl font-mono font-bold text-white block">{sublimationStats.totalPanels} <span className="text-xs text-on-surface-variant">unidades</span></span>
+                            <span className="text-[10px] text-emerald-400 font-semibold block mt-1">Ingreso: {formatCurrency(sublimationStats.panelRevenue)}</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Insumos Consumidos</span>
+                          <div>
+                            <span className="text-xs text-white block">🧻 Papel: <strong>{sublimationStats.paperQuantity} u</strong> ({formatCurrency(sublimationStats.paperCost)})</span>
+                            <span className="text-xs text-white block mt-1">🧪 Tinta: <strong>{sublimationStats.inkQuantity} u</strong> ({formatCurrency(sublimationStats.inkCost)})</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Ingreso Total Sublimación</span>
+                          <div>
+                            <span className="text-xl font-mono font-bold text-white block">{formatCurrency(sublimationStats.totalSubRevenue)}</span>
+                            <span className="text-[10px] text-on-surface-variant block mt-1">Incluye paneles, metros y calandra</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Main Calculation result */}
+                      <div className="bg-[#a855f7]/5 border border-[#a855f7]/20 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between shadow-lg gap-4">
+                        <div className="space-y-1">
+                          <h3 className="text-base font-bold text-[#a855f7] flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[18px]">calculate</span>
+                            Costo Unitario Estimado por Panel:
+                          </h3>
+                          <p className="text-xs text-[#a855f7]/70">Calculado como: (Costo Tinta + Costo Papel) ÷ Cantidad de Paneles</p>
+                        </div>
+                        <div className="text-3xl font-mono font-bold text-[#a855f7] bg-surface px-6 py-3 rounded-xl border border-[#a855f7]/20 shadow-center text-center whitespace-nowrap min-w-[150px]">
+                          {sublimationStats.totalPanels > 0 ? (
+                            <>
+                              {formatCurrency(sublimationStats.avgCombinedCostPerPanel)} <span className="text-xs text-[#a855f7]/50">/ u</span>
+                            </>
+                          ) : (
+                            <span className="text-sm italic text-on-surface-variant/60">Sin paneles</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Performance / Profitability */}
+                      <div className="p-4 rounded-xl bg-surface-container/30 border border-outline-variant/30 space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-mono text-on-surface-variant uppercase tracking-wider font-bold">Relación de Costo Insumos / Ingresos</span>
+                          <span className="font-mono font-bold text-white">{sublimationStats.costToRevenueRatio.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-white/[0.04] rounded-full overflow-hidden p-[1px] border border-white/[0.02]">
+                          <div 
+                            className="h-full rounded-full bg-[#a855f7] shadow-[0_0_6px_rgba(168,85,247,0.5)] transition-all duration-500" 
+                            style={{ width: `${Math.min(100, sublimationStats.costToRevenueRatio)}%` }} 
+                          />
+                        </div>
+                        <p className="text-[10px] text-on-surface-variant">
+                          Los costos totales de insumos en sublimación ({formatCurrency(sublimationStats.totalSubExpenses)}) representan el {sublimationStats.costToRevenueRatio.toFixed(1)}% del total facturado por servicios de sublimación ({formatCurrency(sublimationStats.totalSubRevenue)}).
+                        </p>
+                      </div>
+
+                      {/* Breakdown table */}
+                      <div className="overflow-x-auto rounded-xl border border-outline-variant/50">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                              <th className="py-2.5 px-3">Insumo</th>
+                              <th className="py-2.5 px-3 text-center">Cantidad</th>
+                              <th className="py-2.5 px-3 text-right">Costo Incurrido</th>
+                              <th className="py-2.5 px-3 text-right">Costo Unit. Promedio / Panel</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 font-mono text-on-surface">
+                            <tr className="hover:bg-white/[0.02] transition-colors">
+                              <td className="py-2 px-3 text-white font-sans">🧪 Tintas de Sublimación</td>
+                              <td className="py-2 px-3 text-center">{sublimationStats.inkQuantity} u</td>
+                              <td className="py-2 px-3 text-right">{formatCurrency(sublimationStats.inkCost)}</td>
+                              <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalPanels > 0 ? formatCurrency(sublimationStats.avgInkCostPerPanel) : '—'}</td>
+                            </tr>
+                            <tr className="hover:bg-white/[0.02] transition-colors">
+                              <td className="py-2 px-3 text-white font-sans">🧻 Papel Sublimático</td>
+                              <td className="py-2 px-3 text-center">{sublimationStats.paperQuantity} u</td>
+                              <td className="py-2 px-3 text-right">{formatCurrency(sublimationStats.paperCost)}</td>
+                              <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalPanels > 0 ? formatCurrency(sublimationStats.avgPaperCostPerPanel) : '—'}</td>
+                            </tr>
+                            <tr className="hover:bg-white/[0.02] transition-colors bg-surface-container/20 font-semibold">
+                              <td className="py-2 px-3 text-white font-sans">📦 Total Insumos Estimados</td>
+                              <td className="py-2 px-3 text-center text-white">—</td>
+                              <td className="py-2 px-3 text-right text-white">{formatCurrency(sublimationStats.inkCost + sublimationStats.paperCost)}</td>
+                              <td className="py-2 px-3 text-right text-[#a855f7]">{sublimationStats.totalPanels > 0 ? formatCurrency(sublimationStats.avgCombinedCostPerPanel) : '—'}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                    </div>
+                  )}
 
                 </div>
               </Card>
+
             </div>
           )}
 
