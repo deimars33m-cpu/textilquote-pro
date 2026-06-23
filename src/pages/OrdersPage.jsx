@@ -74,6 +74,7 @@ export default function OrdersPage() {
   const [showMobileForm, setShowMobileForm] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [activeActionMenu, setActiveActionMenu] = useState(null)
 
   // Asistente de registro de pedidos (5 pasos)
   const [currentStep, setCurrentStep] = useState(1)
@@ -174,6 +175,54 @@ export default function OrdersPage() {
       setDbError(err.message || 'Error al cargar los pedidos.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUpdateStatus = async (orderId, currentStatus) => {
+    const statuses = ['pendiente', 'en_proceso', 'listo', 'entregado', 'cancelado']
+    const nextIdx = (statuses.indexOf(currentStatus) + 1) % statuses.length
+    const nextStatus = statuses[nextIdx]
+    
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: nextStatus })
+        .eq('id', orderId)
+      if (error) throw error
+      
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o))
+    } catch (err) {
+      console.error('Error updating order status:', err)
+      alert('Error al actualizar el estado: ' + err.message)
+    }
+  }
+
+  const handleUpdatePaymentStatus = async (orderId, currentPaymentStatus, orderTotal) => {
+    const paymentStatuses = ['pendiente', 'adelanto', 'pagado']
+    const nextIdx = (paymentStatuses.indexOf(currentPaymentStatus) + 1) % paymentStatuses.length
+    const nextPaymentStatus = paymentStatuses[nextIdx]
+    
+    let nextPaidAmount = 0
+    if (nextPaymentStatus === 'pagado') {
+      nextPaidAmount = orderTotal
+    } else if (nextPaymentStatus === 'adelanto') {
+      nextPaidAmount = orderTotal * 0.5
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ 
+          payment_status: nextPaymentStatus,
+          paid_amount: nextPaidAmount
+        })
+        .eq('id', orderId)
+      if (error) throw error
+      
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: nextPaymentStatus, paid_amount: nextPaidAmount } : o))
+    } catch (err) {
+      console.error('Error updating payment status:', err)
+      alert('Error al actualizar el pago: ' + err.message)
     }
   }
 
@@ -1496,27 +1545,23 @@ export default function OrdersPage() {
             <div className="overflow-x-auto">
               <table className="w-full zebra-table">
                 <thead>
-                  <tr className="bg-surface-container-high">
-                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">N°</th>
-                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Cliente</th>
-                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant w-[26%] min-w-[220px]">Ítem Principal</th>
-                    <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Tipo</th>
-                    <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Monto</th>
-                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Producción</th>
-                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Pago</th>
-                    <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
+                  <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
+                    <th className="text-left px-4 py-3">Pedido y Fecha</th>
+                    <th className="text-left px-4 py-3">Cliente / Detalle</th>
+                    <th className="text-right px-4 py-3">Montos (Total / Adelanto)</th>
+                    <th className="text-center px-4 py-3">Estados / Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {loading ? (
                     <tr>
-                      <td colSpan="8" className="text-center py-12">
+                      <td colSpan="4" className="text-center py-12">
                         <LoadingSpinner />
                       </td>
                     </tr>
                   ) : filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center py-12">
+                      <td colSpan="4" className="text-center py-12">
                         <EmptyState
                           icon="shopping_bag"
                           title="Sin pedidos registrados"
@@ -1537,9 +1582,9 @@ export default function OrdersPage() {
 
                       // Mapeos visuales de estados de pago
                       const paymentBadges = {
-                        pendiente: 'bg-error-container/20 text-error border border-error/20',
-                        adelanto: 'bg-primary/10 text-primary border border-primary/20',
-                        pagado: 'bg-tertiary/10 text-tertiary border border-tertiary/20'
+                        pendiente: 'bg-error-container/20 text-error border border-error/20 hover:bg-error-container/30',
+                        adelanto: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
+                        pagado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20'
                       }
 
                       const paymentLabels = {
@@ -1550,11 +1595,11 @@ export default function OrdersPage() {
 
                       // Mapeo visual de producción
                       const statusBadges = {
-                        pendiente: 'bg-white/5 text-on-surface-variant border border-white/10',
-                        en_proceso: 'bg-primary/10 text-primary border border-primary/20',
-                        listo: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
-                        entregado: 'bg-tertiary/10 text-tertiary border border-tertiary/20',
-                        cancelado: 'bg-error-container/25 text-error border border-error/20'
+                        pendiente: 'bg-white/5 text-on-surface-variant border border-white/10 hover:bg-white/10',
+                        en_proceso: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
+                        listo: 'bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20',
+                        entregado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20',
+                        cancelado: 'bg-error-container/25 text-error border border-error/20 hover:bg-error-container/35'
                       }
 
                       const statusLabels = {
@@ -1567,78 +1612,121 @@ export default function OrdersPage() {
 
                       return (
                         <tr key={order.id} className="hover:bg-white/[0.01] transition-colors">
-                          <td className="px-4 py-3 text-sm font-mono text-primary font-semibold">
-                            {orderNum}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-on-surface font-medium">
-                            {order.terceros?.name || 'Cliente general'}
-                          </td>
+                          {/* COLUMNA 1: Fecha y categoría */}
                           <td className="px-4 py-3 text-sm">
-                            <div className="font-semibold text-white">
+                            <span className="font-mono text-primary font-bold block">{orderNum}</span>
+                            <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
+                            <span className="text-[10px] font-semibold text-white/95 uppercase tracking-wide block mt-1">
                               {firstItem?.category || '—'}
-                            </div>
-                            {firstItem?.description && (
-                              <div className="text-[10px] text-primary/80 italic mt-1 font-mono max-w-[200px] truncate" title={firstItem.description}>
-                                Detalle: {firstItem.description}
-                              </div>
-                            )}
-                            {order.order_items?.length > 1 && (
-                              <span className="text-[10px] text-primary font-mono ml-1">
-                                (+{order.order_items.length - 1})
-                              </span>
-                            )}
+                              {order.order_items?.length > 1 && (
+                                <span className="text-[9px] text-primary font-mono ml-1">
+                                  (+{order.order_items.length - 1})
+                                </span>
+                              )}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-xs font-mono">
-                            {order.order_type === 'servicio_diario' ? (
-                              <span className="text-on-surface-variant/80 block">Servicio Diario</span>
-                            ) : (
-                              <span className="text-primary font-bold block">Cotizado</span>
-                            )}
-                            <div className="text-[10px] text-on-surface-variant mt-1 font-sans">
+
+                          {/* COLUMNA 2: Descripcion/Cliente */}
+                          <td className="px-4 py-3 text-sm">
+                            <span className="font-bold text-white block">{order.terceros?.name || 'Cliente general'}</span>
+                            <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
                               {(() => {
                                 const isProduccionTextil = firstItem?.category === 'Producción Textil';
                                 const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
                                 if (isProduccionTextil) {
-                                  return <span className="font-mono text-[#ff5c00] font-bold block">VARIAS TALLAS</span>;
+                                  return 'VARIAS TALLAS / ' + (firstItem?.name || 'Prendas');
                                 } else if (isSublimacionPaneles) {
-                                  return <span className="font-mono text-[#ff5c00] font-bold block">VARIOS ITEMS</span>;
+                                  return 'VARIOS PANELES / Sublimación';
                                 } else {
-                                  return <span className="block">{firstItem?.name || '—'}</span>;
+                                  return firstItem?.name || '—';
                                 }
                               })()}
-                            </div>
+                            </span>
+                            {firstItem?.description && (
+                              <span className="text-[10px] text-primary/80 italic block mt-1 max-w-[220px] truncate" title={firstItem.description}>
+                                Detalle: {firstItem.description}
+                              </span>
+                            )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-right font-mono font-bold text-white">
-                            {formatCurrency(order.total_amount)}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className={`status-badge rounded-full ${statusBadges[order.status]}`}>
-                              {statusLabels[order.status]}
+
+                          {/* COLUMNA 3: Montos */}
+                          <td className="px-4 py-3 text-sm text-right font-mono">
+                            <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
+                            <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                              {(() => {
+                                const totalQty = order.order_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
+                                const avgPrice = totalQty > 0 ? (order.total_amount / totalQty) : 0
+                                return `${totalQty} uds × ${formatCurrency(avgPrice, 0)}`
+                              })()}
+                            </span>
+                            <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
+                              Adelanto: {formatCurrency(order.paid_amount || 0)}
                             </span>
                           </td>
+
+                          {/* COLUMNA 4: Estados / Acciones */}
                           <td className="px-4 py-3 text-center">
-                            <span className={`status-badge rounded-full ${paymentBadges[order.payment_status]}`}>
-                              {paymentLabels[order.payment_status]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-3">
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => setSelectedOrder(order)}
-                                title="Ver Detalle"
-                                className="p-1.5"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">visibility</span>
-                              </Button>
+                            <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                              {/* Estado de produccion button */}
                               <button
-                                onClick={() => handleDeleteOrder(order.id)}
-                                className="text-error hover:text-error/80 transition-colors p-1 flex items-center justify-center"
-                                title="Eliminar pedido"
+                                onClick={() => handleUpdateStatus(order.id, order.status)}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer ${statusBadges[order.status]}`}
+                                title="Click para cambiar estado de producción"
                               >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                                {statusLabels[order.status]}
                               </button>
+
+                              {/* Estado de pago button */}
+                              <button
+                                onClick={() => handleUpdatePaymentStatus(order.id, order.payment_status, order.total_amount)}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer ${paymentBadges[order.payment_status]}`}
+                                title="Click para cambiar estado de pago"
+                              >
+                                {paymentLabels[order.payment_status]}
+                              </button>
+
+                              {/* Tres puntos Acciones Menu */}
+                              <div className="relative inline-block text-left ml-1">
+                                <button
+                                  onClick={() => setActiveActionMenu(activeActionMenu === order.id ? null : order.id)}
+                                  className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                  title="Más acciones"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                                </button>
+                                
+                                {activeActionMenu === order.id && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-20" 
+                                      onClick={() => setActiveActionMenu(null)}
+                                    />
+                                    <div className="absolute right-0 mt-1 w-32 rounded-xl bg-surface-container-high border border-outline-variant/60 shadow-lg py-1.5 z-30 animate-fade-in text-left">
+                                      <button
+                                        onClick={() => {
+                                          setSelectedOrder(order)
+                                          setActiveActionMenu(null)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                                        Ver Detalle
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDeleteOrder(order.id)
+                                          setActiveActionMenu(null)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                                        Eliminar
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
                             </div>
                           </td>
                         </tr>
