@@ -12,6 +12,39 @@ import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
 const PANELS_LIST = ['1 PANEL', '2 PANELES', '3 PANELES', '4 PANELES', '5 PANELES', '6 PANELES']
 
+const SIZE_FACTORS = {
+  '4': { priceFactor: 0.52, m2: [0.17, 0.35, 0.52, 0.70, 0.87], panels: [0.44, 0.87, 1.31, 1.74, 2.18] },
+  '6': { priceFactor: 0.54, m2: [0.19, 0.38, 0.57, 0.76, 0.95], panels: [0.48, 0.95, 1.43, 1.90, 2.38] },
+  '8': { priceFactor: 0.70, m2: [0.21, 0.42, 0.63, 0.84, 1.05], panels: [0.53, 1.05, 1.58, 2.10, 2.63] },
+  '10': { priceFactor: 0.70, m2: [0.24, 0.48, 0.73, 0.97, 1.21], panels: [0.61, 1.21, 1.82, 2.42, 3.03] },
+  '12': { priceFactor: 0.90, m2: [0.27, 0.55, 0.82, 1.10, 1.37], panels: [0.69, 1.37, 2.06, 2.74, 3.43] },
+  '14': { priceFactor: 0.90, m2: [0.31, 0.61, 0.92, 1.22, 1.53], panels: [0.77, 1.53, 2.30, 3.06, 3.83] },
+  'S': { priceFactor: 0.96, m2: [0.34, 0.68, 1.01, 1.35, 1.69], panels: [0.85, 1.69, 2.54, 3.38, 4.23] },
+  'M': { priceFactor: 1.00, m2: [0.37, 0.74, 1.11, 1.48, 1.85], panels: [0.93, 1.85, 2.78, 3.70, 4.63] },
+  'L': { priceFactor: 1.00, m2: [0.40, 0.80, 1.20, 1.60, 2.00], panels: [1.00, 2.00, 3.00, 4.00, 5.00] },
+  'XL': { priceFactor: 1.16, m2: [0.41, 0.82, 1.23, 1.64, 2.05], panels: [1.03, 2.05, 3.08, 4.10, 5.13] },
+  'XXL': { priceFactor: 1.20, m2: [0.42, 0.84, 1.26, 1.68, 2.10], panels: [1.05, 2.10, 3.15, 4.20, 5.25] }
+}
+const SUBLIMATION_SIZES = ['4', '6', '8', '10', '12', '14', 'S', 'M', 'L', 'XL', 'XXL']
+
+const getInitialPanelSizePrices = (basePrice = 10) => {
+  return PANELS_LIST.reduce((acc, panel) => {
+    const match = panel.match(/^(\d+)/)
+    const panelsCount = match ? parseInt(match[1]) : 1
+    const sizePrices = SUBLIMATION_SIZES.reduce((accSize, size) => {
+      const factor = SIZE_FACTORS[size]?.priceFactor || 1.0
+      const price = basePrice * factor * panelsCount
+      return { ...accSize, [size]: price }
+    }, {})
+    return { ...acc, [panel]: sizePrices }
+  }, {})
+}
+
+const initialPanelSizes = PANELS_LIST.reduce((acc, panel) => ({
+  ...acc,
+  [panel]: SUBLIMATION_SIZES.reduce((accSize, size) => ({ ...accSize, [size]: 0 }), {})
+}), {})
+
 const PANEL_OPTIONS = {
   '1 PANEL': ['Almohadas', 'Delantera suelta', 'Otros'],
   '2 PANELES': ['Short', 'Delantera+Espalda', 'Otros'],
@@ -119,7 +152,10 @@ export default function OrdersPage() {
     advanceAmount: 0,
     paymentNotes: '',
     particularDetails: '',
-    orderDate: new Date().toISOString().split('T')[0]
+    orderDate: new Date().toISOString().split('T')[0],
+    basePanelPrice: 10,
+    panelSizes: initialPanelSizes,
+    panelSizePrices: getInitialPanelSizePrices(10)
   })
   const [formErrors, setFormErrors] = useState({})
 
@@ -419,7 +455,10 @@ export default function OrdersPage() {
       advanceAmount: 0,
       paymentNotes: '',
       particularDetails: '',
-      orderDate: new Date().toISOString().split('T')[0]
+      orderDate: new Date().toISOString().split('T')[0],
+      basePanelPrice: 10,
+      panelSizes: initialPanelSizes,
+      panelSizePrices: getInitialPanelSizePrices(10)
     })
     setFormErrors({})
     if (convertQuoteId) {
@@ -484,6 +523,58 @@ export default function OrdersPage() {
     }))
   }
 
+  const handleBasePanelPriceChange = (val) => {
+    const numericVal = parseFloat(val) || 0
+    setOrderForm(prev => {
+      const newPrices = PANELS_LIST.reduce((acc, panel) => {
+        const match = panel.match(/^(\d+)/)
+        const panelsCount = match ? parseInt(match[1]) : 1
+        const sizePrices = SUBLIMATION_SIZES.reduce((accSize, size) => {
+          const factor = SIZE_FACTORS[size]?.priceFactor || 1.0
+          const price = numericVal * factor * panelsCount
+          return { ...accSize, [size]: price }
+        }, {})
+        return { ...acc, [panel]: sizePrices }
+      }, {})
+      return {
+        ...prev,
+        basePanelPrice: numericVal,
+        panelSizePrices: newPrices
+      }
+    })
+  }
+
+  const metrics = useMemo(() => {
+    let totalGarments = 0
+    let totalNominalPanels = 0
+    let totalEquivalentPanels = 0
+    let totalM2 = 0
+
+    PANELS_LIST.forEach(panel => {
+      const match = panel.match(/^(\d+)/)
+      const panelsPerGarment = match ? parseInt(match[1]) : 1
+      
+      SUBLIMATION_SIZES.forEach(size => {
+        const qty = orderForm.panelSizes[panel]?.[size] || 0
+        if (qty > 0) {
+          totalGarments += qty
+          totalNominalPanels += qty * panelsPerGarment
+          
+          const f = SIZE_FACTORS[size]
+          if (f) {
+            const idx = Math.min(4, panelsPerGarment - 1)
+            const m2Val = f.m2[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            const pVal = f.panels[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            totalM2 += qty * m2Val
+            totalEquivalentPanels += qty * pVal
+          }
+        }
+      })
+    })
+
+    return { totalGarments, totalNominalPanels, totalEquivalentPanels, totalM2 }
+  }, [orderForm.panelSizes])
+
   const totalAmount = useMemo(() => {
     const activeSub = settings.subcategories[orderForm.category]?.find(s => s.id === orderForm.subcategory)
     const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && orderForm.category === 'produccion_textil')
@@ -495,10 +586,13 @@ export default function OrdersPage() {
         return sum + (parseInt(qty) || 0) * parseFloat(price)
       }, 0)
     } else if (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') {
-      return Object.entries(orderForm.sizes).reduce((sum, [panel, qty]) => {
-        if (!PANELS_LIST.includes(panel)) return sum;
-        const price = orderForm.sizePrices[panel] || 0
-        return sum + (parseInt(qty) || 0) * parseFloat(price)
+      return PANELS_LIST.reduce((sum, panel) => {
+        const panelSum = SUBLIMATION_SIZES.reduce((subSum, size) => {
+          const qty = orderForm.panelSizes[panel]?.[size] || 0
+          const price = orderForm.panelSizePrices[panel]?.[size] || 0
+          return subSum + qty * price
+        }, 0)
+        return sum + panelSum
       }, 0)
     } else {
       const unit = activeSub?.unit || 'unidad';
@@ -509,7 +603,7 @@ export default function OrdersPage() {
          return (parseInt(orderForm.flatQuantity) || 0) * (parseFloat(orderForm.flatUnitPrice) || 0)
       }
     }
-  }, [orderForm.category, orderForm.subcategory, orderForm.sizes, orderForm.sizePrices, orderForm.flatQuantity, orderForm.flatUnitPrice, orderForm.stitchesCount, settings])
+  }, [orderForm.category, orderForm.subcategory, orderForm.sizes, orderForm.sizePrices, orderForm.flatQuantity, orderForm.flatUnitPrice, orderForm.stitchesCount, orderForm.panelSizes, orderForm.panelSizePrices, settings])
 
   const subtotal = totalAmount / 1.18
   const igvAmount = totalAmount - subtotal
@@ -659,7 +753,12 @@ export default function OrdersPage() {
           ? PANELS_LIST.reduce((acc, panel) => {
               const qtyQty = orderForm.sizes[panel] || 0
               const type = orderForm.itemTypes[panel] || 'Otros'
-              return { ...acc, [panel]: { cantidad: qtyQty, tipo: type } }
+              const tallas = SUBLIMATION_SIZES.reduce((accSize, size) => {
+                const q = orderForm.panelSizes[panel]?.[size] || 0
+                if (q > 0) accSize[size] = q
+                return accSize
+              }, {})
+              return { ...acc, [panel]: { cantidad: qtyQty, tipo: type, tallas: tallas } }
             }, {})
           : null
 
@@ -1074,104 +1173,187 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 ) : (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') ? (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
+                    {/* Configuración de Tarifa Base por Panel */}
+                    <div className="neu-pressed p-4 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider block">Configuración de Tarifa</span>
+                        <span className="text-sm font-bold text-white block">Precio Base por Panel</span>
+                        <p className="text-[10px] text-on-surface-variant/70 leading-normal mt-0.5">
+                          Todos los precios por talla y cantidad de paneles se calculan a partir de este precio base.
+                        </p>
+                      </div>
+                      <div className="w-[120px] shrink-0">
+                        <Input
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={orderForm.basePanelPrice || 10}
+                          onChange={e => handleBasePanelPriceChange(e.target.value)}
+                          className="font-mono text-center text-lg font-bold text-[#ff7a00]"
+                          suffix="Bs"
+                        />
+                      </div>
+                    </div>
+
                     <p className="text-xs text-on-surface-variant/80">
-                      Modifica la cantidad y el precio por tipo de panel (desliza horizontalmente).
+                      Modifica las cantidades por talla dentro de cada módulo de paneles (desliza horizontalmente para ver los módulos).
                     </p>
                     {formErrors.sizes && (
                       <AlertBanner type="error">{formErrors.sizes}</AlertBanner>
                     )}
+
                     <div className="panels-scroll-container pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-[#ff5c00]/30 scrollbar-track-transparent">
                       {PANELS_LIST.map((panel) => {
-                        const qty = orderForm.sizes[panel] || 0
-                        const price = orderForm.sizePrices[panel] || 0
+                        const totalQty = Object.values(orderForm.panelSizes[panel] || {}).reduce((sum, v) => sum + v, 0)
+                        
                         return (
-                          <div key={panel} className="min-w-[175px] w-[175px] flex-shrink-0 snap-start p-3 bg-surface-container rounded-xl border border-outline-variant space-y-2.5 text-on-surface">
-                            <div className="flex justify-between items-center border-b border-outline-variant/30 pb-1">
-                              <span className="text-[11px] font-bold text-primary truncate max-w-[90px]" title={panel}>{panel}</span>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={price}
-                                  onChange={e => updateSizePrice(panel, e.target.value)}
-                                  className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs text-on-surface font-mono outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
-                                />
+                          <div key={panel} className="min-w-[340px] w-[340px] flex-shrink-0 snap-start p-4 bg-surface-container rounded-xl border border-outline-variant space-y-4 text-on-surface">
+                            <div className="flex justify-between items-center border-b border-outline-variant/30 pb-2">
+                              <div>
+                                <span className="text-sm font-black text-primary block">{panel}</span>
+                                <span className="text-[9px] text-on-surface-variant font-mono uppercase">Prendas Totales: {totalQty}</span>
                               </div>
-                            </div>
-                            
-                            <div className="flex items-center justify-between neu-pressed rounded-lg p-1 border border-outline-variant/30">
-                              <button
-                                type="button"
-                                onClick={() => updateSizeQty(panel, -1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">remove</span>
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                value={qty}
-                                onChange={e => {
-                                  const val = Math.max(0, parseInt(e.target.value) || 0)
-                                  setOrderForm(prev => ({
-                                    ...prev,
-                                    sizes: { ...prev.sizes, [panel]: val }
-                                  }))
-                                }}
-                                className="bg-transparent border-none text-center w-8 font-mono text-xs text-on-surface outline-none focus:ring-0"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => updateSizeQty(panel, 1)}
-                                className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">add</span>
-                              </button>
-                            </div>
+                              
+                              {/* Dropdown y Textbox para Tipo de Item */}
+                              {(() => {
+                                const options = PANEL_OPTIONS[panel] || [];
+                                const currentVal = orderForm.itemTypes[panel] || 'Otros';
+                                const isCustom = !options.filter(opt => opt !== 'Otros').includes(currentVal);
+                                const selectVal = isCustom ? 'Otros' : currentVal;
 
-                            {/* Dropdown y Textbox para Tipo de Item */}
-                            {(() => {
-                              const options = PANEL_OPTIONS[panel] || [];
-                              const currentVal = orderForm.itemTypes[panel] || 'Otros';
-                              const isCustom = !options.filter(opt => opt !== 'Otros').includes(currentVal);
-                              const selectVal = isCustom ? 'Otros' : currentVal;
-
-                              return (
-                                <div className="space-y-1 pt-1.5 border-t border-outline-variant/30">
-                                  <label className="text-[9px] text-on-surface-variant font-mono block">TIPO ITEM:</label>
-                                  <select
-                                    value={selectVal}
-                                    onChange={e => {
-                                      const val = e.target.value
-                                      updateFormItemType(panel, val)
-                                    }}
-                                    className="w-full bg-transparent border-none rounded px-1 py-0.5 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
-                                  >
-                                    {options.map(opt => (
-                                      <option key={opt} value={opt} className="bg-surface text-on-surface text-[10px]">{opt}</option>
-                                    ))}
-                                  </select>
-                                  {selectVal === 'Otros' && (
-                                    <input
-                                      type="text"
-                                      placeholder="Especificar..."
-                                      value={currentVal === 'Otros' ? '' : currentVal}
+                                return (
+                                  <div className="w-[170px] flex flex-col gap-1 items-end">
+                                    <select
+                                      value={selectVal}
                                       onChange={e => {
                                         const val = e.target.value
-                                        updateFormItemType(panel, val || 'Otros')
+                                        updateFormItemType(panel, val)
                                       }}
-                                      className="w-full bg-transparent border-none rounded px-1.5 py-1 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-[#ff5c00]/50 font-sans mt-1 neu-pressed"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })()}
+                                      className="w-full bg-transparent border-none rounded px-2 py-1 text-[11px] font-semibold text-white outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
+                                    >
+                                      {options.map(opt => (
+                                        <option key={opt} value={opt} className="bg-surface text-on-surface text-[11px]">{opt}</option>
+                                      ))}
+                                    </select>
+                                    {selectVal === 'Otros' && (
+                                      <input
+                                        type="text"
+                                        placeholder="Especificar..."
+                                        value={currentVal === 'Otros' ? '' : currentVal}
+                                        onChange={e => {
+                                          const val = e.target.value
+                                          updateFormItemType(panel, val || 'Otros')
+                                        }}
+                                        className="w-full bg-transparent border-none rounded px-2 py-1 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-[#ff5c00]/50 font-sans mt-0.5 neu-pressed"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
 
-                            <div className="text-right border-t border-white/5 pt-1.5">
-                              <span className="text-[10px] text-on-surface-variant/80 font-mono">
-                                Sub: {formatCurrency(qty * price)}
+                            {/* Grid de cantidades por talla */}
+                            <div className="grid grid-cols-3 gap-2">
+                              {SUBLIMATION_SIZES.map((size) => {
+                                const qty = orderForm.panelSizes[panel]?.[size] || 0
+                                const price = orderForm.panelSizePrices[panel]?.[size] || 0
+                                return (
+                                  <div key={size} className="neu-pressed p-2 rounded-xl flex flex-col justify-between items-center text-center space-y-1 bg-white/[0.01]">
+                                    <span className="text-[10px] font-bold text-primary font-mono">{size}</span>
+                                    <div className="flex items-center justify-between w-full px-1 py-0.5 bg-black/10 rounded-lg">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const val = Math.max(0, qty - 1)
+                                          setOrderForm(prev => {
+                                            const updatedSizes = {
+                                              ...prev.panelSizes,
+                                              [panel]: {
+                                                ...prev.panelSizes[panel],
+                                                [size]: val
+                                              }
+                                            }
+                                            const totalQtyForPanel = Object.values(updatedSizes[panel]).reduce((sum, v) => sum + v, 0)
+                                            return {
+                                              ...prev,
+                                              panelSizes: updatedSizes,
+                                              sizes: { ...prev.sizes, [panel]: totalQtyForPanel }
+                                            }
+                                          })
+                                        }}
+                                        className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-on-surface hover:text-[#ff5c00] cursor-pointer"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={qty || ''}
+                                        onChange={e => {
+                                          const val = Math.max(0, parseInt(e.target.value) || 0)
+                                          setOrderForm(prev => {
+                                            const updatedSizes = {
+                                              ...prev.panelSizes,
+                                              [panel]: {
+                                                ...prev.panelSizes[panel],
+                                                [size]: val
+                                              }
+                                            }
+                                            const totalQtyForPanel = Object.values(updatedSizes[panel]).reduce((sum, v) => sum + v, 0)
+                                            return {
+                                              ...prev,
+                                              panelSizes: updatedSizes,
+                                              sizes: { ...prev.sizes, [panel]: totalQtyForPanel }
+                                            }
+                                          })
+                                        }}
+                                        className="bg-transparent border-none text-center w-6 font-mono text-[11px] text-on-surface outline-none focus:ring-0 p-0"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const val = qty + 1
+                                          setOrderForm(prev => {
+                                            const updatedSizes = {
+                                              ...prev.panelSizes,
+                                              [panel]: {
+                                                ...prev.panelSizes[panel],
+                                                [size]: val
+                                              }
+                                            }
+                                            const totalQtyForPanel = Object.values(updatedSizes[panel]).reduce((sum, v) => sum + v, 0)
+                                            return {
+                                              ...prev,
+                                              panelSizes: updatedSizes,
+                                              sizes: { ...prev.sizes, [panel]: totalQtyForPanel }
+                                            }
+                                          })
+                                        }}
+                                        className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-primary cursor-pointer"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                    <span className="text-[8px] text-on-surface-variant font-mono">Bs {price.toFixed(1)}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            {/* Subtotal del Módulo */}
+                            <div className="text-right border-t border-white/5 pt-2 flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
+                              <span>SUBTOTAL MÓDULO:</span>
+                              <span className="text-xs text-white font-bold">
+                                {(() => {
+                                  const sub = SUBLIMATION_SIZES.reduce((sum, size) => {
+                                    const q = orderForm.panelSizes[panel]?.[size] || 0
+                                    const p = orderForm.panelSizePrices[panel]?.[size] || 0
+                                    return sum + q * p
+                                  }, 0)
+                                  return formatCurrency(sub)
+                                })()}
                               </span>
                             </div>
                           </div>
@@ -1180,38 +1362,64 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Detalle del Pedido y Total de la Suma de Paneles */}
-                    {(() => {
-                      const totalPanels = Object.entries(orderForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0);
-                      return (
-                        <div className="p-3 bg-black/35 rounded-xl border border-white/5 space-y-2 text-xs font-mono">
-                          <div className="text-[10px] text-[#ff5c00] uppercase tracking-wider font-bold border-b border-white/5 pb-1 flex justify-between">
-                            <span>Detalle del Pedido</span>
-                            <span>Cant. x P.Unit</span>
-                          </div>
-                          <div className="space-y-1 max-h-[120px] overflow-y-auto pr-1">
-                            {PANELS_LIST.map((panel) => {
-                              const qty = orderForm.sizes[panel] || 0
-                              const price = orderForm.sizePrices[panel] || 0
-                              const type = orderForm.itemTypes[panel] || 'Otros'
-                              if (qty <= 0) return null
-                              return (
-                                <div key={panel} className="flex justify-between text-on-surface-variant text-[11px]">
+                    {metrics.totalGarments > 0 ? (
+                      <div className="p-4 rounded-xl neu-pressed space-y-3 text-xs font-mono">
+                        <div className="text-[10px] text-[#ff5c00] uppercase tracking-wider font-bold border-b border-white/5 pb-1.5 flex justify-between">
+                          <span>Desglose por Tallas</span>
+                          <span>Subtotal</span>
+                        </div>
+                        <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1">
+                          {PANELS_LIST.map((panel) => {
+                            const type = orderForm.itemTypes[panel] || 'Otros'
+                            const activeSizes = SUBLIMATION_SIZES.filter(size => (orderForm.panelSizes[panel]?.[size] || 0) > 0)
+                            if (activeSizes.length === 0) return null
+                            
+                            return (
+                              <div key={panel} className="space-y-1">
+                                <div className="text-white font-bold text-[11px] flex justify-between">
                                   <span>{panel} ({type})</span>
-                                  <span>{qty} x {formatCurrency(price)} = {formatCurrency(qty * price)}</span>
                                 </div>
-                              )
-                            })}
-                            {totalPanels === 0 && (
-                              <div className="text-on-surface-variant/50 text-center py-2 text-[11px]">Sin paneles registrados</div>
-                            )}
+                                <div className="pl-3 space-y-0.5 border-l border-primary/20">
+                                  {activeSizes.map(size => {
+                                    const qty = orderForm.panelSizes[panel][size]
+                                    const price = orderForm.panelSizePrices[panel][size]
+                                    return (
+                                      <div key={size} className="flex justify-between text-on-surface-variant text-[10px]">
+                                        <span>Talla {size}: {qty} uds x {formatCurrency(price)}</span>
+                                        <span>{formatCurrency(qty * price)}</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        <div className="border-t border-white/5 pt-2.5 space-y-1.5 text-[10px] text-on-surface-variant">
+                          <div className="flex justify-between">
+                            <span>Prendas Totales:</span>
+                            <span className="text-white font-bold">{metrics.totalGarments} unidades</span>
                           </div>
-                          <div className="flex justify-between font-bold text-white border-t border-white/5 pt-1.5 text-[11px]">
-                            <span>SUMA TOTAL PANELES:</span>
-                            <span className="text-primary">{totalPanels} {totalPanels === 1 ? 'PANEL' : 'PANELES'}</span>
+                          <div className="flex justify-between">
+                            <span>Metraje Estimado (m²):</span>
+                            <span className="text-white font-bold">{metrics.totalM2.toFixed(2)} m²</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Cantidad de Paneles (Nominal):</span>
+                            <span className="text-white font-bold">{metrics.totalNominalPanels} paneles</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Cantidad de Paneles (Prorrateado):</span>
+                            <span className="text-[#ff7a00] font-bold">{metrics.totalEquivalentPanels.toFixed(2)} paneles</span>
                           </div>
                         </div>
-                      )
-                    })()}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-black/35 rounded-xl border border-white/5 text-center text-on-surface-variant text-xs italic">
+                        Sin prendas de sublimación registradas.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1931,12 +2139,24 @@ export default function OrdersPage() {
                             {Object.entries(item.size_distribution).map(([panel, data]) => {
                               if (!data || !data.cantidad) return null
                               return (
-                                <div key={panel} className="neu-pressed p-2.5 rounded-xl flex justify-between items-center text-xs">
-                                  <div>
-                                    <p className="font-bold text-white">{panel}</p>
-                                    <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Item: {data.tipo}</p>
+                                <div key={panel} className="neu-pressed p-3 rounded-xl space-y-2 text-xs">
+                                  <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                    <div>
+                                      <p className="font-bold text-white">{panel}</p>
+                                      <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Item: {data.tipo}</p>
+                                    </div>
+                                    <span className="font-mono text-primary font-bold text-sm">x{data.cantidad}</span>
                                   </div>
-                                  <span className="font-mono text-primary font-bold text-sm">x{data.cantidad}</span>
+                                  {data.tallas && Object.keys(data.tallas).length > 0 && (
+                                    <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px]">
+                                      {Object.entries(data.tallas).map(([size, q]) => (
+                                        <div key={size} className="bg-white/5 rounded px-2 py-0.5 text-center text-on-surface-variant">
+                                          <span className="font-bold text-primary mr-1">{size}:</span>
+                                          <span className="font-mono">{q}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               )
                             })}
