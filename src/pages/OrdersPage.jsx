@@ -1636,7 +1636,18 @@ export default function OrdersPage() {
                                 if (isProduccionTextil) {
                                   return 'VARIAS TALLAS / ' + (firstItem?.name || 'Prendas');
                                 } else if (isSublimacionPaneles) {
-                                  return 'VARIOS PANELES / Sublimación';
+                                  const panelEntries = Object.entries(firstItem?.size_distribution || {})
+                                    .filter(([k, v]) => PANELS_LIST.includes(k) && v && typeof v === 'object' && v.cantidad > 0);
+                                  const totalQty = panelEntries.reduce((sum, [_, v]) => sum + (Number(v.cantidad) || 0), 0);
+                                  const types = Array.from(new Set(panelEntries.map(([_, v]) => v.tipo).filter(Boolean)));
+                                  const typesStr = types.join(', ');
+                                  
+                                  if (totalQty === 1) {
+                                    return `1 panel / ${typesStr || 'Deportivos Fantasma'}`;
+                                  } else if (totalQty > 1) {
+                                    return `${totalQty} paneles / ${typesStr || 'Deportivos Fantasma'}`;
+                                  }
+                                  return '1 panel / Deportivos Fantasma';
                                 } else {
                                   return firstItem?.name || '—';
                                 }
