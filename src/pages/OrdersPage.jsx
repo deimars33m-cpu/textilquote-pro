@@ -196,6 +196,10 @@ export default function OrdersPage() {
   })
   const [formErrors, setFormErrors] = useState({})
 
+  const [editingOrder, setEditingOrder] = useState(null)
+  const [editForm, setEditForm] = useState(null)
+  const [selectedPanelFilterEdit, setSelectedPanelFilterEdit] = useState('1 PANEL')
+
   const clientSuggestions = useMemo(() => {
     const query = orderForm.clientName?.trim().toLowerCase()
     if (!query || query.length < 2) return []
@@ -446,6 +450,338 @@ export default function OrdersPage() {
     if (convertQuoteId) {
       searchParams.delete('convertQuoteId')
       setSearchParams(searchParams)
+    }
+  }
+
+  const loadOrderToEdit = (order) => {
+    const item = order.order_items?.[0]
+    if (!item) return;
+
+    const categoryObj = settings.categories.find(c => c.label.toLowerCase() === item.category.toLowerCase())
+    const categoryId = categoryObj ? categoryObj.id : ''
+
+    let subcategoryId = ''
+    if (categoryId) {
+      const subcategoryObj = (settings.subcategories[categoryId] || []).find(s => s.label.toLowerCase() === item.product_category.toLowerCase())
+      subcategoryId = subcategoryObj ? subcategoryObj.id : ''
+    }
+
+    const isSublimacionPaneles = categoryId === 'servicios_sublimacion' && subcategoryId === 'sublimacion_localizada'
+    
+    let loadedPanelSizes = JSON.parse(JSON.stringify(initialPanelSizes))
+    let loadedItemTypes = JSON.parse(JSON.stringify(initialItemTypes))
+    let loadedSizes = JSON.parse(JSON.stringify(initialSizes))
+    let loadedBasePanelPrice = 10
+
+    if (isSublimacionPaneles && item.size_distribution) {
+      PANELS_LIST.forEach(panel => {
+        const pData = item.size_distribution[panel]
+        if (pData) {
+          loadedItemTypes[panel] = pData.tipo || PANEL_OPTIONS[panel]?.[0] || 'Otros'
+          loadedSizes[panel] = Number(pData.cantidad) || 0
+          if (pData.tallas) {
+            SUBLIMATION_SIZES.forEach(size => {
+              loadedPanelSizes[panel][size] = Number(pData.tallas[size]) || 0
+            })
+          }
+        }
+      })
+      const itemMetrics = calculateItemMetrics(item.size_distribution)
+      if (itemMetrics && itemMetrics.totalEquivalentPanels > 0) {
+        loadedBasePanelPrice = Math.round((item.total_price / itemMetrics.totalEquivalentPanels) * 10) / 10
+      }
+    } else if (item.size_distribution) {
+      SIZES_LIST.forEach(size => {
+        loadedSizes[size] = Number(item.size_distribution[size]) || 0
+      })
+    }
+
+    const initialPrices = categoryId === 'produccion_textil'
+      ? settings.sizes
+      : (categoryId && subcategoryId && settings.sizesBySubcategory?.[subcategoryId]) || settings.sizes
+
+    setEditForm({
+      orderId: order.id,
+      itemId: item.id,
+      clientName: order.terceros?.name || 'Cliente general',
+      category: categoryId,
+      subcategory: subcategoryId,
+      sizes: loadedSizes,
+      sizePrices: initialPrices,
+      itemTypes: loadedItemTypes,
+      productName: item.name || '',
+      flatQuantity: Number(item.quantity) || 1,
+      stitchesCount: item.production_time_minutes ? (Number(item.quantity) * 1000) : 0,
+      flatUnitPrice: Number(item.unit_price) || 50,
+      particularDetails: item.description || '',
+      orderNotes: order.notes || '',
+      orderDate: order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+      deliveryDate: order.delivery_date?.split('T')[0] || '',
+      basePanelPrice: loadedBasePanelPrice,
+      panelSizes: loadedPanelSizes,
+      panelSizePrices: getInitialPanelSizePrices(loadedBasePanelPrice)
+    })
+
+    setEditingOrder(order)
+    setSelectedPanelFilterEdit('1 PANEL')
+  }
+
+  const updateEditForm = (field, value) => {
+    setEditForm(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const updateEditSizeQty = (size, delta) => {
+    setEditForm(prev => {
+      const currentVal = prev.sizes[size] || 0
+      const newVal = Math.max(0, currentVal + delta)
+      return {
+        ...prev,
+        sizes: {
+          ...prev.sizes,
+          [size]: newVal
+        }
+      }
+    })
+  }
+
+  const updateEditSizePrice = (size, val) => {
+    setEditForm(prev => ({
+      ...prev,
+      sizePrices: {
+        ...prev.sizePrices,
+        [size]: Math.max(0, parseFloat(val) || 0)
+      }
+    }))
+  }
+
+  const updateEditFormItemType = (panel, val) => {
+    setEditForm(prev => ({
+      ...prev,
+      itemTypes: {
+        ...prev.itemTypes,
+        [panel]: val
+      }
+    }))
+  }
+
+  const handleEditBasePanelPriceChange = (val) => {
+    const numericVal = parseFloat(val) || 0
+    setEditForm(prev => {
+      const newPrices = PANELS_LIST.reduce((acc, panel) => {
+        const match = panel.match(/^(\d+)/)
+        const panelsCount = match ? parseInt(match[1]) : 1
+        const sizePrices = SUBLIMATION_SIZES.reduce((accSize, size) => {
+          const factor = SIZE_FACTORS[size]?.priceFactor || 1.0
+          const price = numericVal * factor * panelsCount
+          return { ...accSize, [size]: price }
+        }, {})
+        return { ...acc, [panel]: sizePrices }
+      }, {})
+      return {
+        ...prev,
+        basePanelPrice: numericVal,
+        panelSizePrices: newPrices
+      }
+    })
+  }
+
+  const updateEditPanelSizeQty = (panel, size, deltaOrVal, isDirectVal = false) => {
+    setEditForm(prev => {
+      const currentVal = prev.panelSizes[panel]?.[size] || 0
+      const newVal = isDirectVal ? Math.max(0, deltaOrVal) : Math.max(0, currentVal + deltaOrVal)
+      const updatedSizes = {
+        ...prev.panelSizes,
+        [panel]: {
+          ...prev.panelSizes[panel],
+          [size]: newVal
+        }
+      }
+      const totalQtyForPanel = Object.values(updatedSizes[panel]).reduce((sum, v) => sum + v, 0)
+      return {
+        ...prev,
+        panelSizes: updatedSizes,
+        sizes: {
+          ...prev.sizes,
+          [panel]: totalQtyForPanel
+        }
+      }
+    })
+  }
+
+  const editMetrics = useMemo(() => {
+    if (!editForm || !editForm.panelSizes) return { totalGarments: 0, totalNominalPanels: 0, totalEquivalentPanels: 0, totalM2: 0 }
+    let totalGarments = 0
+    let totalNominalPanels = 0
+    let totalEquivalentPanels = 0
+    let totalM2 = 0
+
+    PANELS_LIST.forEach(panel => {
+      const match = panel.match(/^(\d+)/)
+      const panelsPerGarment = match ? parseInt(match[1]) : 1
+      SUBLIMATION_SIZES.forEach(size => {
+        const qty = editForm.panelSizes[panel]?.[size] || 0
+        if (qty > 0) {
+          totalGarments += qty
+          totalNominalPanels += qty * panelsPerGarment
+          const f = SIZE_FACTORS[size]
+          if (f) {
+            const idx = Math.min(4, panelsPerGarment - 1)
+            const m2Val = f.m2[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            const pVal = f.panels[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            totalM2 += qty * m2Val
+            totalEquivalentPanels += qty * pVal
+          }
+        }
+      })
+    })
+
+    return { totalGarments, totalNominalPanels, totalEquivalentPanels, totalM2 }
+  }, [editForm?.panelSizes])
+
+  const editTotalAmount = useMemo(() => {
+    if (!editForm) return 0
+    const activeSub = settings.subcategories[editForm.category]?.find(s => s.id === editForm.subcategory)
+    const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && editForm.category === 'produccion_textil')
+
+    if (usesSizes) {
+      return Object.entries(editForm.sizes).reduce((sum, [size, qty]) => {
+        if (!SIZES_LIST.includes(size)) return sum;
+        const price = editForm.sizePrices[size] || 0
+        return sum + (parseInt(qty) || 0) * parseFloat(price)
+      }, 0)
+    } else if (editForm.category === 'servicios_sublimacion' && editForm.subcategory === 'sublimacion_localizada') {
+      return PANELS_LIST.reduce((sum, panel) => {
+        const panelSum = SUBLIMATION_SIZES.reduce((subSum, size) => {
+          const qty = editForm.panelSizes[panel]?.[size] || 0
+          const price = editForm.panelSizePrices[panel]?.[size] || 0
+          return subSum + qty * price
+        }, 0)
+        return sum + panelSum
+      }, 0)
+    } else {
+      const unit = activeSub?.unit || 'unidad';
+      if (unit === '1000_puntadas') {
+         return ((parseInt(editForm.stitchesCount) || 0) / 1000) * parseFloat(editForm.flatUnitPrice) * (parseInt(editForm.flatQuantity) || 1)
+      } else {
+         return (parseInt(editForm.flatQuantity) || 0) * (parseFloat(editForm.flatUnitPrice) || 0)
+      }
+    }
+  }, [editForm?.category, editForm?.subcategory, editForm?.sizes, editForm?.sizePrices, editForm?.flatQuantity, editForm?.flatUnitPrice, editForm?.stitchesCount, editForm?.panelSizes, editForm?.panelSizePrices, settings])
+
+  const handleUpdateOrder = async () => {
+    if (saving) return
+    const activeSub = settings.subcategories[editForm.category]?.find(s => s.id === editForm.subcategory)
+    const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && editForm.category === 'produccion_textil')
+    const isSublimacionPaneles = editForm.category === 'servicios_sublimacion' && editForm.subcategory === 'sublimacion_localizada'
+
+    // Validation
+    if (usesSizes) {
+      const totalQty = Object.entries(editForm.sizes).reduce((sum, [k, v]) => SIZES_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+      if (totalQty <= 0) {
+        alert('Debe ingresar cantidad en al menos una talla.')
+        return
+      }
+    } else if (isSublimacionPaneles) {
+      const totalPanels = Object.entries(editForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+      if (totalPanels <= 0) {
+        alert('Debe ingresar cantidad en al menos un tipo de panel.')
+        return
+      }
+    } else {
+      if (!editForm.productName?.trim()) {
+        alert('El detalle del servicio es requerido.')
+        return
+      }
+      if ((parseInt(editForm.flatQuantity) || 0) <= 0) {
+        alert('La cantidad debe ser mayor a 0.')
+        return
+      }
+      if ((parseFloat(editForm.flatUnitPrice) || 0) <= 0) {
+        alert('El precio unitario debe ser mayor a 0.')
+        return
+      }
+    }
+
+    setSaving(true)
+    try {
+      // 1. Recalcular cantidades y distribución
+      const qty = usesSizes
+        ? Object.entries(editForm.sizes).reduce((sum, [k, v]) => SIZES_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+        : isSublimacionPaneles
+          ? Object.entries(editForm.sizes).reduce((sum, [k, v]) => PANELS_LIST.includes(k) ? sum + (parseInt(v) || 0) : sum, 0)
+          : editForm.flatQuantity
+          
+      const unitPrice = usesSizes
+        ? (editTotalAmount / Math.max(1, qty))
+        : isSublimacionPaneles
+          ? (editTotalAmount / Math.max(1, qty))
+          : editForm.flatUnitPrice
+
+      const sizeDist = usesSizes
+        ? SIZES_LIST.reduce((acc, size) => ({ ...acc, [size]: editForm.sizes[size] || 0 }), {})
+        : isSublimacionPaneles
+          ? PANELS_LIST.reduce((acc, panel) => {
+              const qtyQty = editForm.sizes[panel] || 0
+              const type = editForm.itemTypes[panel] || 'Otros'
+              const tallas = SUBLIMATION_SIZES.reduce((accSize, size) => {
+                const q = editForm.panelSizes[panel]?.[size] || 0
+                if (q > 0) accSize[size] = q
+                return accSize
+              }, {})
+              return { ...acc, [panel]: { cantidad: qtyQty, tipo: type, tallas: tallas } }
+            }, {})
+          : null
+
+      const itemName = (usesSizes || isSublimacionPaneles)
+        ? `${settings.subcategories[editForm.category]?.find(s => s.id === editForm.subcategory)?.label || 'Producto'} (${settings.categories.find(c => c.id === editForm.category)?.label})`
+        : editForm.productName
+
+      const total = editTotalAmount
+      const advance = editingOrder.paid_amount
+      const paymentStatus = advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente')
+
+      // 2. Actualizar tabla orders
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({
+          notes: editForm.orderNotes || '',
+          delivery_date: editForm.deliveryDate ? new Date(editForm.deliveryDate).toISOString() : null,
+          total_amount: total,
+          payment_status: paymentStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editForm.orderId)
+
+      if (orderError) throw orderError
+
+      // 3. Actualizar tabla order_items
+      const { error: itemError } = await supabase
+        .from('order_items')
+        .update({
+          name: itemName,
+          description: editForm.particularDetails || '',
+          quantity: qty,
+          unit_price: unitPrice,
+          total_price: total,
+          size_distribution: sizeDist
+        })
+        .eq('id', editForm.itemId)
+
+      if (itemError) throw itemError
+
+      // 4. Recargar lista y limpiar
+      await fetchOrders()
+      setEditingOrder(null)
+      setEditForm(null)
+      alert('Pedido actualizado con éxito.')
+    } catch (err) {
+      console.error('Error al actualizar pedido:', err)
+      alert(`Error al actualizar el pedido: ${err.message || 'Error desconocido'}`)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -2073,6 +2409,16 @@ export default function OrdersPage() {
                                       </button>
                                       <button
                                         onClick={() => {
+                                          loadOrderToEdit(order)
+                                          setActiveActionMenu(null)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px] text-primary">edit</span>
+                                        Editar Pedido
+                                      </button>
+                                      <button
+                                        onClick={() => {
                                           handleDeleteOrder(order.id)
                                           setActiveActionMenu(null)
                                         }}
@@ -2383,6 +2729,401 @@ export default function OrdersPage() {
               <Button onClick={() => setSelectedOrder(null)}>
                 Cerrar Detalle
               </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editingOrder && editForm && (
+        <Modal
+          isOpen={!!editingOrder}
+          onClose={() => {
+            setEditingOrder(null)
+            setEditForm(null)
+          }}
+          title={`Editar Pedido #${editingOrder.order_number?.toString().padStart(4, '0')}`}
+          size="lg"
+        >
+          <div className="space-y-6 text-left">
+            {/* Cabecera Informativa */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-white/5 text-on-surface">
+              <div>
+                <p className="text-xs text-on-surface-variant font-mono uppercase">Cliente</p>
+                <p className="text-sm font-semibold text-white mt-0.5">{editForm.clientName}</p>
+                <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                  CATEGORÍA: {settings.categories.find(c => c.id === editForm.category)?.label || '—'}
+                </p>
+                <p className="text-[10px] text-on-surface-variant font-mono">
+                  SUBCATEGORÍA: {settings.subcategories[editForm.category]?.find(s => s.id === editForm.subcategory)?.label || '—'}
+                </p>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] text-on-surface-variant font-mono uppercase block mb-1">
+                    Fecha de Entrega
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.deliveryDate}
+                    onChange={e => updateEditForm('deliveryDate', e.target.value)}
+                    className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Inputs de Descripción y Notas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-on-surface">
+              <div>
+                <label className="text-[10px] text-on-surface-variant font-mono uppercase block mb-1">
+                  Detalles Particulares del Pedido (Para Producción)
+                </label>
+                <textarea
+                  value={editForm.particularDetails}
+                  onChange={e => updateEditForm('particularDetails', e.target.value)}
+                  placeholder="Ej. Nombre del equipo, diseño, patrocinadores, etc."
+                  rows="3"
+                  className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-on-surface-variant font-mono uppercase block mb-1">
+                  Notas de Pago / Notas Generales
+                </label>
+                <textarea
+                  value={editForm.orderNotes}
+                  onChange={e => updateEditForm('orderNotes', e.target.value)}
+                  placeholder="Ej. Saldo contra entrega, observaciones del cliente, etc."
+                  rows="3"
+                  className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Configuración de Cantidades y Precios */}
+            <div className="border-t border-white/5 pt-4 space-y-4">
+              <h4 className="text-xs font-mono uppercase tracking-wider text-primary font-bold">
+                Configuración de Tallas / Cantidades
+              </h4>
+
+              {(() => {
+                const activeSub = settings.subcategories[editForm.category]?.find(s => s.id === editForm.subcategory)
+                const usesSizes = activeSub?.unit === 'tallas' || (!activeSub?.unit && editForm.category === 'produccion_textil')
+                const isSublimacionPaneles = editForm.category === 'servicios_sublimacion' && editForm.subcategory === 'sublimacion_localizada'
+
+                if (usesSizes) {
+                  return (
+                    <div className="space-y-3">
+                      <p className="text-xs text-on-surface-variant/80 text-left">
+                        Modifica la cantidad y el precio sugerido de confección por talla (desliza horizontalmente, 2 filas).
+                      </p>
+                      <div className="sizes-scroll-container pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-[#ff5c00]/30 scrollbar-track-transparent">
+                        {SIZES_LIST.map((size) => {
+                          const qty = editForm.sizes[size] || 0
+                          const price = editForm.sizePrices[size] || 0
+                          return (
+                            <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-2 text-on-surface">
+                              <div className="flex justify-between items-center border-b border-outline-variant/30 pb-1">
+                                <span className="text-body-md font-bold text-primary">{size}</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-on-surface-variant font-mono">P. Ud:</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={price}
+                                    onChange={e => updateEditSizePrice(size, e.target.value)}
+                                    className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs text-on-surface font-mono outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between neu-pressed rounded-lg p-1 border border-outline-variant/30">
+                                <button
+                                  type="button"
+                                  onClick={() => updateEditSizeQty(size, -1)}
+                                  className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">remove</span>
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={qty}
+                                  onChange={e => {
+                                    const val = Math.max(0, parseInt(e.target.value) || 0)
+                                    setEditForm(prev => ({
+                                      ...prev,
+                                      sizes: { ...prev.sizes, [size]: val }
+                                    }))
+                                  }}
+                                  className="bg-transparent border-none text-center w-8 font-mono text-xs text-on-surface outline-none focus:ring-0 p-0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateEditSizeQty(size, 1)}
+                                  className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">add</span>
+                                </button>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-on-surface-variant/80 font-mono">
+                                  Sub: {formatCurrency(qty * price)}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                } else if (isSublimacionPaneles) {
+                  const panel = selectedPanelFilterEdit
+                  const totalQty = Object.values(editForm.panelSizes[panel] || {}).reduce((sum, v) => sum + v, 0)
+                  
+                  return (
+                    <div className="space-y-4">
+                      {/* Configuración de Tarifa Base por Panel */}
+                      <div className="neu-pressed px-3 py-2 rounded-xl flex items-center justify-between gap-3 bg-[#0d1527]">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[#ff7a00] text-sm">payments</span>
+                          <span className="text-xs font-bold text-white">Precio Base por Panel:</span>
+                        </div>
+                        <div className="w-[90px] shrink-0">
+                          <input
+                            type="number"
+                            min="1"
+                            step="0.5"
+                            value={editForm.basePanelPrice || 10}
+                            onChange={e => handleEditBasePanelPriceChange(e.target.value)}
+                            className="w-full bg-transparent border-none rounded px-2 py-1 text-xs font-bold text-[#ff7a00] text-right outline-none focus:ring-1 focus:ring-primary/50 font-mono neu-pressed"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Botones de Selección de Panel (Filtro) */}
+                      <div className="flex gap-2 pb-1 justify-between">
+                        {PANELS_LIST.map((p) => {
+                          const isActive = selectedPanelFilterEdit === p
+                          const num = p.match(/^(\d+)/)?.[0] || '1'
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setSelectedPanelFilterEdit(p)}
+                              className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-center flex items-center justify-center btn-3d-raised ${
+                                isActive ? 'btn-3d-active border-[#ff5c00]/50' : 'text-on-surface-variant'
+                              }`}
+                            >
+                              {num}P
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Panel Editor de Tallas Activo */}
+                      <div key={panel} className="w-full p-4 bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-4 text-on-surface">
+                        <div className="flex justify-between items-center border-b border-outline-variant/30 pb-2">
+                          <div>
+                            <span className="text-sm font-black text-primary block">{panel}</span>
+                            <span className="text-[9px] text-on-surface-variant font-mono uppercase">Prendas Totales: {totalQty}</span>
+                          </div>
+                          
+                          {/* Dropdown y Textbox para Tipo de Item */}
+                          {(() => {
+                            const options = PANEL_OPTIONS[panel] || [];
+                            const currentVal = editForm.itemTypes[panel] || 'Otros';
+                            const isCustom = !options.filter(opt => opt !== 'Otros').includes(currentVal);
+                            const selectVal = isCustom ? 'Otros' : currentVal;
+
+                            return (
+                              <div className="w-[170px] flex flex-col gap-1 items-end">
+                                <select
+                                  value={selectVal}
+                                  onChange={e => {
+                                    const val = e.target.value
+                                    updateEditFormItemType(panel, val)
+                                  }}
+                                  className="w-full bg-transparent border-none rounded px-2 py-1 text-[11px] font-semibold text-white outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
+                                >
+                                  {options.map(opt => (
+                                    <option key={opt} value={opt} className="bg-surface text-on-surface text-[11px]">{opt}</option>
+                                  ))}
+                                </select>
+                                {selectVal === 'Otros' && (
+                                  <input
+                                    type="text"
+                                    placeholder="Especificar..."
+                                    value={currentVal === 'Otros' ? '' : currentVal}
+                                    onChange={e => {
+                                      const val = e.target.value
+                                      updateEditFormItemType(panel, val || 'Otros')
+                                    }}
+                                    className="w-full bg-transparent border-none rounded px-2 py-1 text-[10px] text-on-surface outline-none focus:ring-1 focus:ring-[#ff5c00]/50 font-sans mt-0.5 neu-pressed"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Grid de cantidades por talla */}
+                        <div className="grid grid-cols-3 gap-2">
+                          {SUBLIMATION_SIZES.map((size) => {
+                            const qty = editForm.panelSizes[panel]?.[size] || 0
+                            const price = editForm.panelSizePrices[panel]?.[size] || 0
+                            return (
+                              <div key={size} className="neu-pressed p-2 rounded-xl flex flex-col justify-between items-center text-center space-y-1 bg-white/[0.01]">
+                                <span className="text-[10px] font-bold text-primary font-mono">{size}</span>
+                                <div className="flex items-center justify-between w-full px-1 py-0.5 bg-black/10 rounded-lg">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateEditPanelSizeQty(panel, size, -1)}
+                                    className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-on-surface hover:text-[#ff5c00] cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="0"
+                                    value={qty || ''}
+                                    onChange={e => {
+                                      const val = Math.max(0, parseInt(e.target.value) || 0)
+                                      updateEditPanelSizeQty(panel, size, val, true)
+                                    }}
+                                    className="bg-transparent border-none text-center w-6 font-mono text-[11px] text-on-surface outline-none focus:ring-0 p-0"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updateEditPanelSizeQty(panel, size, 1)}
+                                    className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-primary cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                <span className="text-[8px] text-on-surface-variant font-mono">Bs {price.toFixed(1)}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Subtotal del Módulo */}
+                        <div className="text-right border-t border-white/5 pt-2 flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
+                          <span>SUBTOTAL MÓDULO:</span>
+                          <span className="text-xs text-white font-bold">
+                            {(() => {
+                              const sub = SUBLIMATION_SIZES.reduce((sum, size) => {
+                                const q = editForm.panelSizes[panel]?.[size] || 0
+                                const p = editForm.panelSizePrices[panel]?.[size] || 0
+                                return sum + q * p
+                              }, 0)
+                              return formatCurrency(sub)
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Resumen Métrico de Sublimación en tiempo real */}
+                      <div className="grid grid-cols-3 gap-2 bg-[#ff5c00]/5 border border-primary/20 p-3 rounded-xl text-center">
+                        <div>
+                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Nominales</p>
+                          <p className="text-sm font-mono font-bold text-white mt-0.5">
+                            {editMetrics.totalNominalPanels}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Prorrateados</p>
+                          <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                            {editMetrics.totalEquivalentPanels.toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Metraje Total (m²)</p>
+                          <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                            {editMetrics.totalM2.toFixed(2)} m²
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                } else {
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <Input
+                          label="Detalle del Servicio"
+                          value={editForm.productName}
+                          onChange={e => updateEditForm('productName', e.target.value)}
+                          placeholder="Ej. Bordado de camisas"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          label="Cantidad"
+                          type="number"
+                          min="1"
+                          value={editForm.flatQuantity}
+                          onChange={e => updateEditForm('flatQuantity', Math.max(1, parseInt(e.target.value) || 1))}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          label="Precio Unitario"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={editForm.flatUnitPrice}
+                          onChange={e => updateEditForm('flatUnitPrice', Math.max(0, parseFloat(e.target.value) || 0))}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )
+                }
+              })()}
+            </div>
+
+            {/* Total general y Acciones de guardado */}
+            <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2 bg-[#0d1527]">
+                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
+                  <span>Subtotal:</span>
+                  <span className="font-bold text-white">{formatCurrency(editTotalAmount / 1.18)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
+                  <span>IGV (18%):</span>
+                  <span className="font-bold text-white">{formatCurrency(editTotalAmount - (editTotalAmount / 1.18))}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono border-t border-white/10 pt-1">
+                  <span>Total Estimado:</span>
+                  <span className="font-bold text-primary text-sm font-mono">
+                    {formatCurrency(editTotalAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 w-full sm:w-auto">
+                <Button
+                  onClick={() => {
+                    setEditingOrder(null)
+                    setEditForm(null)
+                  }}
+                  variant="outline"
+                  className="cursor-pointer"
+                  disabled={saving}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleUpdateOrder}
+                  disabled={saving}
+                  className="neu-button-primary cursor-pointer"
+                >
+                  {saving ? 'Guardando...' : 'Guardar Cambios'}
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>
