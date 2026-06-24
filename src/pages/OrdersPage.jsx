@@ -134,6 +134,7 @@ export default function OrdersPage() {
 
   // Asistente de registro de pedidos (5 pasos)
   const [currentStep, setCurrentStep] = useState(1)
+  const [selectedPanelFilter, setSelectedPanelFilter] = useState('1 PANEL')
   const [orderForm, setOrderForm] = useState({
     clientName: '',
     clientNit: '',
@@ -1175,40 +1176,54 @@ export default function OrdersPage() {
                 ) : (orderForm.category === 'servicios_sublimacion' && orderForm.subcategory === 'sublimacion_localizada') ? (
                   <div className="space-y-4">
                     {/* Configuración de Tarifa Base por Panel */}
-                    <div className="neu-pressed p-4 rounded-xl flex items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider block">Configuración de Tarifa</span>
-                        <span className="text-sm font-bold text-white block">Precio Base por Panel</span>
-                        <p className="text-[10px] text-on-surface-variant/70 leading-normal mt-0.5">
-                          Todos los precios por talla y cantidad de paneles se calculan a partir de este precio base.
-                        </p>
+                    <div className="neu-pressed px-3 py-2 rounded-xl flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[#ff7a00] text-sm">payments</span>
+                        <span className="text-xs font-bold text-white">Precio Base por Panel:</span>
                       </div>
-                      <div className="w-[120px] shrink-0">
-                        <Input
+                      <div className="w-[90px] shrink-0">
+                        <input
                           type="number"
                           min="1"
                           step="0.5"
                           value={orderForm.basePanelPrice || 10}
                           onChange={e => handleBasePanelPriceChange(e.target.value)}
-                          className="font-mono text-center text-lg font-bold text-[#ff7a00]"
-                          suffix="Bs"
+                          className="w-full bg-transparent border-none rounded px-2 py-1 text-xs font-bold text-[#ff7a00] text-right outline-none focus:ring-1 focus:ring-primary/50 font-mono neu-pressed"
                         />
                       </div>
                     </div>
 
-                    <p className="text-xs text-on-surface-variant/80">
-                      Modifica las cantidades por talla dentro de cada módulo de paneles (desliza horizontalmente para ver los módulos).
-                    </p>
+                    {/* Botones de Selección de Panel (Filtro) */}
+                    <div className="flex gap-2 pb-1 justify-between">
+                      {PANELS_LIST.map((panel) => {
+                        const isActive = selectedPanelFilter === panel
+                        const num = panel.match(/^(\d+)/)?.[0] || '1'
+                        return (
+                          <button
+                            key={panel}
+                            type="button"
+                            onClick={() => setSelectedPanelFilter(panel)}
+                            className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-center flex items-center justify-center btn-3d-raised ${
+                              isActive ? 'btn-3d-active border-[#ff5c00]/50' : 'text-on-surface-variant'
+                            }`}
+                          >
+                            {num}P
+                          </button>
+                        )
+                      })}
+                    </div>
+
                     {formErrors.sizes && (
                       <AlertBanner type="error">{formErrors.sizes}</AlertBanner>
                     )}
 
-                    <div className="panels-scroll-container pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-[#ff5c00]/30 scrollbar-track-transparent">
-                      {PANELS_LIST.map((panel) => {
+                    <div>
+                      {(() => {
+                        const panel = selectedPanelFilter
                         const totalQty = Object.values(orderForm.panelSizes[panel] || {}).reduce((sum, v) => sum + v, 0)
                         
                         return (
-                          <div key={panel} className="min-w-[340px] w-[340px] flex-shrink-0 snap-start p-4 bg-surface-container rounded-xl border border-outline-variant space-y-4 text-on-surface">
+                          <div key={panel} className="w-full p-4 bg-surface-container rounded-xl border border-outline-variant space-y-4 text-on-surface">
                             <div className="flex justify-between items-center border-b border-outline-variant/30 pb-2">
                               <div>
                                 <span className="text-sm font-black text-primary block">{panel}</span>
@@ -1358,7 +1373,7 @@ export default function OrdersPage() {
                             </div>
                           </div>
                         )
-                      })}
+                      })()}
                     </div>
 
                     {/* Detalle del Pedido y Total de la Suma de Paneles */}
@@ -1917,30 +1932,52 @@ export default function OrdersPage() {
                           {/* COLUMNA 2: Descripcion/Cliente */}
                           <td className="px-4 py-3 text-sm">
                             <span className="font-bold text-white block">{order.terceros?.name || 'Cliente general'}</span>
-                            <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
-                              {(() => {
-                                const isProduccionTextil = firstItem?.category === 'Producción Textil';
-                                const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
-                                if (isProduccionTextil) {
-                                  return 'VARIAS TALLAS / ' + (firstItem?.name || 'Prendas');
-                                } else if (isSublimacionPaneles) {
-                                  const panelEntries = Object.entries(firstItem?.size_distribution || {})
-                                    .filter(([k, v]) => PANELS_LIST.includes(k) && v && typeof v === 'object' && v.cantidad > 0);
-                                  const totalQty = panelEntries.reduce((sum, [_, v]) => sum + (Number(v.cantidad) || 0), 0);
-                                  const types = Array.from(new Set(panelEntries.map(([_, v]) => v.tipo).filter(Boolean)));
-                                  const typesStr = types.join(', ');
-                                  
-                                  if (totalQty === 1) {
-                                    return `1 panel / ${typesStr || 'Deportivos Fantasma'}`;
-                                  } else if (totalQty > 1) {
-                                    return `${totalQty} paneles / ${typesStr || 'Deportivos Fantasma'}`;
-                                  }
-                                  return '1 panel / Deportivos Fantasma';
-                                } else {
-                                  return firstItem?.name || '—';
-                                }
-                              })()}
-                            </span>
+                            {(() => {
+                              const isProduccionTextil = firstItem?.category === 'Producción Textil';
+                              const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
+                              if (isProduccionTextil) {
+                                const activeSizes = SIZES_LIST.filter(size => (firstItem?.size_distribution?.[size] || 0) > 0)
+                                  .map(size => `${firstItem.size_distribution[size]}${size}`);
+                                const sizesStr = activeSizes.join(', ');
+                                return (
+                                  <div className="text-[11px] text-[#ff7a00] font-mono mt-0.5 leading-tight">
+                                    {sizesStr ? <span className="text-white font-bold mr-1">{sizesStr}</span> : ''}
+                                    <span className="text-on-surface-variant/80">/ {firstItem?.name || 'Prendas'}</span>
+                                  </div>
+                                );
+                              } else if (isSublimacionPaneles) {
+                                const activePanels = PANELS_LIST.filter(panel => {
+                                  const pData = firstItem?.size_distribution?.[panel];
+                                  const totalPanelQty = pData?.tallas ? Object.values(pData.tallas).reduce((sum, v) => sum + (Number(v) || 0), 0) : 0;
+                                  return pData && (pData.cantidad > 0 || totalPanelQty > 0);
+                                }).map(panel => {
+                                  const pData = firstItem.size_distribution[panel];
+                                  const num = panel.match(/^(\d+)/)?.[0] || '1';
+                                  const type = pData.tipo || 'Otros';
+                                  const tallasStr = SUBLIMATION_SIZES.filter(size => (pData.tallas?.[size] || 0) > 0)
+                                    .map(size => `${pData.tallas[size]}${size}`)
+                                    .join(', ');
+                                  return (
+                                    <div key={panel} className="text-[11px] text-[#ff7a00] font-mono leading-tight">
+                                      {num}P ({type}): <span className="text-white font-bold">{tallasStr || '—'}</span>
+                                    </div>
+                                  );
+                                });
+                                return activePanels.length > 0 ? (
+                                  <div className="space-y-0.5 mt-0.5">{activePanels}</div>
+                                ) : (
+                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
+                                    1 panel / Deportivos Fantasma
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
+                                    {firstItem?.name || '—'}
+                                  </span>
+                                );
+                              }
+                            })()}
                             {firstItem?.description && (
                               <span className="text-[10px] text-primary/80 italic block mt-1 max-w-[220px] truncate" title={firstItem.description}>
                                 Detalle: {firstItem.description}
