@@ -283,6 +283,26 @@ function NeuralDonut({ data, total }) {
   )
 }
 
+const getExpenseCategoryStyle = (catKey) => {
+  const key = (catKey || '').toUpperCase().trim();
+  switch (key) {
+    case 'PRODUCCION':
+      return 'bg-red-500/15 text-red-400 border border-red-500/30';
+    case 'INSUMOS':
+      return 'bg-purple-500/15 text-purple-400 border border-purple-500/30';
+    case 'GASTOS_FIJOS':
+      return 'bg-blue-500/15 text-blue-400 border border-blue-500/30';
+    case 'INDIRECTOS':
+      return 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+    case 'PERSONAL':
+      return 'bg-orange-500/15 text-orange-400 border border-orange-500/30';
+    case 'CASA_FAMILIA':
+      return 'bg-pink-500/15 text-pink-400 border border-pink-500/30';
+    default:
+      return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
+  }
+}
+
 export default function ExpensesAndBudgetsPage() {
   const [activeTab, setActiveTab] = useState('registro') // 'registro', 'dashboard', 'analisis'
 
@@ -1438,7 +1458,7 @@ export default function ExpensesAndBudgetsPage() {
                 </Card>
 
                 {/* LISTA DE TRANSACCIONES */}
-                <Card className="flex-1 overflow-hidden flex flex-col w-full h-full">
+                <Card className="flex-1 overflow-hidden flex flex-col w-full h-[420px] lg:h-full min-h-[420px] lg:min-h-0">
                   <div className="flex-1 overflow-auto p-0">
                     <table className="w-full text-left border-collapse whitespace-nowrap">
                       <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
@@ -1495,8 +1515,10 @@ export default function ExpensesAndBudgetsPage() {
                                 {/* COL 1: Fecha y Categoría */}
                                 <td className="py-2.5 px-4 text-sm min-w-[120px]">
                                   <span className="text-on-surface-variant font-mono block">{formatDate(e.date)}</span>
-                                  <span className="font-bold text-white block text-xs mt-0.5">{catLabel}</span>
-                                  <span className="text-[10px] text-primary/80 font-mono block uppercase mt-0.5">{sub}</span>
+                                  <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1.5 ${getExpenseCategoryStyle(e.category_key || e.categoryKey)}`}>
+                                    {catLabel}
+                                  </span>
+                                  <span className="text-[10px] text-primary/80 font-mono block uppercase mt-1">{sub}</span>
                                 </td>
 
                                 {/* COL 2: Proveedor / Detalle */}

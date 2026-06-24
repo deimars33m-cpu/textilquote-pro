@@ -51,6 +51,29 @@ const initialSizePrices = {
   }, {})
 }
 
+const getOrderCategoryStyle = (categoryName) => {
+  const name = (categoryName || '').toLowerCase().trim();
+  if (name.includes('producción') || name.includes('produccion')) {
+    return 'bg-red-500/15 text-red-400 border border-red-500/30';
+  }
+  if (name.includes('sublimación') || name.includes('sublimacion')) {
+    return 'bg-purple-500/15 text-purple-400 border border-purple-500/30';
+  }
+  if (name.includes('bordado')) {
+    return 'bg-blue-500/15 text-blue-400 border border-blue-500/30';
+  }
+  if (name.includes('corte') || name.includes('vinil')) {
+    return 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+  }
+  if (name.includes('dtf') && !name.includes('uv')) {
+    return 'bg-orange-500/15 text-orange-400 border border-orange-500/30';
+  }
+  if (name.includes('uv-dtf') || name.includes('uv dtf')) {
+    return 'bg-pink-500/15 text-pink-400 border border-pink-500/30';
+  }
+  return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
+}
+
 export default function OrdersPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -1671,14 +1694,16 @@ export default function OrdersPage() {
                           <td className="px-4 py-3 text-sm">
                             <span className="font-mono text-primary font-bold block">{orderNum}</span>
                             <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
-                            <span className="text-[10px] font-semibold text-white/95 uppercase tracking-wide block mt-1">
-                              {firstItem?.category || '—'}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
+                                {firstItem?.category || '—'}
+                              </span>
                               {order.order_items?.length > 1 && (
-                                <span className="text-[9px] text-primary font-mono ml-1">
-                                  (+{order.order_items.length - 1})
+                                <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-mono font-bold">
+                                  +{order.order_items.length - 1}
                                 </span>
                               )}
-                            </span>
+                            </div>
                           </td>
 
                           {/* COLUMNA 2: Descripcion/Cliente */}
