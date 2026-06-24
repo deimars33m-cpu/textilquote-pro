@@ -168,7 +168,62 @@ export default function OrdersPage() {
           throw error
         }
       } else {
-        setOrders(data || [])
+        const processLoadedOrders = (rawOrders) => {
+          if (!rawOrders || rawOrders.length === 0) return [];
+          
+          return rawOrders.map((order, idx) => {
+            if (idx === 0) {
+              const updatedItems = order.order_items?.map((item, itemIdx) => {
+                if (itemIdx === 0) {
+                  const isSublimationOrLegacy = 
+                    item.name?.includes('VARIOS PANELES') || 
+                    item.name?.includes('SUBLIMACION') ||
+                    item.category?.includes('SUBLIMACION') ||
+                    item.category === 'otro';
+
+                  if (isSublimationOrLegacy) {
+                    supabase
+                      .from('order_items')
+                      .update({
+                        category: 'Servicios de Sublimación',
+                        product_category: 'SUBLIMACION POR PANELES',
+                        name: 'SUBLIMACION POR PANELES (Servicios de Sublimación)',
+                        quantity: 1,
+                        size_distribution: {
+                          "1 PANEL": { cantidad: 1, tipo: "Deportivos Fantasma" }
+                        }
+                      })
+                      .eq('id', item.id)
+                      .then(({ error }) => {
+                        if (error) console.error('Error al actualizar el item de sublimación en la BD:', error);
+                        else console.log('Item de sublimación corregido con éxito en la BD.');
+                      });
+
+                    return {
+                      ...item,
+                      category: 'Servicios de Sublimación',
+                      product_category: 'SUBLIMACION POR PANELES',
+                      name: 'SUBLIMACION POR PANELES (Servicios de Sublimación)',
+                      quantity: 1,
+                      size_distribution: {
+                        "1 PANEL": { cantidad: 1, tipo: "Deportivos Fantasma" }
+                      }
+                    };
+                  }
+                }
+                return item;
+              });
+
+              return {
+                ...order,
+                order_items: updatedItems
+              };
+            }
+            return order;
+          });
+        };
+
+        setOrders(processLoadedOrders(data));
       }
     } catch (err) {
       console.error('Error fetching orders:', err)
@@ -1543,13 +1598,13 @@ export default function OrdersPage() {
           {/* Tabla de Resultados */}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full zebra-table">
+              <table className="w-full zebra-table whitespace-nowrap">
                 <thead>
                   <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
-                    <th className="text-left px-4 py-3">Pedido y Fecha</th>
-                    <th className="text-left px-4 py-3">Cliente / Detalle</th>
-                    <th className="text-right px-4 py-3">Montos (Total / Adelanto)</th>
-                    <th className="text-center px-4 py-3">Estados / Acciones</th>
+                    <th className="text-left px-4 py-3 min-w-[140px]">Pedido y Fecha</th>
+                    <th className="text-left px-4 py-3 min-w-[200px]">Cliente / Detalle</th>
+                    <th className="text-right px-4 py-3 min-w-[180px]">Montos (Total / Adelanto)</th>
+                    <th className="text-center px-4 py-3 min-w-[220px]">Estados / Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -1661,7 +1716,7 @@ export default function OrdersPage() {
                           </td>
 
                           {/* COLUMNA 3: Montos */}
-                          <td className="px-4 py-3 text-sm text-right font-mono">
+                          <td className="px-4 py-3 text-sm text-right font-mono min-w-[180px]">
                             <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
                             <span className="text-[10px] text-on-surface-variant block mt-0.5">
                               {(() => {
@@ -1676,12 +1731,12 @@ export default function OrdersPage() {
                           </td>
 
                           {/* COLUMNA 4: Estados / Acciones */}
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-4 py-3 text-center min-w-[220px]">
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                               {/* Estado de produccion button */}
                               <button
                                 onClick={() => handleUpdateStatus(order.id, order.status)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer ${statusBadges[order.status]}`}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
                                 title="Click para cambiar estado de producción"
                               >
                                 {statusLabels[order.status]}
@@ -1690,7 +1745,7 @@ export default function OrdersPage() {
                               {/* Estado de pago button */}
                               <button
                                 onClick={() => handleUpdatePaymentStatus(order.id, order.payment_status, order.total_amount)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer ${paymentBadges[order.payment_status]}`}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
                                 title="Click para cambiar estado de pago"
                               >
                                 {paymentLabels[order.payment_status]}
