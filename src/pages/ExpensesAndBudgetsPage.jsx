@@ -46,7 +46,7 @@ function NeuralLineChart({ data, total }) {
   const [hoveredPoint, setHoveredPoint] = useState(null)
 
   return (
-    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full">
+    <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,122,0,0.07),rgba(255,255,255,0))] pointer-events-none" />
       <div className="flex items-center justify-between mb-4 z-10">
         <div>
@@ -161,7 +161,7 @@ function NeuralDonut({ data, total }) {
   let accumulatedPercent = 0
 
   return (
-    <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 flex flex-col justify-between h-auto lg:h-full relative overflow-hidden">
+    <div className="neu-surface p-5 transition-all duration-300 flex flex-col justify-between h-auto lg:h-full relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.05),rgba(255,255,255,0))] pointer-events-none" />
       <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-3 z-10">
         <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
@@ -1226,7 +1226,7 @@ export default function ExpensesAndBudgetsPage() {
                 />
               </div>
 
-              <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4 shadow-inner mt-2">
+              <div className="neu-pressed p-4 rounded-xl space-y-4 mt-2">
                 <Input
                   label="Monto Total (Bs)"
                   type="number"
@@ -1576,7 +1576,7 @@ export default function ExpensesAndBudgetsPage() {
                                             className="fixed inset-0 z-20" 
                                             onClick={() => setActiveActionMenu(null)}
                                           />
-                                          <div className="absolute right-0 mt-1 w-32 rounded-xl bg-surface-container-high border border-outline-variant/60 shadow-lg py-1.5 z-30 animate-fade-in text-left">
+                                          <div className="absolute right-0 mt-1 w-32 rounded-xl neu-surface py-1.5 z-30 animate-fade-in text-left">
                                             <button
                                               onClick={() => {
                                                 setSelectedExpense(e)
@@ -1625,7 +1625,7 @@ export default function ExpensesAndBudgetsPage() {
             <div className="space-y-6 animate-fade-in w-full pb-8">
               
               {/* HEADING HERO */}
-              <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-surface-container-low/30 backdrop-blur-md p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="relative overflow-hidden neu-surface p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_-20%,rgba(0,245,255,0.08),transparent)] pointer-events-none" />
                 <div className="z-10 space-y-1">
                   <div className="flex items-center gap-2">
@@ -1639,7 +1639,7 @@ export default function ExpensesAndBudgetsPage() {
                     Análisis predictivo en tiempo real de egresos de capital, control presupuestario y flujos neurales dinámicos.
                   </p>
                 </div>
-                <div className="z-10 flex items-center gap-2 bg-surface-container/40 border border-outline-variant/30 rounded-xl px-4 py-2 font-mono text-xs text-on-surface-variant">
+                <div className="z-10 flex items-center gap-2 neu-raised-sm rounded-xl px-4 py-2 font-mono text-xs text-on-surface-variant">
                   <span className="material-symbols-outlined text-[16px] text-primary animate-pulse">sync</span>
                   Status: Operativo
                 </div>
@@ -1648,11 +1648,11 @@ export default function ExpensesAndBudgetsPage() {
               {/* KPI Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {/* KPI Card 1: Egresos Consolidados */}
-                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(0,245,255,0.04),transparent)] pointer-events-none" />
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Egresos Consolidados</span>
-                    <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
                       <span className="material-symbols-outlined text-primary text-[16px]">payments</span>
                     </div>
                   </div>
@@ -1665,11 +1665,11 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
 
                 {/* KPI Card 2: Límite Presupuestado */}
-                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(168,85,247,0.04),transparent)] pointer-events-none" />
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Límite Presupuestado</span>
-                    <div className="w-7 h-7 rounded-lg bg-tertiary/10 border border-tertiary/20 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-tertiary/10 flex items-center justify-center">
                       <span className="material-symbols-outlined text-tertiary text-[16px]">account_balance_wallet</span>
                     </div>
                   </div>
@@ -1700,11 +1700,11 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
 
                 {/* KPI Card 3: Velocidad Diaria */}
-                <div className="bg-surface-container-low/30 backdrop-blur-md p-5 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
+                <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between group">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(57,255,20,0.04),transparent)] pointer-events-none" />
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-wider">Velocidad Diaria (Burn Rate)</span>
-                    <div className="w-7 h-7 rounded-lg bg-secondary/10 border border-secondary/20 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-secondary/10 flex items-center justify-center">
                       <span className="material-symbols-outlined text-secondary text-[16px]">speed</span>
                     </div>
                   </div>
@@ -1726,7 +1726,7 @@ export default function ExpensesAndBudgetsPage() {
                   <NeuralLineChart data={dailyTrendData} total={dailyTrendTotal} />
 
                   {/* Active budgets progress */}
-                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300">
+                  <div className="neu-surface p-6 transition-all duration-300">
                     <div className="flex items-center justify-between mb-6 pb-3 border-b border-outline-variant/40">
                       <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
                         <span className="material-symbols-outlined text-[18px] text-primary">pie_chart</span>
@@ -1763,7 +1763,7 @@ export default function ExpensesAndBudgetsPage() {
                           }
 
                           return (
-                            <div key={b.id} className="relative group p-4 rounded-xl bg-surface-container/20 border border-outline-variant/30 hover:border-primary/20 transition-all duration-300">
+                            <div key={b.id} className="relative group p-4 rounded-xl neu-raised-sm transition-all duration-300">
                               <div className="flex items-start justify-between mb-2">
                                 <div className="min-w-0 pr-2">
                                   <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider block">Categoría</span>
@@ -1798,7 +1798,7 @@ export default function ExpensesAndBudgetsPage() {
                   </div>
 
                   {/* AI Prediction Card */}
-                  <div className="bg-surface-container-low/30 backdrop-blur-md p-6 rounded-2xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full min-h-[220px]">
+                  <div className="neu-surface p-6 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full min-h-[220px]">
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(168,85,247,0.05),transparent)] pointer-events-none" />
                     <div>
                       <div className="flex items-center justify-between mb-5 pb-3 border-b border-outline-variant/40">
@@ -1823,7 +1823,7 @@ export default function ExpensesAndBudgetsPage() {
                           </p>
                         </div>
 
-                        <div className="p-4 rounded-xl bg-surface-container/20 border border-outline-variant/30 space-y-2">
+                        <div className="p-4 rounded-xl neu-pressed space-y-2">
                           <span className="text-[10px] font-mono text-primary uppercase tracking-wider font-bold flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px]">settings_suggest</span>
                             Análisis de Tendencia
@@ -1878,7 +1878,7 @@ export default function ExpensesAndBudgetsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center bg-surface-container-low p-6 rounded-2xl border border-outline-variant shadow-inner">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center neu-pressed p-6 rounded-2xl">
                     <div className="space-y-1">
                       <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Gastos Prorrateables</p>
                       <p className="text-2xl font-mono font-bold text-error">{formatCurrency(overheadCosts)}</p>
@@ -1900,12 +1900,12 @@ export default function ExpensesAndBudgetsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-between bg-primary/10 border border-primary/20 rounded-xl p-6 shadow-lg">
+                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-between neu-surface p-6">
                     <div>
                       <h3 className="text-lg font-bold text-primary">Costo Indirecto a Cargar:</h3>
                       <p className="text-sm text-primary/70">Monto adicional por prenda sobre el costo directo.</p>
                     </div>
-                    <div className="text-4xl font-mono font-bold text-primary mt-4 sm:mt-0 bg-surface px-6 py-3 rounded-xl border border-primary/20 shadow-inner">
+                    <div className="text-4xl font-mono font-bold text-primary mt-4 sm:mt-0 neu-pressed px-6 py-3 rounded-xl">
                       {formatCurrency(unitOverhead)} <span className="text-lg text-primary/50">/ u</span>
                     </div>
                   </div>
@@ -1937,7 +1937,7 @@ export default function ExpensesAndBudgetsPage() {
                     <div className="space-y-6">
                       {/* Sublimation metrics summary */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                        <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between">
                           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Paneles Producidos</span>
                           <div>
                             <span className="text-xl font-mono font-bold text-white block">{sublimationStats.totalPanels} <span className="text-xs text-on-surface-variant">unidades</span></span>
@@ -1945,7 +1945,7 @@ export default function ExpensesAndBudgetsPage() {
                           </div>
                         </div>
 
-                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                        <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between">
                           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Insumos Consumidos</span>
                           <div>
                             <span className="text-xs text-white block">🧻 Papel: <strong>{sublimationStats.paperQuantity} u</strong> ({formatCurrency(sublimationStats.paperCost)})</span>
@@ -1953,7 +1953,7 @@ export default function ExpensesAndBudgetsPage() {
                           </div>
                         </div>
 
-                        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
+                        <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between">
                           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Ingreso Total Sublimación</span>
                           <div>
                             <span className="text-xl font-mono font-bold text-white block">{formatCurrency(sublimationStats.totalSubRevenue)}</span>
@@ -1963,7 +1963,7 @@ export default function ExpensesAndBudgetsPage() {
                       </div>
 
                       {/* Main Calculation result */}
-                      <div className="bg-[#a855f7]/5 border border-[#a855f7]/20 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between shadow-lg gap-4">
+                      <div className="neu-surface p-5 flex flex-col md:flex-row items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 className="text-base font-bold text-[#a855f7] flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-[18px]">calculate</span>
@@ -1971,7 +1971,7 @@ export default function ExpensesAndBudgetsPage() {
                           </h3>
                           <p className="text-xs text-[#a855f7]/70">Calculado como: (Costo Tinta + Costo Papel) ÷ Cantidad de Paneles</p>
                         </div>
-                        <div className="text-3xl font-mono font-bold text-[#a855f7] bg-surface px-6 py-3 rounded-xl border border-[#a855f7]/20 shadow-center text-center whitespace-nowrap min-w-[150px]">
+                        <div className="text-3xl font-mono font-bold text-[#a855f7] neu-pressed px-6 py-3 rounded-xl text-center whitespace-nowrap min-w-[150px]">
                           {sublimationStats.totalPanels > 0 ? (
                             <>
                               {formatCurrency(sublimationStats.avgCombinedCostPerPanel)} <span className="text-xs text-[#a855f7]/50">/ u</span>
@@ -1983,7 +1983,7 @@ export default function ExpensesAndBudgetsPage() {
                       </div>
 
                       {/* Performance / Profitability */}
-                      <div className="p-4 rounded-xl bg-surface-container/30 border border-outline-variant/30 space-y-3">
+                      <div className="p-4 rounded-xl neu-pressed space-y-3">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-mono text-on-surface-variant uppercase tracking-wider font-bold">Relación de Costo Insumos / Ingresos</span>
                           <span className="font-mono font-bold text-white">{sublimationStats.costToRevenueRatio.toFixed(1)}%</span>
@@ -2000,7 +2000,7 @@ export default function ExpensesAndBudgetsPage() {
                       </div>
 
                       {/* Breakdown table */}
-                      <div className="overflow-x-auto rounded-xl border border-outline-variant/50">
+                      <div className="overflow-x-auto rounded-xl neu-pressed">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
@@ -2051,7 +2051,7 @@ export default function ExpensesAndBudgetsPage() {
           title=""
           size="lg"
         >
-          <div className="bg-surface-container -m-6 p-4 h-[75vh] flex flex-col">
+          <div className="bg-transparent -m-6 p-4 h-[75vh] flex flex-col">
             {renderWizardForm()}
           </div>
         </Modal>
@@ -2124,7 +2124,7 @@ export default function ExpensesAndBudgetsPage() {
             </div>
 
             {selectedExpense.advance_amount && Number(selectedExpense.advance_amount) < Number(selectedExpense.amount) && (
-              <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-error text-xs font-semibold flex items-center justify-between">
+              <div className="p-3 bg-error/10 rounded-xl text-error text-xs font-semibold flex items-center justify-between">
                 <span>Saldo Pendiente:</span>
                 <span className="font-mono text-sm">
                   {formatCurrency(Number(selectedExpense.amount) - Number(selectedExpense.advance_amount))}
@@ -2135,7 +2135,7 @@ export default function ExpensesAndBudgetsPage() {
             {selectedExpense.description && (
               <div className="space-y-1 pt-2 border-t border-white/5">
                 <span className="text-[10px] font-mono uppercase text-on-surface-variant block">Observaciones</span>
-                <p className="text-sm bg-surface-container-low p-3 rounded-xl border border-outline-variant text-on-surface-variant whitespace-pre-line leading-relaxed">
+                <p className="text-sm neu-pressed p-3 rounded-xl text-on-surface-variant whitespace-pre-line leading-relaxed">
                   {selectedExpense.description}
                 </p>
               </div>
