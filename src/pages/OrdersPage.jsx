@@ -40,6 +40,42 @@ const getInitialPanelSizePrices = (basePrice = 10) => {
   }, {})
 }
 
+const calculateItemMetrics = (sizeDistribution) => {
+  let totalGarments = 0
+  let totalNominalPanels = 0
+  let totalEquivalentPanels = 0
+  let totalM2 = 0
+
+  if (!sizeDistribution) return null;
+
+  PANELS_LIST.forEach(panel => {
+    const pData = sizeDistribution[panel]
+    if (pData && pData.tallas) {
+      const match = panel.match(/^(\d+)/)
+      const panelsPerGarment = match ? parseInt(match[1]) : 1
+      
+      SUBLIMATION_SIZES.forEach(size => {
+        const qty = pData.tallas[size] || 0
+        if (qty > 0) {
+          totalGarments += qty
+          totalNominalPanels += qty * panelsPerGarment
+          
+          const f = SIZE_FACTORS[size]
+          if (f) {
+            const idx = Math.min(4, panelsPerGarment - 1)
+            const m2Val = f.m2[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            const pVal = f.panels[idx] * (panelsPerGarment > 5 ? panelsPerGarment / 5 : 1)
+            totalM2 += qty * m2Val
+            totalEquivalentPanels += qty * pVal
+          }
+        }
+      })
+    }
+  })
+
+  return { totalGarments, totalNominalPanels, totalEquivalentPanels, totalM2 }
+}
+
 const initialPanelSizes = PANELS_LIST.reduce((acc, panel) => ({
   ...acc,
   [panel]: SUBLIMATION_SIZES.reduce((accSize, size) => ({ ...accSize, [size]: 0 }), {})
@@ -228,62 +264,7 @@ export default function OrdersPage() {
           throw error
         }
       } else {
-        const processLoadedOrders = (rawOrders) => {
-          if (!rawOrders || rawOrders.length === 0) return [];
-          
-          return rawOrders.map((order, idx) => {
-            if (idx === 0) {
-              const updatedItems = order.order_items?.map((item, itemIdx) => {
-                if (itemIdx === 0) {
-                  const isSublimationOrLegacy = 
-                    item.name?.includes('VARIOS PANELES') || 
-                    item.name?.includes('SUBLIMACION') ||
-                    item.category?.includes('SUBLIMACION') ||
-                    item.category === 'otro';
-
-                  if (isSublimationOrLegacy) {
-                    supabase
-                      .from('order_items')
-                      .update({
-                        category: 'Servicios de Sublimación',
-                        product_category: 'SUBLIMACION POR PANELES',
-                        name: 'SUBLIMACION POR PANELES (Servicios de Sublimación)',
-                        quantity: 1,
-                        size_distribution: {
-                          "1 PANEL": { cantidad: 1, tipo: "Deportivos Fantasma" }
-                        }
-                      })
-                      .eq('id', item.id)
-                      .then(({ error }) => {
-                        if (error) console.error('Error al actualizar el item de sublimación en la BD:', error);
-                        else console.log('Item de sublimación corregido con éxito en la BD.');
-                      });
-
-                    return {
-                      ...item,
-                      category: 'Servicios de Sublimación',
-                      product_category: 'SUBLIMACION POR PANELES',
-                      name: 'SUBLIMACION POR PANELES (Servicios de Sublimación)',
-                      quantity: 1,
-                      size_distribution: {
-                        "1 PANEL": { cantidad: 1, tipo: "Deportivos Fantasma" }
-                      }
-                    };
-                  }
-                }
-                return item;
-              });
-
-              return {
-                ...order,
-                order_items: updatedItems
-              };
-            }
-            return order;
-          });
-        };
-
-        setOrders(processLoadedOrders(data));
+        setOrders(data);
       }
     } catch (err) {
       console.error('Error fetching orders:', err)
@@ -2167,14 +2148,43 @@ export default function OrdersPage() {
 
                     {/* Detalles del Pedido (Tallas, Paneles, Metros) */}
                     {item.size_distribution && (
-                      <div className="border-t border-white/5 pt-3 space-y-2">
+                      <div className="border-t border-white/5 pt-3 space-y-3">
                         <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
                           Distribución / Detalles de Trabajo
                         </p>
+
+                        {/* Resumen Métrico de Sublimación */}
+                        {(() => {
+                          const itemMetrics = calculateItemMetrics(item.size_distribution);
+                          if (!itemMetrics || itemMetrics.totalNominalPanels === 0) return null;
+                          return (
+                            <div className="grid grid-cols-3 gap-2 bg-[#ff5c00]/5 border border-primary/20 p-3 rounded-xl text-center">
+                              <div>
+                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Nominales</p>
+                                <p className="text-sm font-mono font-bold text-white mt-0.5">
+                                  {itemMetrics.totalNominalPanels}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Prorrateados</p>
+                                <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                                  {itemMetrics.totalEquivalentPanels.toFixed(2)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Metraje Total (m²)</p>
+                                <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                                  {itemMetrics.totalM2.toFixed(2)} m²
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {Object.keys(item.size_distribution).some(k => PANELS_LIST.includes(k)) ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {Object.entries(item.size_distribution).map(([panel, data]) => {
-                              if (!data || !data.cantidad) return null
+                              if (!data || (!data.cantidad && !Object.values(data.tallas || {}).some(v => v > 0))) return null
                               return (
                                 <div key={panel} className="neu-pressed p-3 rounded-xl space-y-2 text-xs">
                                   <div className="flex justify-between items-center border-b border-white/5 pb-1">
