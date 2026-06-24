@@ -1931,13 +1931,19 @@ export default function OrdersPage() {
                               const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
                               if (isProduccionTextil) {
                                 const activeSizes = SIZES_LIST.filter(size => (firstItem?.size_distribution?.[size] || 0) > 0)
-                                  .map(size => `Talla ${size}: ${firstItem.size_distribution[size]}`);
+                                  .map(size => `T${size}: ${firstItem.size_distribution[size]}`);
                                 const sizesStr = activeSizes.join(', ');
                                 return (
-                                  <div className="text-[11px] text-[#ff7a00] font-mono mt-0.5 leading-tight">
-                                    {sizesStr ? <span className="text-white font-bold mr-1">{sizesStr}</span> : ''}
-                                    <span className="text-on-surface-variant/80">/ {firstItem?.name || 'Prendas'}</span>
-                                  </div>
+                                  <>
+                                    <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
+                                      {firstItem?.name || 'Prendas'}
+                                    </span>
+                                    {sizesStr && (
+                                      <span className="text-[11px] text-cyan-400 font-mono block mt-0.5">
+                                        {sizesStr}
+                                      </span>
+                                    )}
+                                  </>
                                 );
                               } else if (isSublimacionPaneles) {
                                 const activePanels = PANELS_LIST.filter(panel => {
@@ -1949,19 +1955,26 @@ export default function OrdersPage() {
                                   const num = panel.match(/^(\d+)/)?.[0] || '1';
                                   const type = pData.tipo || 'Otros';
                                   const tallasStr = SUBLIMATION_SIZES.filter(size => (pData.tallas?.[size] || 0) > 0)
-                                    .map(size => `Talla ${size}: ${pData.tallas[size]}`)
+                                    .map(size => `T${size}: ${pData.tallas[size]}`)
                                     .join(', ');
                                   return (
-                                    <div key={panel} className="text-[11px] text-[#ff7a00] font-mono leading-tight">
-                                      {num}P ({type}): <span className="text-white font-bold">{tallasStr || '—'}</span>
+                                    <div key={panel} className="mt-0.5">
+                                      <span className="text-xs text-on-surface-variant block font-medium">
+                                        {num}P ({type.toLowerCase()})
+                                      </span>
+                                      {tallasStr && (
+                                        <span className="text-[11px] text-cyan-400 font-mono block mt-0.5">
+                                          {tallasStr}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 });
                                 return activePanels.length > 0 ? (
-                                  <div className="space-y-0.5 mt-0.5">{activePanels}</div>
+                                  <div className="space-y-1 mt-0.5">{activePanels}</div>
                                 ) : (
-                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
-                                    1 panel / Deportivos Fantasma
+                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
+                                    1P (deportivos fantasma)
                                   </span>
                                 );
                               } else {
