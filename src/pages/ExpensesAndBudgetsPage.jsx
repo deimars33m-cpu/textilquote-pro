@@ -1399,11 +1399,11 @@ export default function ExpensesAndBudgetsPage() {
             <div className="flex flex-col lg:flex-row gap-6 h-full items-start">
 
               {/* IZQUIERDA: LISTA DE TRANSACCIONES */}
-              <div className="flex-1 flex flex-col gap-4 h-full w-full">
+              <div className="flex-1 flex flex-col gap-2.5 sm:gap-4 h-full w-full">
                 
                 {/* CUADRO APARTADO DE FILTROS */}
-                <Card className="p-4 space-y-4 shrink-0">
-                  <div className="flex flex-col md:flex-row gap-3">
+                <Card className="p-2.5 sm:p-4 shrink-0">
+                  <div className="flex flex-col md:flex-row gap-2 sm:gap-3">
                     <div className="flex-1">
                       <SearchInput
                         value={itemSearch}
