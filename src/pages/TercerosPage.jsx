@@ -1,10 +1,369 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useCRUD } from '@/hooks/useCRUD'
 import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
-  Card, SearchInput, LoadingSpinner, EmptyState,
+  Card, SearchInput, LoadingSpinner, EmptyState, StatusBadge
 } from '@/components/ui/index.jsx'
-import { clientTypes, terceroTypes } from '@/lib/formatters'
+import { clientTypes, terceroTypes, formatCurrency } from '@/lib/formatters'
+import { useAuth } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'
+
+function ResumenDashboard({ terceros }) {
+  const { user } = useAuth()
+  const [orders, setOrders] = useState([])
+  const [expenses, setExpenses] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return
+      setLoading(true)
+      try {
+        const [ordersRes, expensesRes] = await Promise.all([
+          supabase.from('orders').select('id, total_amount, paid_amount, payment_status, status, created_at, tercero_id').eq('user_id', user.id),
+          supabase.from('expenses').select('id, amount, advance_amount, date, created_at, provider_id').eq('user_id', user.id)
+        ])
+        if (ordersRes.data) setOrders(ordersRes.data)
+        if (expensesRes.data) setExpenses(expensesRes.data)
+      } catch (e) {
+        console.error('Error fetching financial data:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [user])
+
+  const metrics = useMemo(() => {
+    let totalBilled = 0
+    let totalPaidClients = 0
+    let totalClientDebt = 0
+    let totalPurchased = 0
+    let totalPaidProviders = 0
+    let totalProviderDebt = 0
+
+    const clientStats = {}
+    const providerStats = {}
+
+    terceros.forEach(t => {
+      if (t.role === 'cliente') {
+        clientStats[t.id] = { ...t, billed: 0, paid: 0, debt: 0, ordersCount: 0, lastOrder: null }
+      } else if (t.role === 'proveedor') {
+        providerStats[t.id] = { ...t, purchased: 0, paid: 0, debt: 0, expensesCount: 0, lastExpense: null }
+      }
+    })
+
+    orders.forEach(o => {
+      const amt = Number(o.total_amount) || 0
+      const paid = Number(o.paid_amount) || 0
+      totalBilled += amt
+      totalPaidClients += paid
+      totalClientDebt += (amt - paid)
+
+      if (o.tercero_id && clientStats[o.tercero_id]) {
+        const stat = clientStats[o.tercero_id]
+        stat.billed += amt
+        stat.paid += paid
+        stat.debt += (amt - paid)
+        stat.ordersCount += 1
+        if (!stat.lastOrder || new Date(o.created_at) > new Date(stat.lastOrder)) {
+          stat.lastOrder = o.created_at
+        }
+      }
+    })
+
+    expenses.forEach(e => {
+      const amt = Number(e.amount) || 0
+      const paid = Number(e.advance_amount) || 0
+      totalPurchased += amt
+      totalPaidProviders += paid
+      totalProviderDebt += (amt - paid)
+
+      if (e.provider_id && providerStats[e.provider_id]) {
+        const stat = providerStats[e.provider_id]
+        stat.purchased += amt
+        stat.paid += paid
+        stat.debt += (amt - paid)
+        stat.expensesCount += 1
+        const expDate = e.date || e.created_at
+        if (!stat.lastExpense || new Date(expDate) > new Date(stat.lastExpense)) {
+          stat.lastExpense = expDate
+        }
+      }
+    })
+
+    const clientsList = Object.values(clientStats).filter(c => c.ordersCount > 0 || c.debt > 0)
+    const providersList = Object.values(providerStats).filter(p => p.expensesCount > 0 || p.debt > 0)
+
+    clientsList.sort((a, b) => b.billed - a.billed)
+    const bestClient = clientsList[0] || null
+    
+    const clientsByDebt = [...clientsList].sort((a, b) => b.debt - a.debt)
+    const worstClient = clientsByDebt[0] && clientsByDebt[0].debt > 0 ? clientsByDebt[0] : null
+
+    providersList.sort((a, b) => b.purchased - a.purchased)
+    const bestProvider = providersList[0] || null
+
+    const providersByDebt = [...providersList].sort((a, b) => b.debt - a.debt)
+    const worstProvider = providersByDebt[0] && providersByDebt[0].debt > 0 ? providersByDebt[0] : null
+
+    return {
+      kpis: { totalBilled, totalPaidClients, totalClientDebt, totalPurchased, totalPaidProviders, totalProviderDebt },
+      bestClient, worstClient, bestProvider, worstProvider,
+      rankedClients: clientsList.slice(0, 10),
+      rankedProviders: providersList.slice(0, 10)
+    }
+  }, [orders, expenses, terceros])
+
+  if (loading) return <LoadingSpinner />
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 border-l-4 border-l-primary flex flex-col justify-between">
+          <div className="flex items-center gap-2 text-on-surface-variant mb-2">
+            <span className="material-symbols-outlined text-[20px] text-primary">account_balance_wallet</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Facturado Clientes</span>
+          </div>
+          <p className="text-2xl font-mono font-bold text-white">{formatCurrency(metrics.kpis.totalBilled)}</p>
+        </Card>
+        <Card className="p-4 border-l-4 border-l-emerald-500 flex flex-col justify-between">
+          <div className="flex items-center gap-2 text-on-surface-variant mb-2">
+            <span className="material-symbols-outlined text-[20px] text-emerald-500">payments</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Cobrado Clientes</span>
+          </div>
+          <p className="text-2xl font-mono font-bold text-white">{formatCurrency(metrics.kpis.totalPaidClients)}</p>
+        </Card>
+        <Card className="p-4 border-l-4 border-l-error flex flex-col justify-between">
+          <div className="flex items-center gap-2 text-on-surface-variant mb-2">
+            <span className="material-symbols-outlined text-[20px] text-error">warning</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Deuda Clientes</span>
+          </div>
+          <p className="text-2xl font-mono font-bold text-error">{formatCurrency(metrics.kpis.totalClientDebt)}</p>
+        </Card>
+        <Card className="p-4 border-l-4 border-l-amber-500 flex flex-col justify-between">
+          <div className="flex items-center gap-2 text-on-surface-variant mb-2">
+            <span className="material-symbols-outlined text-[20px] text-amber-500">local_shipping</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Deuda Proveedores</span>
+          </div>
+          <p className="text-2xl font-mono font-bold text-amber-500">{formatCurrency(metrics.kpis.totalProviderDebt)}</p>
+        </Card>
+      </div>
+
+      {/* Podiums */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Podio Clientes */}
+        <div className="space-y-4">
+          <h3 className="text-title-md font-bold text-white flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">person</span>
+            Análisis de Clientes
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border border-amber-500/30 bg-amber-500/5 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 text-amber-500/10">
+                <span className="material-symbols-outlined text-[100px]">emoji_events</span>
+              </div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-amber-500">star</span>
+                  <span className="text-xs font-bold text-amber-500 uppercase">Mejor Cliente</span>
+                </div>
+                {metrics.bestClient ? (
+                  <>
+                    <p className="text-lg font-bold text-white truncate">{metrics.bestClient.name}</p>
+                    <div className="mt-4 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Facturado:</span>
+                        <span className="font-mono text-white">{formatCurrency(metrics.bestClient.billed)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Pedidos:</span>
+                        <span className="font-mono text-white">{metrics.bestClient.ordersCount}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Sin datos suficientes</p>
+                )}
+              </div>
+            </Card>
+            
+            <Card className="border border-error/30 bg-error/5 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 text-error/10">
+                <span className="material-symbols-outlined text-[100px]">warning</span>
+              </div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-error">trending_down</span>
+                  <span className="text-xs font-bold text-error uppercase">Más Moroso</span>
+                </div>
+                {metrics.worstClient ? (
+                  <>
+                    <p className="text-lg font-bold text-white truncate">{metrics.worstClient.name}</p>
+                    <div className="mt-4 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Deuda:</span>
+                        <span className="font-mono text-error font-bold">{formatCurrency(metrics.worstClient.debt)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Morosidad:</span>
+                        <span className="font-mono text-white">{((metrics.worstClient.debt / metrics.worstClient.billed) * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Sin clientes morosos 🎉</p>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        {/* Podio Proveedores */}
+        <div className="space-y-4">
+          <h3 className="text-title-md font-bold text-white flex items-center gap-2">
+            <span className="material-symbols-outlined text-amber-500">local_shipping</span>
+            Análisis de Proveedores
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border border-primary/30 bg-primary/5 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 text-primary/10">
+                <span className="material-symbols-outlined text-[100px]">workspace_premium</span>
+              </div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-primary">verified</span>
+                  <span className="text-xs font-bold text-primary uppercase">Principal Proveedor</span>
+                </div>
+                {metrics.bestProvider ? (
+                  <>
+                    <p className="text-lg font-bold text-white truncate">{metrics.bestProvider.name}</p>
+                    <div className="mt-4 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Comprado:</span>
+                        <span className="font-mono text-white">{formatCurrency(metrics.bestProvider.purchased)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Compras:</span>
+                        <span className="font-mono text-white">{metrics.bestProvider.expensesCount}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Sin datos suficientes</p>
+                )}
+              </div>
+            </Card>
+            
+            <Card className="border border-error/30 bg-error/5 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 text-error/10">
+                <span className="material-symbols-outlined text-[100px]">money_off</span>
+              </div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-error">assignment_late</span>
+                  <span className="text-xs font-bold text-error uppercase">Mayor Deuda</span>
+                </div>
+                {metrics.worstProvider ? (
+                  <>
+                    <p className="text-lg font-bold text-white truncate">{metrics.worstProvider.name}</p>
+                    <div className="mt-4 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Por Pagar:</span>
+                        <span className="font-mono text-error font-bold">{formatCurrency(metrics.worstProvider.debt)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant">Morosidad:</span>
+                        <span className="font-mono text-white">{((metrics.worstProvider.debt / metrics.worstProvider.purchased) * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Sin deudas a proveedores 🎉</p>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+
+      {/* Rankings */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-0 overflow-hidden">
+          <div className="p-4 border-b border-white/5 bg-surface-container-high">
+            <h4 className="font-bold text-white">Top 10 Clientes (Por Facturación)</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="bg-white/[0.02] border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                  <th className="p-3">#</th>
+                  <th className="p-3">Cliente</th>
+                  <th className="p-3 text-right">Facturado</th>
+                  <th className="p-3 text-right">Deuda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.rankedClients.map((c, i) => (
+                  <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                    <td className="p-3 font-mono text-on-surface-variant">{i + 1}</td>
+                    <td className="p-3 font-medium text-white truncate max-w-[150px]">{c.name}</td>
+                    <td className="p-3 text-right font-mono text-primary">{formatCurrency(c.billed)}</td>
+                    <td className="p-3 text-right font-mono">
+                      <span className={c.debt > 0 ? 'text-error' : 'text-on-surface-variant'}>
+                        {formatCurrency(c.debt)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {metrics.rankedClients.length === 0 && (
+                  <tr><td colSpan={4} className="p-4 text-center text-on-surface-variant">No hay datos</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+        
+        <Card className="p-0 overflow-hidden">
+          <div className="p-4 border-b border-white/5 bg-surface-container-high">
+            <h4 className="font-bold text-white">Top 10 Proveedores (Por Compras)</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="bg-white/[0.02] border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                  <th className="p-3">#</th>
+                  <th className="p-3">Proveedor</th>
+                  <th className="p-3 text-right">Comprado</th>
+                  <th className="p-3 text-right">Por Pagar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.rankedProviders.map((p, i) => (
+                  <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                    <td className="p-3 font-mono text-on-surface-variant">{i + 1}</td>
+                    <td className="p-3 font-medium text-white truncate max-w-[150px]">{p.name}</td>
+                    <td className="p-3 text-right font-mono text-amber-500">{formatCurrency(p.purchased)}</td>
+                    <td className="p-3 text-right font-mono">
+                      <span className={p.debt > 0 ? 'text-error' : 'text-on-surface-variant'}>
+                        {formatCurrency(p.debt)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {metrics.rankedProviders.length === 0 && (
+                  <tr><td colSpan={4} className="p-4 text-center text-on-surface-variant">No hay datos</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
 
 const EMPTY_FORM = {
   name: '',
@@ -183,8 +542,9 @@ export default function TercerosPage() {
       </div>
 
       {/* Filtros de Rol */}
-      <div className="flex gap-2 bg-surface-container/30 p-1 rounded-xl border border-white/5 w-fit">
+      <div className="flex flex-wrap gap-2 bg-surface-container/30 p-1 rounded-xl border border-white/5 w-fit">
         {[
+          { id: 'resumen', label: 'Resumen', icon: 'analytics' },
           { id: 'todos', label: 'Todos', icon: 'groups' },
           { id: 'cliente', label: 'Clientes', icon: 'person' },
           { id: 'proveedor', label: 'Proveedores', icon: 'local_shipping' },
@@ -205,7 +565,11 @@ export default function TercerosPage() {
         ))}
       </div>
 
-      {/* Search */}
+      {roleFilter === 'resumen' ? (
+        <ResumenDashboard terceros={terceros} />
+      ) : (
+        <>
+          {/* Search */}
       <div>
         <SearchInput
           value={search}
@@ -308,6 +672,8 @@ export default function TercerosPage() {
             {filtered.length} registro{filtered.length !== 1 ? 's' : ''}
           </div>
         </Card>
+      )}
+      </>
       )}
 
       {/* Create/Edit Modal */}
