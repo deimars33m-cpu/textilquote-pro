@@ -288,7 +288,7 @@ export default function ExpensesAndBudgetsPage() {
 
   const { user } = useAuth()
   const { settings } = useGlobalSettings()
-  const { data: expenses, loading: loadingExpenses, create: createExpense, remove: removeExpense } = useCRUD('expenses', {
+  const { data: expenses, loading: loadingExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useCRUD('expenses', {
     orderBy: 'date',
     orderAsc: false
   })
@@ -304,6 +304,7 @@ export default function ExpensesAndBudgetsPage() {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('')
   const [selectedSubcategoryFilter, setSelectedSubcategoryFilter] = useState('')
   const [selectedExpense, setSelectedExpense] = useState(null)
+  const [activeActionMenu, setActiveActionMenu] = useState(null)
   const [itemSearch, setItemSearch] = useState('')
 
   const expenseStructure = settings?.expenseStructure || defaultExpenseStructure
@@ -558,6 +559,33 @@ export default function ExpensesAndBudgetsPage() {
       } catch (err) {
         console.error('Error deleting expense:', err)
       }
+    }
+  }
+
+  const handleUpdateExpensePaymentStatus = async (expenseId, currentAdvance, expenseTotal) => {
+    let currentStatus = 'pendiente'
+    if (currentAdvance >= expenseTotal) {
+      currentStatus = 'pagado'
+    } else if (currentAdvance > 0) {
+      currentStatus = 'adelanto'
+    }
+
+    const statuses = ['pendiente', 'adelanto', 'pagado']
+    const nextIdx = (statuses.indexOf(currentStatus) + 1) % statuses.length
+    const nextStatus = statuses[nextIdx]
+
+    let nextPaidAmount = 0
+    if (nextStatus === 'pagado') {
+      nextPaidAmount = expenseTotal
+    } else if (nextStatus === 'adelanto') {
+      nextPaidAmount = expenseTotal * 0.5 // default to 50%
+    }
+
+    try {
+      await updateExpense(expenseId, { advance_amount: nextPaidAmount })
+    } catch (err) {
+      console.error('Error updating expense payment status:', err)
+      alert('Error al actualizar el pago del gasto: ' + err.message)
     }
   }
 
@@ -1412,22 +1440,19 @@ export default function ExpensesAndBudgetsPage() {
                 {/* LISTA DE TRANSACCIONES */}
                 <Card className="flex-1 overflow-hidden flex flex-col w-full h-full">
                   <div className="flex-1 overflow-auto p-0">
-                    <table className="w-full text-left border-collapse min-w-[650px]">
+                    <table className="w-full text-left border-collapse whitespace-nowrap">
                       <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
-                        <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider">
-                          <th className="py-3 px-4 font-medium">Fecha</th>
-                          <th className="py-3 px-4 font-medium">Proveedor / Detalle</th>
-                          <th className="py-3 px-4 font-medium">Categoría</th>
-                          <th className="py-3 px-4 font-medium">Ítem</th>
-                          <th className="py-3 px-4 font-medium">Pago</th>
-                          <th className="py-3 px-4 font-medium text-right">Total</th>
-                          <th className="py-3 px-4 text-center">ACCIONES</th>
+                        <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider font-mono">
+                          <th className="py-3 px-4 font-medium min-w-[120px]">Fecha / Categoría</th>
+                          <th className="py-3 px-4 font-medium min-w-[160px]">Proveedor / Detalle</th>
+                          <th className="py-3 px-4 font-medium text-right min-w-[140px]">Montos (Total / Adelanto)</th>
+                          <th className="py-3 px-4 text-center min-w-[170px]">Pago / Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5 text-sm animate-fade-in text-on-surface">
                         {loadingExpenses ? (
                           <tr>
-                            <td colSpan="7" className="text-center py-20 text-on-surface-variant text-sm">
+                            <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
                               <div className="flex flex-col items-center gap-2 justify-center">
                                 <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
                                 Cargando transacciones...
@@ -1436,7 +1461,7 @@ export default function ExpensesAndBudgetsPage() {
                           </tr>
                         ) : filteredExpenses.length === 0 ? (
                           <tr>
-                            <td colSpan="7" className="text-center py-20 text-on-surface-variant text-sm">
+                            <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
                               <div className="flex flex-col items-center gap-2 justify-center">
                                 <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
                                 Aún no hay gastos registrados con estos filtros.
@@ -1452,52 +1477,108 @@ export default function ExpensesAndBudgetsPage() {
                             const adv = e.advance_amount || e.advanceAmount
                             const method = e.payment_method || e.paymentMethod
 
+                            // Calcular estado de pago
+                            const paymentStatus = adv >= e.amount ? 'pagado' : (adv > 0 ? 'adelanto' : 'pendiente')
+                            const paymentLabels = {
+                              pendiente: 'Pendiente',
+                              adelanto: 'Acuenta',
+                              pagado: 'Pagado'
+                            }
+                            const paymentBadges = {
+                              pendiente: 'bg-error-container/20 text-error border border-error/20 hover:bg-error-container/30',
+                              adelanto: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
+                              pagado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20'
+                            }
+
                             return (
                               <tr key={e.id} className="hover:bg-white/[0.02] transition-colors group">
-                                <td className="py-2.5 px-4 text-on-surface-variant whitespace-nowrap">{formatDate(e.date)}</td>
-                                <td className="py-2.5 px-4 text-on-surface-variant max-w-[200px]">
-                                  <span className="block text-white text-xs truncate">{e.provider}</span>
-                                  <span className="block text-[10px] truncate">{e.description || '-'}</span>
+                                {/* COL 1: Fecha y Categoría */}
+                                <td className="py-2.5 px-4 text-sm min-w-[120px]">
+                                  <span className="text-on-surface-variant font-mono block">{formatDate(e.date)}</span>
+                                  <span className="font-bold text-white block text-xs mt-0.5">{catLabel}</span>
+                                  <span className="text-[10px] text-primary/80 font-mono block uppercase mt-0.5">{sub}</span>
                                 </td>
-                                <td className="py-2.5 px-4">
-                                  <span className="font-semibold text-white block leading-tight">{catLabel}</span>
-                                  <span className="text-[10px] text-primary/80 font-mono block uppercase">{sub}</span>
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  <span className="text-xs text-on-surface font-semibold">{item}</span>
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  <span className="block text-xs font-semibold text-white uppercase font-mono">{method}</span>
-                                  {adv >= e.amount ? (
-                                    <span className="text-[10px] text-emerald-400 font-semibold block">Pagado 100%</span>
-                                  ) : adv > 0 ? (
-                                    <span className="text-[10px] text-amber-400 font-semibold block">Acuenta (Resta: {formatCurrency(e.amount - adv)})</span>
-                                  ) : (
-                                    <span className="text-[10px] text-error font-semibold block">Pendiente</span>
+
+                                {/* COL 2: Proveedor / Detalle */}
+                                <td className="py-2.5 px-4 text-sm min-w-[160px]">
+                                  <span className="font-bold text-white block">{e.provider || 'Proveedor general'}</span>
+                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]" title={item}>
+                                    {item}
+                                  </span>
+                                  {e.description && (
+                                    <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={e.description}>
+                                      Detalle: {e.description}
+                                    </span>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-4 text-right">
-                                  <span className="font-mono text-white font-bold block">{formatCurrency(e.amount)}</span>
-                                  <span className="text-on-surface-variant font-mono text-xs block">
-                                    {e.quantity} <span className="text-[10px]">x {price}</span>
+
+                                {/* COL 3: Montos */}
+                                <td className="py-2.5 px-4 text-sm text-right font-mono min-w-[140px]">
+                                  <span className="font-bold text-white block text-sm">{formatCurrency(e.amount)}</span>
+                                  <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                                    {e.quantity} uds × {formatCurrency(price, 0)}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
+                                    Adelanto: {formatCurrency(adv || 0)}
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-4 text-center whitespace-nowrap">
-                                  <div className="flex items-center justify-center gap-1">
+
+                                {/* COL 4: Pago / Acciones */}
+                                <td className="py-2.5 px-4 text-center min-w-[170px]">
+                                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                                    {/* Método de pago */}
+                                    <span className="text-[10px] font-semibold text-white/70 uppercase font-mono">{method}</span>
+
+                                    {/* Estado del pago (BOTON) */}
                                     <button
-                                      onClick={() => setSelectedExpense(e)}
-                                      className="text-primary hover:text-primary/80 p-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
-                                      title="Ver Resumen"
+                                      onClick={() => handleUpdateExpensePaymentStatus(e.id, adv, e.amount)}
+                                      className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
+                                      title="Click para cambiar estado de pago"
                                     >
-                                      <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                      {paymentLabels[paymentStatus]}
                                     </button>
-                                    <button
-                                      onClick={() => handleDelete(e.id)}
-                                      className="text-error hover:text-error/80 p-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
-                                      title="Eliminar"
-                                    >
-                                      <span className="material-symbols-outlined text-[18px]">delete</span>
-                                    </button>
+
+                                    {/* Tres puntos Acciones Menu */}
+                                    <div className="relative inline-block text-left ml-1">
+                                      <button
+                                        onClick={() => setActiveActionMenu(activeActionMenu === e.id ? null : e.id)}
+                                        className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                        title="Más acciones"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                                      </button>
+                                      
+                                      {activeActionMenu === e.id && (
+                                        <>
+                                          <div 
+                                            className="fixed inset-0 z-20" 
+                                            onClick={() => setActiveActionMenu(null)}
+                                          />
+                                          <div className="absolute right-0 mt-1 w-32 rounded-xl bg-surface-container-high border border-outline-variant/60 shadow-lg py-1.5 z-30 animate-fade-in text-left">
+                                            <button
+                                              onClick={() => {
+                                                setSelectedExpense(e)
+                                                setActiveActionMenu(null)
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                            >
+                                              <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                                              Ver Detalle
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                handleDelete(e.id)
+                                                setActiveActionMenu(null)
+                                              }}
+                                              className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                            >
+                                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                                              Eliminar
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
