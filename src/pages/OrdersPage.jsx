@@ -1931,7 +1931,7 @@ export default function OrdersPage() {
                               const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
                               if (isProduccionTextil) {
                                 const activeSizes = SIZES_LIST.filter(size => (firstItem?.size_distribution?.[size] || 0) > 0)
-                                  .map(size => `${firstItem.size_distribution[size]}${size}`);
+                                  .map(size => `Talla ${size}: ${firstItem.size_distribution[size]}`);
                                 const sizesStr = activeSizes.join(', ');
                                 return (
                                   <div className="text-[11px] text-[#ff7a00] font-mono mt-0.5 leading-tight">
@@ -1949,7 +1949,7 @@ export default function OrdersPage() {
                                   const num = panel.match(/^(\d+)/)?.[0] || '1';
                                   const type = pData.tipo || 'Otros';
                                   const tallasStr = SUBLIMATION_SIZES.filter(size => (pData.tallas?.[size] || 0) > 0)
-                                    .map(size => `${pData.tallas[size]}${size}`)
+                                    .map(size => `Talla ${size}: ${pData.tallas[size]}`)
                                     .join(', ');
                                   return (
                                     <div key={panel} className="text-[11px] text-[#ff7a00] font-mono leading-tight">
