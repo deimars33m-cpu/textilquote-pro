@@ -590,6 +590,19 @@ export default function OrdersPage() {
   const subtotal = totalAmount / 1.18
   const igvAmount = totalAmount - subtotal
 
+  const orderMetrics = useMemo(() => {
+    if (!selectedOrder?.order_items) return null;
+    return selectedOrder.order_items.reduce((acc, item) => {
+      const itemMetrics = calculateItemMetrics(item.size_distribution);
+      if (itemMetrics) {
+        acc.totalNominalPanels += itemMetrics.totalNominalPanels;
+        acc.totalEquivalentPanels += itemMetrics.totalEquivalentPanels;
+        acc.totalM2 += itemMetrics.totalM2;
+      }
+      return acc;
+    }, { totalNominalPanels: 0, totalEquivalentPanels: 0, totalM2: 0 });
+  }, [selectedOrder])
+
   const validateStep = (step) => {
     const errors = {}
     if (step === 1) {
@@ -1971,6 +1984,22 @@ export default function OrdersPage() {
                             <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
                             <span className="text-[10px] text-on-surface-variant block mt-0.5">
                               {(() => {
+                                const firstItem = order.order_items?.[0];
+                                const isSublimacionPaneles = 
+                                  (firstItem?.category || '').toLowerCase().includes('sublimaci') && 
+                                  (firstItem?.product_category || '').toLowerCase().includes('panel');
+                                if (isSublimacionPaneles) {
+                                  const itemMetrics = calculateItemMetrics(firstItem.size_distribution);
+                                  if (itemMetrics && itemMetrics.totalNominalPanels > 0) {
+                                    const avgNominalPrice = order.total_amount / itemMetrics.totalNominalPanels;
+                                    return (
+                                      <>
+                                        <span className="block font-semibold text-white">{itemMetrics.totalNominalPanels} paneles × {formatCurrency(avgNominalPrice, 1)}</span>
+                                        <span className="block text-[9px] text-[#ff7a00] font-bold">{itemMetrics.totalM2.toFixed(2)} m²</span>
+                                      </>
+                                    );
+                                  }
+                                }
                                 const totalQty = order.order_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
                                 const avgPrice = totalQty > 0 ? (order.total_amount / totalQty) : 0
                                 return `${totalQty} uds × ${formatCurrency(avgPrice, 0)}`
@@ -2137,9 +2166,32 @@ export default function OrdersPage() {
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-on-surface-variant font-mono">
-                          {item.quantity} x {formatCurrency(item.unit_price)}
-                        </p>
+                        {(() => {
+                          const isSub = 
+                            (item.category || '').toLowerCase().includes('sublimaci') && 
+                            (item.product_category || '').toLowerCase().includes('panel');
+                          if (isSub) {
+                            const itemMetrics = calculateItemMetrics(item.size_distribution);
+                            if (itemMetrics && itemMetrics.totalNominalPanels > 0) {
+                              const avgNominalPrice = item.total_price / itemMetrics.totalNominalPanels;
+                              return (
+                                <>
+                                  <p className="text-xs text-on-surface-variant font-mono">
+                                    {itemMetrics.totalNominalPanels} paneles x {formatCurrency(avgNominalPrice)}
+                                  </p>
+                                  <p className="text-[10px] text-[#ff7a00] font-mono font-bold mt-0.5">
+                                    {itemMetrics.totalM2.toFixed(2)} m²
+                                  </p>
+                                </>
+                              );
+                            }
+                          }
+                          return (
+                            <p className="text-xs text-on-surface-variant font-mono">
+                              {item.quantity} x {formatCurrency(item.unit_price)}
+                            </p>
+                          );
+                        })()}
                         <p className="text-sm font-bold text-white font-mono mt-0.5">
                           {formatCurrency(item.total_price)}
                         </p>
@@ -2277,6 +2329,23 @@ export default function OrdersPage() {
                     Tipo de Ingreso: {selectedOrder.order_type === 'servicio_diario' ? 'Servicio Diario' : 'Desde Cotización'}
                   </span>
                 </div>
+                {orderMetrics && orderMetrics.totalNominalPanels > 0 && (
+                  <div className="mt-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 text-[11px] font-mono w-[240px]">
+                    <p className="text-primary font-bold uppercase text-[9px] tracking-wider mb-1">Totales del Trabajo</p>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-on-surface-variant">Paneles Nominales:</span>
+                      <span className="text-white font-bold">{orderMetrics.totalNominalPanels}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-on-surface-variant">Paneles Prorrateados:</span>
+                      <span className="text-white font-bold">{orderMetrics.totalEquivalentPanels.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-on-surface-variant">Metraje de Sublimación:</span>
+                      <span className="text-[#ff7a00] font-bold">{orderMetrics.totalM2.toFixed(2)} m²</span>
+                    </div>
+                  </div>
+                )}
               </div>
               
               <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2">
