@@ -1352,7 +1352,7 @@ export default function ExpensesAndBudgetsPage() {
 
   return (
     <>
-      <div className="max-w-none mx-auto space-y-4 md:space-y-6 h-[calc(100vh-13rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
+      <div className="max-w-none mx-auto space-y-4 md:space-y-6 h-[calc(100vh-8rem)] lg:h-[calc(100vh-6rem)] flex flex-col w-full">
 
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1458,7 +1458,7 @@ export default function ExpensesAndBudgetsPage() {
                 </Card>
 
                 {/* LISTA DE TRANSACCIONES */}
-                <Card className="flex-1 overflow-hidden flex flex-col w-full h-[420px] lg:h-full min-h-[420px] lg:min-h-0">
+                <Card className="flex-1 overflow-hidden flex flex-col w-full h-full min-h-[300px]">
                   <div className="flex-1 overflow-auto p-0">
                     <table className="w-full text-left border-collapse whitespace-nowrap">
                       <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
