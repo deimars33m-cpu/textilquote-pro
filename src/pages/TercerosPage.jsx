@@ -364,6 +364,401 @@ function ResumenDashboard({ terceros }) {
   )
 }
 
+function EstadoCuentaModal({ client, onClose }) {
+  const { user } = useAuth()
+  const [orders, setOrders] = useState([])
+  const [payments, setPayments] = useState([])
+  const [allocations, setAllocations] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [amount, setAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('efectivo')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [activeTab, setActiveTab] = useState('pedidos')
+
+  const fetchData = async () => {
+    if (!user || !client) return
+    setLoading(true)
+    try {
+      const [ordersRes, paymentsRes, allocationsRes] = await Promise.all([
+        supabase.from('orders').select('*').eq('tercero_id', client.id).order('created_at', { ascending: false }),
+        supabase.from('tercero_payments').select('*').eq('tercero_id', client.id).order('date', { ascending: false }),
+        supabase.from('order_payment_allocations').select('*').eq('user_id', user.id)
+      ])
+      
+      if (ordersRes.error) throw ordersRes.error
+      if (paymentsRes.error && paymentsRes.error.code !== '42P01') throw paymentsRes.error
+      if (allocationsRes.error && allocationsRes.error.code !== '42P01') throw allocationsRes.error
+
+      setOrders(ordersRes.data || [])
+      setPayments(paymentsRes.data || [])
+      setAllocations(allocationsRes.data || [])
+    } catch (e) {
+      console.error('Error fetching statement data:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [client, user])
+
+  const totals = useMemo(() => {
+    const activeOrders = orders.filter(o => o.status !== 'cancelado')
+    const totalBilled = activeOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
+    const totalPaid = activeOrders.reduce((sum, o) => sum + (Number(o.paid_amount) || 0), 0)
+    const totalDebt = Math.max(0, totalBilled - totalPaid)
+
+    const totalAdvances = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    
+    const paymentIds = payments.map(p => p.id)
+    const clientAllocations = allocations.filter(a => paymentIds.includes(a.tercero_payment_id))
+    const totalAllocated = clientAllocations.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+    
+    const creditBalance = Math.max(0, totalAdvances - totalAllocated)
+
+    return {
+      totalBilled,
+      totalPaid,
+      totalDebt,
+      creditBalance,
+      clientAllocations
+    }
+  }, [orders, payments, allocations])
+
+  const handleAddPayment = async (e) => {
+    e.preventDefault()
+    const amt = parseFloat(amount)
+    if (isNaN(amt) || amt <= 0) {
+      setError('El monto debe ser mayor a 0')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const { error: insertErr } = await supabase
+        .from('tercero_payments')
+        .insert({
+          user_id: user.id,
+          tercero_id: client.id,
+          amount: amt,
+          payment_method: paymentMethod,
+          date,
+          notes: notes.trim() || null
+        })
+      if (insertErr) throw insertErr
+      
+      setAmount('')
+      setNotes('')
+      setShowAddForm(false)
+      await fetchData()
+    } catch (err) {
+      console.error('Error inserting payment:', err)
+      setError(err.message || 'Error al guardar el abono')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeletePayment = async (id) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este adelanto? Se restablecerán y recalcularán las deudas de los pedidos afectados.')) return
+    try {
+      const { error: delErr } = await supabase
+        .from('tercero_payments')
+        .delete()
+        .eq('id', id)
+      if (delErr) throw delErr
+      await fetchData()
+    } catch (err) {
+      console.error('Error deleting payment:', err)
+      alert('Error al eliminar abono: ' + err.message)
+    }
+  }
+
+  const paymentBadges = {
+    pendiente: 'bg-error-container/10 text-error border-error/20',
+    adelanto: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+    pagado: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+  }
+
+  const paymentLabels = {
+    pendiente: 'Pendiente',
+    adelanto: 'Adelanto',
+    pagado: 'Pagado'
+  }
+
+  const statusBadges = {
+    pendiente: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+    en_proceso: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    listo: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    entregado: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    cancelado: 'bg-error-container/10 text-error border-error/20'
+  }
+
+  return (
+    <Modal isOpen={!!client} onClose={onClose} title={`Estado de Cuenta — ${client?.name}`} size="xl">
+      {loading ? (
+        <LoadingSpinner />
+      ) : (
+        <div className="space-y-6">
+          {/* KPI Mini-Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Facturado</span>
+              <span className="text-lg font-mono font-bold text-white">{formatCurrency(totals.totalBilled)}</span>
+            </Card>
+            <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Cobrado</span>
+              <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(totals.totalPaid)}</span>
+            </Card>
+            <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Restante</span>
+              <span className="text-lg font-mono font-bold text-error">{formatCurrency(totals.totalDebt)}</span>
+            </Card>
+            <Card className="p-3 neu-surface border-l-2 border-l-violet-500 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Saldo a Favor</span>
+              <span className="text-lg font-mono font-bold text-violet-400">{formatCurrency(totals.creditBalance)}</span>
+            </Card>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5 pt-4">
+            <div className="flex gap-2 bg-surface-container/30 p-1 rounded-lg border border-white/5 w-fit">
+              <button
+                onClick={() => setActiveTab('pedidos')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  activeTab === 'pedidos'
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-on-surface-variant hover:text-white border border-transparent'
+                }`}
+              >
+                Pedidos del Cliente
+              </button>
+              <button
+                onClick={() => setActiveTab('adelantos')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  activeTab === 'adelantos'
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-on-surface-variant hover:text-white border border-transparent'
+                }`}
+              >
+                Historial de Adelantos
+              </button>
+            </div>
+
+            <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
+              <span className="material-symbols-outlined text-[16px]">{showAddForm ? 'close' : 'add'}</span>
+              {showAddForm ? 'Cerrar Formulario' : 'Registrar Adelanto General'}
+            </Button>
+          </div>
+
+          {/* Formulario de Adelanto */}
+          {showAddForm && (
+            <Card className="p-4 border border-primary/20 bg-primary/5 animate-scale-in">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px] text-primary">payments</span>
+                Registrar Nuevo Adelanto General
+              </h4>
+              {error && <div className="p-2 rounded bg-error-container/10 border border-error text-error text-xs mb-3">{error}</div>}
+              <form onSubmit={handleAddPayment} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Input
+                    label="Monto (Bs)"
+                    type="number"
+                    step="0.01"
+                    required
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                    placeholder="0.00"
+                  />
+                  <Select
+                    label="Método de Pago"
+                    options={[
+                      { value: 'efectivo', label: 'Efectivo' },
+                      { value: 'transferencia', label: 'Transferencia' },
+                      { value: 'qr', label: 'Código QR' },
+                      { value: 'tarjeta', label: 'Tarjeta' }
+                    ]}
+                    value={paymentMethod}
+                    onChange={e => setPaymentMethod(e.target.value)}
+                  />
+                  <Input
+                    label="Fecha"
+                    type="date"
+                    required
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                  />
+                </div>
+                <Textarea
+                  label="Detalle / Notas"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Detalles sobre el adelanto o la forma de pago..."
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddForm(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" size="sm" disabled={saving}>
+                    {saving ? 'Registrando...' : 'Registrar'}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          )}
+
+          {/* Listados */}
+          {activeTab === 'pedidos' ? (
+            <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                    <th className="p-3">Pedido</th>
+                    <th className="p-3">Fecha</th>
+                    <th className="p-3 text-right">Total</th>
+                    <th className="p-3 text-right">Cobrado</th>
+                    <th className="p-3 text-right">Saldo</th>
+                    <th className="p-3 text-center">Estado Pago</th>
+                    <th className="p-3 text-center">Producción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map(o => {
+                    const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
+                    const isCancelled = o.status === 'cancelado'
+                    const orderAllocations = totals.clientAllocations.filter(a => a.order_id === o.id)
+
+                    return (
+                      <tr key={o.id} className="border-b border-white/5 hover:bg-white/[0.01]">
+                        <td className="p-3 font-medium text-white">
+                          <div>
+                            <span className="font-bold">{orderNum}</span>
+                            <div className="mt-1 space-y-0.5">
+                              {Number(o.direct_paid_amount) > 0 && (
+                                <span className="text-[10px] text-emerald-400/80 block">
+                                  • Abono directo: {formatCurrency(o.direct_paid_amount)}
+                                </span>
+                              )}
+                              {orderAllocations.map(a => {
+                                const matchedPayment = payments.find(p => p.id === a.tercero_payment_id)
+                                const payDate = matchedPayment ? new Date(matchedPayment.date).toLocaleDateString() : ''
+                                return (
+                                  <span key={a.id} className="text-[10px] text-violet-400 block">
+                                    • Adelanto general ({payDate}): +{formatCurrency(a.amount)}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(o.created_at).toLocaleDateString()}</td>
+                        <td className="p-3 text-right font-mono text-white">{formatCurrency(o.total_amount)}</td>
+                        <td className="p-3 text-right font-mono text-emerald-400">{formatCurrency(o.paid_amount)}</td>
+                        <td className="p-3 text-right font-mono text-error font-bold">
+                          {isCancelled ? formatCurrency(0) : formatCurrency(Math.max(0, o.total_amount - o.paid_amount))}
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${paymentBadges[o.payment_status]}`}>
+                            {paymentLabels[o.payment_status]}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${statusBadges[o.status]}`}>
+                            {o.status}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {orders.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-on-surface-variant">
+                        No hay pedidos registrados para este cliente.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                    <th className="p-3">Fecha</th>
+                    <th className="p-3 text-right">Monto</th>
+                    <th className="p-3">Método</th>
+                    <th className="p-3">Asignaciones / Pedidos</th>
+                    <th className="p-3">Detalle / Notas</th>
+                    <th className="p-3 text-center">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map(p => {
+                    const paymentAllocations = totals.clientAllocations.filter(a => a.tercero_payment_id === p.id)
+                    const totalAllocated = paymentAllocations.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+                    const remaining = Math.max(0, p.amount - totalAllocated)
+
+                    return (
+                      <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.01]">
+                        <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(p.date).toLocaleDateString()}</td>
+                        <td className="p-3 text-right font-mono font-bold text-white">{formatCurrency(p.amount)}</td>
+                        <td className="p-3 text-on-surface-variant capitalize text-xs">{p.payment_method}</td>
+                        <td className="p-3 text-xs text-on-surface-variant">
+                          <div className="space-y-0.5">
+                            {paymentAllocations.map(a => {
+                              const ord = orders.find(o => o.id === a.order_id)
+                              const ordNum = ord ? `#${ord.order_number?.toString().padStart(4, '0')}` : 'Pedido'
+                              return (
+                                <span key={a.id} className="block text-violet-400">
+                                  Aplicado {ordNum}: -{formatCurrency(a.amount)}
+                                </span>
+                              )
+                            })}
+                            {remaining > 0 && (
+                              <span className="block text-emerald-400 font-bold">
+                                Saldo libre: {formatCurrency(remaining)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-on-surface-variant text-xs truncate max-w-[200px]" title={p.notes}>
+                          {p.notes || '—'}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => handleDeletePayment(p.id)}
+                            className="p-1.5 rounded-lg hover:bg-error-container/20 text-on-surface-variant hover:text-error transition-colors"
+                            title="Eliminar abono"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {payments.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-on-surface-variant">
+                        No hay adelantos globales registrados para este cliente.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 const EMPTY_FORM = {
   name: '',
@@ -404,6 +799,7 @@ export default function TercerosPage() {
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [errors, setErrors] = useState({})
+  const [detailsTarget, setDetailsTarget] = useState(null)
 
   const filtered = useMemo(() => {
     let result = terceros
@@ -647,6 +1043,15 @@ export default function TercerosPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
+                        {c.role === 'cliente' && (
+                          <button
+                            onClick={() => setDetailsTarget(c)}
+                            className="p-1.5 rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
+                            title="Estado de Cuenta / Detalles"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">visibility</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(c)}
                           className="p-1.5 rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
@@ -795,6 +1200,14 @@ export default function TercerosPage() {
         title="Eliminar Registro"
         message={`¿Estás seguro de que deseas eliminar a "${deleteTarget?.name}"? Esta acción no se puede deshacer.`}
       />
+
+      {/* Estado de Cuenta Modal */}
+      {detailsTarget && (
+        <EstadoCuentaModal
+          client={detailsTarget}
+          onClose={() => setDetailsTarget(null)}
+        />
+      )}
     </div>
   )
 }
