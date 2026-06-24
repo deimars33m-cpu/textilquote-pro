@@ -993,12 +993,9 @@ export default function TercerosPage() {
             <table className="w-full zebra-table">
               <thead>
                 <tr className="bg-surface-container-high">
-                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Nombre</th>
+                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Nombres</th>
                   <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Rol</th>
-                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Tipo</th>
-                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Contacto</th>
-                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Teléfono</th>
-                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Ciudad</th>
+                  <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Datos</th>
                   <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
                 </tr>
               </thead>
@@ -1007,10 +1004,21 @@ export default function TercerosPage() {
                   <tr key={c.id} className="border-t border-outline-variant/30">
                     <td className="px-4 py-3 text-sm text-on-surface font-medium">
                       <div>
-                        {c.name}
+                        <p className="font-bold text-white text-base">{c.name}</p>
                         {c.email && (
                           <p className="text-xs text-on-surface-variant mt-0.5">{c.email}</p>
                         )}
+                        <div className="flex flex-wrap gap-2 mt-1.5 items-center">
+                          {c.contact_person && (
+                            <span className="text-[11px] text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded flex items-center gap-1 border border-white/5">
+                              <span className="material-symbols-outlined text-[12px]">person_outline</span>
+                              {c.contact_person}
+                            </span>
+                          )}
+                          <span className="status-badge bg-surface-container-high text-on-surface-variant text-[11px] px-2 py-0.5">
+                            {terceroTypes[c.client_type] || c.client_type}
+                          </span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm">
@@ -1027,19 +1035,22 @@ export default function TercerosPage() {
                         {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : 'Cliente'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className="status-badge bg-surface-container-high text-on-surface-variant">
-                        {terceroTypes[c.client_type] || c.client_type}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-sm text-on-surface-variant">
-                      {c.contact_person || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-mono text-on-surface-variant">
-                      {c.phone || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-on-surface-variant">
-                      {c.city || '—'}
+                      <div className="space-y-1">
+                        {c.phone && (
+                          <p className="flex items-center gap-1 font-mono text-xs text-white">
+                            <span className="material-symbols-outlined text-[14px] text-primary">phone</span>
+                            {c.phone}
+                          </p>
+                        )}
+                        {c.city && (
+                          <p className="flex items-center gap-1 text-xs">
+                            <span className="material-symbols-outlined text-[14px] text-on-surface-variant">location_on</span>
+                            {c.city}
+                          </p>
+                        )}
+                        {!c.phone && !c.city && <span className="text-xs text-on-surface-variant/40">—</span>}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
