@@ -1601,10 +1601,10 @@ export default function OrdersPage() {
               <table className="w-full zebra-table whitespace-nowrap">
                 <thead>
                   <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
-                    <th className="text-left px-4 py-3 min-w-[140px]">Pedido y Fecha</th>
-                    <th className="text-left px-4 py-3 min-w-[200px]">Cliente / Detalle</th>
-                    <th className="text-right px-4 py-3 min-w-[180px]">Montos (Total / Adelanto)</th>
-                    <th className="text-center px-4 py-3 min-w-[220px]">Estados / Acciones</th>
+                    <th className="text-left px-4 py-3 min-w-[120px]">Pedido y Fecha</th>
+                    <th className="text-left px-4 py-3 min-w-[160px]">Cliente / Detalle</th>
+                    <th className="text-right px-4 py-3 min-w-[140px]">Montos (Total / Adelanto)</th>
+                    <th className="text-center px-4 py-3 min-w-[170px]">Estados / Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -1716,7 +1716,7 @@ export default function OrdersPage() {
                           </td>
 
                           {/* COLUMNA 3: Montos */}
-                          <td className="px-4 py-3 text-sm text-right font-mono min-w-[180px]">
+                          <td className="px-4 py-3 text-sm text-right font-mono min-w-[140px]">
                             <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
                             <span className="text-[10px] text-on-surface-variant block mt-0.5">
                               {(() => {
@@ -1731,7 +1731,7 @@ export default function OrdersPage() {
                           </td>
 
                           {/* COLUMNA 4: Estados / Acciones */}
-                          <td className="px-4 py-3 text-center min-w-[220px]">
+                          <td className="px-4 py-3 text-center min-w-[170px]">
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                               {/* Estado de produccion button */}
                               <button
