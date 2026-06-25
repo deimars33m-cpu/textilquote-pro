@@ -143,6 +143,13 @@ const getOrderCategoryStyle = (categoryName) => {
   return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
 }
 
+const getDefaultDeliveryDate = (category) => {
+  const days = (category === 'servicios_sublimacion' || (category || '').toLowerCase().includes('sublimacion')) ? 2 : 15;
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split('T')[0];
+}
+
 export default function OrdersPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -190,6 +197,7 @@ export default function OrdersPage() {
     paymentNotes: '',
     particularDetails: '',
     orderDate: new Date().toISOString().split('T')[0],
+    deliveryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     basePanelPrice: 10,
     panelSizes: initialPanelSizes,
     panelSizePrices: getInitialPanelSizePrices(10)
@@ -442,6 +450,7 @@ export default function OrdersPage() {
       paymentNotes: '',
       particularDetails: '',
       orderDate: new Date().toISOString().split('T')[0],
+      deliveryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       basePanelPrice: 10,
       panelSizes: initialPanelSizes,
       panelSizePrices: getInitialPanelSizePrices(10)
@@ -1058,7 +1067,8 @@ export default function OrdersPage() {
           payment_status: advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente'),
           total_amount: total,
           paid_amount: advance,
-          delivery_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+          delivery_date: orderForm.deliveryDate ? new Date(orderForm.deliveryDate).toISOString().split('T')[0] : null,
+          created_at: orderForm.orderDate ? new Date(orderForm.orderDate + 'T12:00:00Z').toISOString() : new Date().toISOString(),
           notes: orderForm.paymentNotes
         })
         .select()
@@ -1315,6 +1325,7 @@ export default function OrdersPage() {
                         onClick={() => {
                           updateForm('category', cat.id)
                           updateForm('subcategory', '')
+                          updateForm('deliveryDate', getDefaultDeliveryDate(cat.id))
                           
                           // Pre-cargar precios según la categoría elegida
                           if (cat.id === 'produccion_textil') {
@@ -1896,14 +1907,24 @@ export default function OrdersPage() {
                   Selecciona la fecha, método de pago e ingresa el adelanto.
                 </p>
 
-                <Input
-                  label="Fecha de Pedido"
-                  type="date"
-                  value={orderForm.orderDate}
-                  onChange={e => updateForm('orderDate', e.target.value)}
-                  required
-                  className="w-full"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input
+                    label="Fecha de Pedido"
+                    type="date"
+                    value={orderForm.orderDate}
+                    onChange={e => updateForm('orderDate', e.target.value)}
+                    required
+                    className="w-full"
+                  />
+                  <Input
+                    label="Fecha de Entrega"
+                    type="date"
+                    value={orderForm.deliveryDate}
+                    onChange={e => updateForm('deliveryDate', e.target.value)}
+                    required
+                    className="w-full"
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                   <Input
@@ -2247,7 +2268,27 @@ export default function OrdersPage() {
                           <td className="px-4 py-3 text-sm">
                             <span className="font-mono text-primary font-bold block">{orderNum}</span>
                             <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
-                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {/* Delivery Date and Alert */}
+                            {(() => {
+                              const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && (order.delivery_date.split('T')[0] < new Date().toISOString().split('T')[0]);
+                              if (isDelayed) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md mt-1 animate-pulse">
+                                    <span className="material-symbols-outlined text-[10px]">alarm</span>
+                                    RETRASADO ({formatDate(order.delivery_date)})
+                                  </span>
+                                )
+                              }
+                              if (order.delivery_date) {
+                                return (
+                                  <span className="text-[9px] text-[#ff7a00] font-bold block mt-1 font-mono">
+                                    Entrega: {formatDate(order.delivery_date)}
+                                  </span>
+                                )
+                              }
+                              return null;
+                            })()}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                               <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
                                 {firstItem?.category || '—'}
                               </span>
