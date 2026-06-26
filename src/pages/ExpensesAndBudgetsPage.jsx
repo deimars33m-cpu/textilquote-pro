@@ -1616,10 +1616,10 @@ export default function ExpensesAndBudgetsPage() {
                 const showWholesale = selectedQuoteItem?.type === 'material' || form.materialId;
 
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
                     {showWholesale && (
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-primary mb-1 ml-1 flex items-center gap-1">
+                      <div className="space-y-0 w-full">
+                        <label className="block text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1 whitespace-nowrap">
                           <span className="material-symbols-outlined text-[14px]">inventory_2</span> Por Mayor
                         </label>
                         <input
@@ -1636,25 +1636,25 @@ export default function ExpensesAndBudgetsPage() {
                               updateForm('quantity', newTotalQty);
                             }
                           }}
-                          className={`w-full min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl py-1.5 font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors`}
+                          className={`w-full px-3 py-2.5 min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors`}
                         />
                         {Number(form.wholesaleQuantity) > 0 && (
-                          <span className="text-[9px] text-primary text-center block mt-1">
+                          <span className="text-[9px] text-primary text-center block mt-1 whitespace-nowrap">
                             {packQty} uds / {packUnit}
                           </span>
                         )}
                       </div>
                     )}
                     
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-on-surface-variant mb-1 ml-1 block">
-                        Cantidad (Por menor)
+                    <div className="space-y-0 w-full">
+                      <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5 ml-1 whitespace-nowrap truncate">
+                        Cant. (Menor)
                       </label>
-                      <div className="flex gap-1.5 items-center">
+                      <div className="flex gap-1.5 items-center h-[40px]">
                         <button
                           type="button"
                           onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))}
-                          className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
+                          className="btn-3d-raised w-10 h-full shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
                         >
                           -
                         </button>
@@ -1667,12 +1667,12 @@ export default function ExpensesAndBudgetsPage() {
                             updateForm('quantity', e.target.value);
                             updateForm('wholesaleQuantity', ''); // Limpiar 'por mayor' si editan manualmente
                           }}
-                          className="w-full min-w-0 neu-pressed bg-transparent border-none rounded-xl py-1.5 font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
+                          className="w-full h-full min-w-[50px] px-1 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => updateForm('quantity', Number(form.quantity) + 1)}
-                          className="btn-3d-raised w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
+                          className="btn-3d-raised w-10 h-full shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
                         >
                           +
                         </button>
@@ -1680,14 +1680,14 @@ export default function ExpensesAndBudgetsPage() {
                     </div>
 
                     <Input
-                      label="P. Unitario (Bs)"
+                      label="P. Unit. (Bs)"
                       type="number"
                       min="0"
                       step="0.01"
                       placeholder="0.00"
                       value={form.unitPrice}
                       onChange={(e) => updateForm('unitPrice', e.target.value)}
-                      className="font-mono text-lg text-white"
+                      className="font-mono text-lg text-white w-full"
                     />
                   </div>
                 );
