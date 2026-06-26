@@ -463,7 +463,6 @@ export default function ExpensesAndBudgetsPage() {
             paid_amount,
             status,
             quote_id,
-            category,
             terceros (name),
             order_items (
               id,
