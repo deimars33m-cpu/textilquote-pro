@@ -310,7 +310,8 @@ export default function ExpensesAndBudgetsPage() {
   const { settings } = useGlobalSettings()
   const { data: expenses, loading: loadingExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useCRUD('expenses', {
     orderBy: 'date',
-    orderAsc: false
+    orderAsc: false,
+    select: '*, orders(order_number, total_amount), materials(name, category)'
   })
 
   const [productionAvg, setProductionAvg] = useState(1000)
@@ -321,6 +322,8 @@ export default function ExpensesAndBudgetsPage() {
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
+  const [materials, setMaterials] = useState([])
+  const [loadingMaterials, setLoadingMaterials] = useState(false)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('')
   const [selectedSubcategoryFilter, setSelectedSubcategoryFilter] = useState('')
   const [selectedExpense, setSelectedExpense] = useState(null)
@@ -330,24 +333,28 @@ export default function ExpensesAndBudgetsPage() {
   const expenseStructure = settings?.expenseStructure || defaultExpenseStructure
 
   useEffect(() => {
-    async function fetchTerceros() {
+    async function fetchData() {
       if (!user) return
+      setLoadingMaterials(true)
       try {
-        const { data, error } = await supabase
-          .from('terceros')
-          .select('*')
-          .eq('user_id', user.id)
-          .in('role', ['proveedor', 'dependiente'])
-          .order('name')
-        if (!error && data) {
-          setProviders(data.filter(t => t.role === 'proveedor'))
-          setDependientes(data.filter(t => t.role === 'dependiente'))
+        const [tercerosRes, materialsRes] = await Promise.all([
+          supabase.from('terceros').select('*').eq('user_id', user.id).in('role', ['proveedor', 'dependiente']).order('name'),
+          supabase.from('materials').select('*').eq('user_id', user.id).order('name')
+        ])
+        if (!tercerosRes.error && tercerosRes.data) {
+          setProviders(tercerosRes.data.filter(t => t.role === 'proveedor'))
+          setDependientes(tercerosRes.data.filter(t => t.role === 'dependiente'))
+        }
+        if (!materialsRes.error && materialsRes.data) {
+          setMaterials(materialsRes.data)
         }
       } catch (err) {
-        console.error('Error fetching terceros:', err)
+        console.error('Error fetching terceros and materials:', err)
+      } finally {
+        setLoadingMaterials(false)
       }
     }
-    fetchTerceros()
+    fetchData()
   }, [user])
 
   useEffect(() => {
@@ -359,10 +366,12 @@ export default function ExpensesAndBudgetsPage() {
           .from('orders')
           .select(`
             id,
+            order_number,
             created_at,
             total_amount,
             paid_amount,
             status,
+            terceros (name),
             order_items (
               id,
               name,
@@ -378,7 +387,7 @@ export default function ExpensesAndBudgetsPage() {
           setOrders(data)
         }
       } catch (err) {
-        console.error('Error fetching orders for sublimation:', err)
+        console.error('Error fetching orders:', err)
       } finally {
         setLoadingOrders(false)
       }
@@ -402,7 +411,9 @@ export default function ExpensesAndBudgetsPage() {
     unitPrice: '',
     amount: '',
     advanceAmount: '',
-    paymentMethod: 'efectivo'
+    paymentMethod: 'efectivo',
+    orderId: '',
+    materialId: ''
   })
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
@@ -537,7 +548,9 @@ export default function ExpensesAndBudgetsPage() {
         unit_price: Number(form.unitPrice),
         amount: Number(form.amount),
         advance_amount: form.advanceAmount ? Number(form.advanceAmount) : 0,
-        payment_method: form.paymentMethod
+        payment_method: form.paymentMethod,
+        order_id: form.orderId || null,
+        material_id: form.materialId || null
       }
 
       await createExpense(payload)
@@ -557,7 +570,9 @@ export default function ExpensesAndBudgetsPage() {
         unitPrice: '',
         amount: '',
         advanceAmount: '',
-        paymentMethod: 'efectivo'
+        paymentMethod: 'efectivo',
+        orderId: '',
+        materialId: ''
       })
       setTerceroType('proveedor')
       setCurrentStep(1)
@@ -1301,6 +1316,29 @@ export default function ExpensesAndBudgetsPage() {
                 value={form.description}
                 onChange={(e) => updateForm('description', e.target.value)}
               />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <Select
+                  label="Relacionar a Pedido (Opcional)"
+                  options={orders.filter(o => o.status !== 'cancelado' && o.status !== 'entregado').map(o => ({
+                    value: o.id,
+                    label: `#${o.order_number?.toString().padStart(4, '0')} - ${o.order_items?.[0]?.name || 'Producción'} (${o.terceros?.name || 'Cliente general'})`
+                  }))}
+                  value={form.orderId}
+                  onChange={(e) => updateForm('orderId', e.target.value)}
+                  placeholder="Ninguno (Gasto general)..."
+                />
+                <Select
+                  label="Relacionar a Material de Inventario (Opcional)"
+                  options={materials.map(m => ({
+                    value: m.id,
+                    label: `${m.name} (${m.category})`
+                  }))}
+                  value={form.materialId}
+                  onChange={(e) => updateForm('materialId', e.target.value)}
+                  placeholder="Ninguno (No es materia prima)..."
+                />
+              </div>
             </div>
           )}
         </div>
@@ -1531,6 +1569,20 @@ export default function ExpensesAndBudgetsPage() {
                                     <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={e.description}>
                                       Detalle: {e.description}
                                     </span>
+                                  )}
+                                  {(e.orders || e.materials) && (
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {e.orders && (
+                                        <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                                          Ped #{e.orders.order_number?.toString().padStart(4, '0')}
+                                        </span>
+                                      )}
+                                      {e.materials && (
+                                        <span className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-bold">
+                                          Mat: {e.materials.name}
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
                                 </td>
 
@@ -2107,6 +2159,27 @@ export default function ExpensesAndBudgetsPage() {
                 </span>
               </div>
             </div>
+
+            {(selectedExpense.orders || selectedExpense.materials) && (
+              <div className="grid grid-cols-2 gap-4 py-2 border-t border-white/5">
+                {selectedExpense.orders && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block">Pedido Relacionado</span>
+                    <span className="text-sm font-semibold text-primary font-mono">
+                      Pedido #{selectedExpense.orders.order_number?.toString().padStart(4, '0')}
+                    </span>
+                  </div>
+                )}
+                {selectedExpense.materials && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block">Material Relacionado</span>
+                    <span className="text-sm font-semibold text-violet-400">
+                      {selectedExpense.materials.name} ({selectedExpense.materials.category})
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4 py-2 border-t border-white/5">
               <div className="space-y-1">

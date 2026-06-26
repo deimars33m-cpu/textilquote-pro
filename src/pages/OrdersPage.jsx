@@ -175,6 +175,12 @@ export default function OrdersPage() {
   const [saving, setSaving] = useState(false)
   const [activeActionMenu, setActiveActionMenu] = useState(null)
 
+  // Estado para detalles de finanzas y sobras (Task #3)
+  const [orderExpenses, setOrderExpenses] = useState([])
+  const [estimatedMaterials, setEstimatedMaterials] = useState([])
+  const [loadingDetails, setLoadingDetails] = useState(false)
+  const [detailsTab, setDetailsTab] = useState('trabajo') // 'trabajo' o 'finanzas'
+
   // Asistente de registro de pedidos (5 pasos)
   const [currentStep, setCurrentStep] = useState(1)
   const [selectedPanelFilter, setSelectedPanelFilter] = useState('1 PANEL')
@@ -229,6 +235,78 @@ export default function OrdersPage() {
       fetchClients()
     }
   }, [user])
+
+  // Cargar gastos relacionados y materiales estimados al seleccionar un pedido
+  useEffect(() => {
+    async function fetchOrderDetails() {
+      if (!selectedOrder) {
+        setOrderExpenses([])
+        setEstimatedMaterials([])
+        setDetailsTab('trabajo') // Reset tab
+        return
+      }
+
+      setLoadingDetails(true)
+      try {
+        // 1. Cargar gastos vinculados a este pedido
+        const { data: expensesData, error: expensesError } = await supabase
+          .from('expenses')
+          .select('*, materials(*)')
+          .eq('order_id', selectedOrder.id)
+        
+        if (expensesError) throw expensesError
+        setOrderExpenses(expensesData || [])
+
+        // 2. Cargar materiales estimados de la cotización si existe
+        if (selectedOrder.quote_id) {
+          const { data: quoteData, error: quoteError } = await supabase
+            .from('quotes')
+            .select(`
+              quote_items (
+                quantity,
+                quote_materials (
+                  *,
+                  materials (*)
+                )
+              )
+            `)
+            .eq('id', selectedOrder.quote_id)
+            .single()
+
+          if (quoteError) throw quoteError
+
+          if (quoteData?.quote_items) {
+            // Aplanar y pre-calcular cantidad estimada total
+            const flattenedMaterials = quoteData.quote_items.flatMap(item => {
+              const itemQty = Number(item.quantity) || 1
+              const mats = item.quote_materials || []
+              return mats.map(m => {
+                const qtyPerUnit = Number(m.quantity_per_unit) || 0
+                const wastePct = Number(m.waste_pct) || 0
+                return {
+                  ...m,
+                  item_quantity: itemQty,
+                  estimated_qty: itemQty * qtyPerUnit * (1 + wastePct / 100),
+                  estimated_cost: Number(m.total_cost) || 0
+                }
+              })
+            })
+            setEstimatedMaterials(flattenedMaterials)
+          } else {
+            setEstimatedMaterials([])
+          }
+        } else {
+          setEstimatedMaterials([])
+        }
+      } catch (err) {
+        console.error('Error fetching order finance details:', err)
+      } finally {
+        setLoadingDetails(false)
+      }
+    }
+
+    fetchOrderDetails()
+  }, [selectedOrder])
 
   async function fetchClients() {
     try {
@@ -2538,233 +2616,580 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Ítems del pedido */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-mono uppercase tracking-wider text-on-surface-variant font-semibold">
-                Detalle de Servicios / Productos
-              </h4>
-              <div className="space-y-2">
-                {selectedOrder.order_items?.map(item => (
-                  <Card key={item.id} className="p-4 bg-[#060a14] border border-white/5 space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{item.name}</p>
-                        <div className="flex gap-2 mt-1">
-                          <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded-full text-on-surface-variant uppercase font-mono">
-                            Servicio: {item.category}
-                          </span>
-                          {item.product_category && (
-                            <span className="text-[10px] bg-primary/10 px-2 py-0.5 rounded-full text-primary uppercase font-mono">
-                              Categoría: {item.product_category}
-                            </span>
-                          )}
-                        </div>
-                        {item.description && (
-                          <div className="text-xs text-[#ff5c00] mt-2 bg-primary/5 border border-primary/20 rounded-lg p-2 font-mono">
-                            <strong>Detalle:</strong> {item.description}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        {(() => {
-                          const isSub = 
-                            (item.category || '').toLowerCase().includes('sublimaci') && 
-                            (item.product_category || '').toLowerCase().includes('panel');
-                          if (isSub) {
-                            const itemMetrics = calculateItemMetrics(item.size_distribution);
-                            if (itemMetrics && itemMetrics.totalNominalPanels > 0) {
-                              const avgNominalPrice = item.total_price / itemMetrics.totalNominalPanels;
-                              return (
-                                <>
-                                  <p className="text-xs text-on-surface-variant font-mono">
-                                    {itemMetrics.totalNominalPanels} paneles x {formatCurrency(avgNominalPrice)}
-                                  </p>
-                                  <p className="text-[10px] text-[#ff7a00] font-mono font-bold mt-0.5">
-                                    {itemMetrics.totalM2.toFixed(2)} m²
-                                  </p>
-                                </>
-                              );
-                            }
-                          }
-                          return (
-                            <p className="text-xs text-on-surface-variant font-mono">
-                              {item.quantity} x {formatCurrency(item.unit_price)}
-                            </p>
-                          );
-                        })()}
-                        <p className="text-sm font-bold text-white font-mono mt-0.5">
-                          {formatCurrency(item.total_price)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Detalles del Pedido (Tallas, Paneles, Metros) */}
-                    {item.size_distribution && (
-                      <div className="border-t border-white/5 pt-3 space-y-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
-                          Distribución / Detalles de Trabajo
-                        </p>
-
-                        {/* Resumen Métrico de Sublimación */}
-                        {(() => {
-                          const itemMetrics = calculateItemMetrics(item.size_distribution);
-                          if (!itemMetrics || itemMetrics.totalNominalPanels === 0) return null;
-                          return (
-                            <div className="grid grid-cols-3 gap-2 bg-[#ff5c00]/5 border border-primary/20 p-3 rounded-xl text-center">
-                              <div>
-                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Nominales</p>
-                                <p className="text-sm font-mono font-bold text-white mt-0.5">
-                                  {itemMetrics.totalNominalPanels}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Prorrateados</p>
-                                <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
-                                  {itemMetrics.totalEquivalentPanels.toFixed(2)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[8px] text-on-surface-variant uppercase font-mono">Metraje Total (m²)</p>
-                                <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
-                                  {itemMetrics.totalM2.toFixed(2)} m²
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {Object.keys(item.size_distribution).some(k => PANELS_LIST.includes(k)) ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {Object.entries(item.size_distribution).map(([panel, data]) => {
-                              if (!data || (!data.cantidad && !Object.values(data.tallas || {}).some(v => v > 0))) return null
-                              return (
-                                <div key={panel} className="neu-pressed p-3 rounded-xl space-y-2 text-xs">
-                                  <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                                    <div>
-                                      <p className="font-bold text-white">{panel}</p>
-                                      <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Item: {data.tipo}</p>
-                                    </div>
-                                    <span className="font-mono text-primary font-bold text-sm">x{data.cantidad}</span>
-                                  </div>
-                                  {data.tallas && Object.keys(data.tallas).length > 0 && (
-                                    <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px]">
-                                      {Object.entries(data.tallas).map(([size, q]) => (
-                                        <div key={size} className="bg-white/5 rounded px-2 py-0.5 text-center text-on-surface-variant">
-                                          <span className="font-bold text-primary mr-1">{size}:</span>
-                                          <span className="font-mono">{q}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(item.size_distribution).map(([size, qty]) => {
-                              if (!qty) return null
-                              return (
-                                <div key={size} className="neu-pressed px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs">
-                                  <span className="font-bold text-primary">{size}</span>
-                                  <span className="font-mono text-white">({qty} uds)</span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {(item.product_category === 'SUBLIMACION POR METRO' || item.product_category === 'SUBLIMACION CALANDRA') && (
-                      <div className="border-t border-white/5 pt-3">
-                        <div className="neu-pressed p-2.5 rounded-xl flex justify-between items-center text-xs">
-                          <span className="font-medium text-on-surface-variant font-mono uppercase text-[9px]">Metraje de Trabajo:</span>
-                          <span className="font-mono font-bold text-primary text-xs">{item.quantity} metros</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Parámetros de costeo recolectados */}
-                    <div className="border-t border-white/5 pt-3 mt-2">
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-primary mb-2">
-                        Parámetros de Costeo Recolectados (Fase 1)
-                      </p>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="neu-pressed p-2 rounded-xl">
-                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Tiempo Empleado</p>
-                          <p className="text-xs font-mono font-bold text-white mt-1">
-                            {item.production_time_minutes ? `${item.production_time_minutes} min` : '—'}
-                          </p>
-                        </div>
-                        <div className="neu-pressed p-2 rounded-xl">
-                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Materiales (Est.)</p>
-                          <p className="text-xs font-mono font-bold text-white mt-1">
-                            {item.materials_cost ? formatCurrency(item.materials_cost) : '—'}
-                          </p>
-                        </div>
-                        <div className="neu-pressed p-2 rounded-xl">
-                          <p className="text-[8px] text-on-surface-variant uppercase font-mono">Procesos (Est.)</p>
-                          <p className="text-xs font-mono font-bold text-white mt-1">
-                            {item.processes_cost ? formatCurrency(item.processes_cost) : '—'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+            {/* Selector de pestañas */}
+            <div className="flex border-b border-white/10 gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setDetailsTab('trabajo')}
+                className={`flex items-center gap-2 px-4 py-2 font-medium text-xs transition-all duration-300 border-b-2 whitespace-nowrap shrink-0 ${
+                  detailsTab === 'trabajo'
+                    ? 'border-primary text-primary bg-primary/5 rounded-t-lg font-bold'
+                    : 'border-transparent text-on-surface-variant hover:text-white hover:bg-white/5 rounded-t-lg'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">info</span>
+                Distribución de Trabajo
+              </button>
+              <button
+                type="button"
+                onClick={() => setDetailsTab('finanzas')}
+                className={`flex items-center gap-2 px-4 py-2 font-medium text-xs transition-all duration-300 border-b-2 whitespace-nowrap shrink-0 ${
+                  detailsTab === 'finanzas'
+                    ? 'border-primary text-primary bg-primary/5 rounded-t-lg font-bold'
+                    : 'border-transparent text-on-surface-variant hover:text-white hover:bg-white/5 rounded-t-lg'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">analytics</span>
+                Finanzas y Sobras
+              </button>
             </div>
 
-            {/* Total general e información complementaria */}
-            <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="space-y-1">
-                {selectedOrder.notes && (
-                  <p className="text-xs text-on-surface-variant max-w-md">
-                    <span className="font-semibold text-white">Notas:</span> {selectedOrder.notes}
-                  </p>
-                )}
-                <div className="flex gap-2 mt-2">
-                  <span className="text-xs text-on-surface-variant font-mono">
-                    Tipo de Ingreso: {selectedOrder.order_type === 'servicio_diario' ? 'Servicio Diario' : 'Desde Cotización'}
-                  </span>
+            {detailsTab === 'trabajo' && (
+              <>
+                {/* Ítems del pedido */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-on-surface-variant font-semibold text-left">
+                    Detalle de Servicios / Productos
+                  </h4>
+                  <div className="space-y-2">
+                    {selectedOrder.order_items?.map(item => (
+                      <Card key={item.id} className="p-4 bg-[#060a14] border border-white/5 space-y-4">
+                        <div className="flex justify-between items-start text-left">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{item.name}</p>
+                            <div className="flex gap-2 mt-1">
+                              <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded-full text-on-surface-variant uppercase font-mono">
+                                Servicio: {item.category}
+                              </span>
+                              {item.product_category && (
+                                <span className="text-[10px] bg-primary/10 px-2 py-0.5 rounded-full text-primary uppercase font-mono">
+                                  Categoría: {item.product_category}
+                                </span>
+                              )}
+                            </div>
+                            {item.description && (
+                              <div className="text-xs text-[#ff5c00] mt-2 bg-primary/5 border border-primary/20 rounded-lg p-2 font-mono">
+                                <strong>Detalle:</strong> {item.description}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            {(() => {
+                              const isSub = 
+                                (item.category || '').toLowerCase().includes('sublimaci') && 
+                                (item.product_category || '').toLowerCase().includes('panel');
+                              if (isSub) {
+                                const itemMetrics = calculateItemMetrics(item.size_distribution);
+                                if (itemMetrics && itemMetrics.totalNominalPanels > 0) {
+                                  const avgNominalPrice = item.total_price / itemMetrics.totalNominalPanels;
+                                  return (
+                                    <>
+                                      <p className="text-xs text-on-surface-variant font-mono">
+                                        {itemMetrics.totalNominalPanels} paneles x {formatCurrency(avgNominalPrice)}
+                                      </p>
+                                      <p className="text-[10px] text-[#ff7a00] font-mono font-bold mt-0.5">
+                                        {itemMetrics.totalM2.toFixed(2)} m²
+                                      </p>
+                                    </>
+                                  );
+                                }
+                              }
+                              return (
+                                <p className="text-xs text-on-surface-variant font-mono">
+                                  {item.quantity} x {formatCurrency(item.unit_price)}
+                                </p>
+                              );
+                            })()}
+                            <p className="text-sm font-bold text-white font-mono mt-0.5">
+                              {formatCurrency(item.total_price)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Detalles del Pedido (Tallas, Paneles, Metros) */}
+                        {item.size_distribution && (
+                          <div className="border-t border-white/5 pt-3 space-y-3 text-left">
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-primary">
+                              Distribución / Detalles de Trabajo
+                            </p>
+
+                            {/* Resumen Métrico de Sublimación */}
+                            {(() => {
+                              const itemMetrics = calculateItemMetrics(item.size_distribution);
+                              if (!itemMetrics || itemMetrics.totalNominalPanels === 0) return null;
+                              return (
+                                <div className="grid grid-cols-3 gap-2 bg-[#ff5c00]/5 border border-primary/20 p-3 rounded-xl text-center">
+                                  <div>
+                                    <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Nominales</p>
+                                    <p className="text-sm font-mono font-bold text-white mt-0.5">
+                                      {itemMetrics.totalNominalPanels}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Prorrateados</p>
+                                    <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                                      {itemMetrics.totalEquivalentPanels.toFixed(2)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[8px] text-on-surface-variant uppercase font-mono">Metraje Total (m²)</p>
+                                    <p className="text-sm font-mono font-bold text-[#ff7a00] mt-0.5">
+                                      {itemMetrics.totalM2.toFixed(2)} m²
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {Object.keys(item.size_distribution).some(k => PANELS_LIST.includes(k)) ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {Object.entries(item.size_distribution).map(([panel, data]) => {
+                                  if (!data || (!data.cantidad && !Object.values(data.tallas || {}).some(v => v > 0))) return null
+                                  return (
+                                    <div key={panel} className="neu-pressed p-3 rounded-xl space-y-2 text-xs">
+                                      <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                        <div>
+                                          <p className="font-bold text-white">{panel}</p>
+                                          <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Item: {data.tipo}</p>
+                                        </div>
+                                        <span className="font-mono text-primary font-bold text-sm">x{data.cantidad}</span>
+                                      </div>
+                                      {data.tallas && Object.keys(data.tallas).length > 0 && (
+                                        <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px]">
+                                          {Object.entries(data.tallas).map(([size, q]) => (
+                                            <div key={size} className="bg-white/5 rounded px-2 py-0.5 text-center text-on-surface-variant">
+                                              <span className="font-bold text-primary mr-1">{size}:</span>
+                                              <span className="font-mono">{q}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {Object.entries(item.size_distribution).map(([size, qty]) => {
+                                  if (!qty) return null
+                                  return (
+                                    <div key={size} className="neu-pressed px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs">
+                                      <span className="font-bold text-primary">{size}</span>
+                                      <span className="font-mono text-white">({qty} uds)</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {(item.product_category === 'SUBLIMACION POR METRO' || item.product_category === 'SUBLIMACION CALANDRA') && (
+                          <div className="border-t border-white/5 pt-3">
+                            <div className="neu-pressed p-2.5 rounded-xl flex justify-between items-center text-xs">
+                              <span className="font-medium text-on-surface-variant font-mono uppercase text-[9px]">Metraje de Trabajo:</span>
+                              <span className="font-mono font-bold text-primary text-xs">{item.quantity} metros</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Parámetros de costeo recolectados */}
+                        <div className="border-t border-white/5 pt-3 mt-2 text-left">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-primary mb-2">
+                            Parámetros de Costeo Recolectados (Fase 1)
+                          </p>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="neu-pressed p-2 rounded-xl">
+                              <p className="text-[8px] text-on-surface-variant uppercase font-mono">Tiempo Empleado</p>
+                              <p className="text-xs font-mono font-bold text-white mt-1">
+                                {item.production_time_minutes ? `${item.production_time_minutes} min` : '—'}
+                              </p>
+                            </div>
+                            <div className="neu-pressed p-2 rounded-xl">
+                              <p className="text-[8px] text-on-surface-variant uppercase font-mono">Materiales (Est.)</p>
+                              <p className="text-xs font-mono font-bold text-white mt-1">
+                                {item.materials_cost ? formatCurrency(item.materials_cost) : '—'}
+                              </p>
+                            </div>
+                            <div className="neu-pressed p-2 rounded-xl">
+                              <p className="text-[8px] text-on-surface-variant uppercase font-mono">Procesos (Est.)</p>
+                              <p className="text-xs font-mono font-bold text-white mt-1">
+                                {item.processes_cost ? formatCurrency(item.processes_cost) : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-                {orderMetrics && orderMetrics.totalNominalPanels > 0 && (
-                  <div className="mt-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 text-[11px] font-mono w-[240px]">
-                    <p className="text-primary font-bold uppercase text-[9px] tracking-wider mb-1">Totales del Trabajo</p>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-on-surface-variant">Paneles Nominales:</span>
-                      <span className="text-white font-bold">{orderMetrics.totalNominalPanels}</span>
+
+                {/* Total general e información complementaria */}
+                <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-left">
+                  <div className="space-y-1">
+                    {selectedOrder.notes && (
+                      <p className="text-xs text-on-surface-variant max-w-md">
+                        <span className="font-semibold text-white">Notas:</span> {selectedOrder.notes}
+                      </p>
+                    )}
+                    <div className="flex gap-2 mt-2">
+                      <span className="text-xs text-on-surface-variant font-mono">
+                        Tipo de Ingreso: {selectedOrder.order_type === 'servicio_diario' ? 'Servicio Diario' : 'Desde Cotización'}
+                      </span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-on-surface-variant">Paneles Prorrateados:</span>
-                      <span className="text-white font-bold">{orderMetrics.totalEquivalentPanels.toFixed(2)}</span>
+                    {orderMetrics && orderMetrics.totalNominalPanels > 0 && (
+                      <div className="mt-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 text-[11px] font-mono w-[240px]">
+                        <p className="text-primary font-bold uppercase text-[9px] tracking-wider mb-1">Totales del Trabajo</p>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-on-surface-variant">Paneles Nominales:</span>
+                          <span className="text-white font-bold">{orderMetrics.totalNominalPanels}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-on-surface-variant">Paneles Prorrateados:</span>
+                          <span className="text-white font-bold">{orderMetrics.totalEquivalentPanels.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-on-surface-variant">Metraje de Sublimación:</span>
+                          <span className="text-[#ff7a00] font-bold">{orderMetrics.totalM2.toFixed(2)} m²</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2">
+                    <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
+                      <span>Total Pedido:</span>
+                      <span className="font-bold text-white">{formatCurrency(selectedOrder.total_amount)}</span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-on-surface-variant">Metraje de Sublimación:</span>
-                      <span className="text-[#ff7a00] font-bold">{orderMetrics.totalM2.toFixed(2)} m²</span>
+                    <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
+                      <span>Monto Pagado:</span>
+                      <span className="font-bold text-tertiary">{formatCurrency(selectedOrder.paid_amount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono border-t border-white/10 pt-1">
+                      <span>Saldo Pendiente:</span>
+                      <span className="font-bold text-error">
+                        {formatCurrency(selectedOrder.total_amount - selectedOrder.paid_amount)}
+                      </span>
                     </div>
                   </div>
-                )}
-              </div>
-              
-              <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2">
-                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
-                  <span>Total Pedido:</span>
-                  <span className="font-bold text-white">{formatCurrency(selectedOrder.total_amount)}</span>
                 </div>
-                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
-                  <span>Monto Pagado:</span>
-                  <span className="font-bold text-tertiary">{formatCurrency(selectedOrder.paid_amount)}</span>
+              </>
+            )}
+
+            {detailsTab === 'finanzas' && (() => {
+              if (loadingDetails) {
+                return (
+                  <div className="py-12 flex flex-col items-center justify-center">
+                    <LoadingSpinner />
+                    <span className="text-xs text-on-surface-variant mt-2 font-mono">Cargando datos financieros...</span>
+                  </div>
+                );
+              }
+
+              // Calcular total gastos
+              const totalExpenses = orderExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+              const netUtility = selectedOrder.total_amount - totalExpenses;
+              const realMargin = selectedOrder.total_amount > 0 ? (netUtility / selectedOrder.total_amount) * 100 : 0;
+
+              // Consolidar materiales (estimados vs comprados)
+              const materialsMap = {};
+
+              // 1. Agregar estimados
+              estimatedMaterials.forEach(est => {
+                const matId = est.material_id;
+                const key = matId || est.material_name.toLowerCase().trim();
+                
+                if (!materialsMap[key]) {
+                  materialsMap[key] = {
+                    id: matId,
+                    name: est.material_name,
+                    category: est.materials?.category || 'Materia Prima',
+                    unit: est.materials?.purchase_unit || 'uds',
+                    estimatedQty: 0,
+                    estimatedCost: 0,
+                    purchasedQty: 0,
+                    purchasedCost: 0
+                  };
+                }
+                
+                materialsMap[key].estimatedQty += est.estimated_qty || 0;
+                materialsMap[key].estimatedCost += est.estimated_cost || 0;
+              });
+
+              // 2. Agregar gastos reales de materiales
+              orderExpenses.forEach(exp => {
+                // Solo si el gasto está relacionado a un material o se infiere
+                if (exp.material_id || exp.category_key?.toUpperCase() === 'INSUMOS') {
+                  const matId = exp.material_id;
+                  const key = matId || exp.specific_item?.toLowerCase().trim() || exp.description?.toLowerCase().trim() || 'gasto insumo';
+                  
+                  if (!materialsMap[key]) {
+                    materialsMap[key] = {
+                      id: matId,
+                      name: exp.materials?.name || exp.specific_item || 'Insumo Adicional',
+                      category: exp.materials?.category || exp.subcategory || 'Insumos',
+                      unit: exp.materials?.purchase_unit || 'uds',
+                      estimatedQty: 0,
+                      estimatedCost: 0,
+                      purchasedQty: 0,
+                      purchasedCost: 0
+                    };
+                  }
+                  
+                  materialsMap[key].purchasedQty += Number(exp.quantity) || 0;
+                  materialsMap[key].purchasedCost += Number(exp.amount) || 0;
+                }
+              });
+
+              const consolidatedMaterials = Object.values(materialsMap);
+
+              // Filtrar gastos generales (que no son materiales)
+              const generalExpenses = orderExpenses.filter(exp => {
+                // Si no tiene material_id y no es de categoría INSUMOS
+                return !exp.material_id && exp.category_key?.toUpperCase() !== 'INSUMOS';
+              });
+
+              return (
+                <div className="space-y-6 animate-fade-in text-left">
+                  {/* Resumen Financiero en Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Valor Pedido */}
+                    <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ingreso Total</span>
+                        <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
+                      </div>
+                      <div>
+                        <span className="font-mono text-lg font-bold text-white block">
+                          {formatCurrency(selectedOrder.total_amount)}
+                        </span>
+                        <span className="text-[10px] text-on-surface-variant block mt-0.5">Valor del pedido</span>
+                      </div>
+                    </div>
+
+                    {/* Gastos Reales */}
+                    <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Gastos Incurridos</span>
+                        <span className="material-symbols-outlined text-amber-400 text-[18px]">shopping_cart</span>
+                      </div>
+                      <div>
+                        <span className="font-mono text-lg font-bold text-white block">
+                          {formatCurrency(totalExpenses)}
+                        </span>
+                        <span className="text-[10px] text-on-surface-variant block mt-0.5">{orderExpenses.length} transacciones</span>
+                      </div>
+                    </div>
+
+                    {/* Utilidad Neta */}
+                    <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Utilidad Real</span>
+                        <span className={`material-symbols-outlined text-[18px] ${netUtility >= 0 ? 'text-emerald-400' : 'text-error'}`}>
+                          {netUtility >= 0 ? 'trending_up' : 'trending_down'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`font-mono text-lg font-bold block ${netUtility >= 0 ? 'text-emerald-400' : 'text-error'}`}>
+                          {formatCurrency(netUtility)}
+                        </span>
+                        <span className="text-[10px] text-on-surface-variant block mt-0.5">Ingresos - Gastos</span>
+                      </div>
+                    </div>
+
+                    {/* Margen Real */}
+                    <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-violet-500" />
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Margen Neto</span>
+                        <span className="material-symbols-outlined text-violet-400 text-[18px]">percent</span>
+                      </div>
+                      <div>
+                        <span className={`font-mono text-lg font-bold block ${realMargin >= 0 ? 'text-violet-400' : 'text-error'}`}>
+                          {realMargin.toFixed(1)}%
+                        </span>
+                        <span className="text-[10px] text-on-surface-variant block mt-0.5">Retorno sobre ventas</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Advertencia para Servicio Diario */}
+                  {selectedOrder.order_type === 'servicio_diario' && (
+                    <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs text-on-surface-variant font-mono flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-amber-500 text-base">warning</span>
+                      <div>
+                        <p className="font-semibold text-white">Servicio Diario (Sin Cotización Previa)</p>
+                        <p className="mt-0.5 text-[11px]">
+                          Este pedido se registró como Servicio Diario, por lo que no posee estimaciones de materiales de cotización. 
+                          Las métricas de sobras y costos estimados se muestran en cero. Se listan únicamente las compras reales incurridas.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabla de Control de Sobras de Materiales */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-mono uppercase tracking-wider text-primary font-bold">
+                        Control de Sobras (Materiales Estimados vs. Comprados)
+                      </h4>
+                      {selectedOrder.order_type !== 'servicio_diario' && (
+                        <span className="text-[10px] font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-on-surface-variant">
+                          Materia prima de cotización
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-white/5">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-white/5 text-on-surface-variant font-mono uppercase text-[9px] border-b border-white/5">
+                            <th className="py-2.5 px-3">Material / Insumo</th>
+                            <th className="py-2.5 px-3 text-center">Estimado (Cotiz.)</th>
+                            <th className="py-2.5 px-3 text-center">Comprado (Gastos)</th>
+                            <th className="py-2.5 px-3 text-center">Diferencia (Sobra)</th>
+                            <th className="py-2.5 px-3 text-right">Costo Estimado</th>
+                            <th className="py-2.5 px-3 text-right">Costo Real</th>
+                            <th className="py-2.5 px-3 text-right">Costo Dif.</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {consolidatedMaterials.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="py-6 text-center text-on-surface-variant italic text-[11px] font-mono">
+                                Ningún material o insumo relacionado a este pedido todavía.
+                              </td>
+                            </tr>
+                          ) : (
+                            consolidatedMaterials.map((mat, idx) => {
+                              const qtyDiff = mat.purchasedQty - mat.estimatedQty;
+                              const costDiff = mat.purchasedCost - mat.estimatedCost;
+
+                              return (
+                                <tr key={idx} className="hover:bg-white/[0.02] transition-colors font-mono">
+                                  <td className="py-2.5 px-3">
+                                    <p className="font-semibold text-white font-sans text-xs">{mat.name}</p>
+                                    <p className="text-[9px] text-on-surface-variant mt-0.5">{mat.category}</p>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    {mat.estimatedQty > 0 ? `${mat.estimatedQty.toFixed(2)} ${mat.unit}` : '—'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    {mat.purchasedQty > 0 ? `${mat.purchasedQty.toFixed(2)} ${mat.unit}` : '—'}
+                                  </td>
+                                  <td className={`py-2.5 px-3 text-center font-bold ${
+                                    qtyDiff > 0 
+                                      ? 'text-cyan-400' 
+                                      : qtyDiff < 0 
+                                        ? 'text-amber-500' 
+                                        : 'text-on-surface-variant'
+                                  }`}>
+                                    {qtyDiff > 0 
+                                      ? `+${qtyDiff.toFixed(2)} ${mat.unit}` 
+                                      : qtyDiff < 0 
+                                        ? `${qtyDiff.toFixed(2)} ${mat.unit}` 
+                                        : '0.00'
+                                    }
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-on-surface-variant">
+                                    {mat.estimatedCost > 0 ? formatCurrency(mat.estimatedCost) : '—'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-white font-bold">
+                                    {mat.purchasedCost > 0 ? formatCurrency(mat.purchasedCost) : '—'}
+                                  </td>
+                                  <td className={`py-2.5 px-3 text-right font-bold ${costDiff > 0 ? 'text-red-400' : costDiff < 0 ? 'text-emerald-400' : 'text-on-surface-variant'}`}>
+                                    {costDiff > 0 
+                                      ? `+${formatCurrency(costDiff)}` 
+                                      : costDiff < 0 
+                                        ? `-${formatCurrency(Math.abs(costDiff))}` 
+                                        : 'Bs 0.00'
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {consolidatedMaterials.length > 0 && (
+                      <div className="flex gap-4 text-[10px] font-mono text-on-surface-variant px-1.5 pt-0.5">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded bg-cyan-400" />
+                          Diferencia Cantidad (+) = Sobrante de material en taller.
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded bg-red-400" />
+                          Costo Dif. (+) = Desviación de costo (sobregasto).
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded bg-emerald-400" />
+                          Costo Dif. (-) = Ahorro de costo.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabla de Otros Gastos Generales (No materia prima) */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-mono uppercase tracking-wider text-primary font-bold">
+                      Otros Gastos Relacionados (Transporte, Mano de Obra, Tercerización, etc.)
+                    </h4>
+
+                    <div className="overflow-x-auto rounded-xl border border-white/5">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-white/5 text-on-surface-variant font-mono uppercase text-[9px] border-b border-white/5">
+                            <th className="py-2.5 px-3">Fecha</th>
+                            <th className="py-2.5 px-3">Detalle / Ítem Específico</th>
+                            <th className="py-2.5 px-3">Categoría / Subcat.</th>
+                            <th className="py-2.5 px-3 text-center">Proveedor</th>
+                            <th className="py-2.5 px-3 text-center">Cantidad</th>
+                            <th className="py-2.5 px-3 text-right">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {generalExpenses.length === 0 ? (
+                            <tr>
+                              <td colSpan="6" className="py-6 text-center text-on-surface-variant italic text-[11px] font-mono">
+                                Sin otros gastos relacionados. Todos los gastos corresponden a materias primas o no se han cargado gastos generales.
+                              </td>
+                            </tr>
+                          ) : (
+                            generalExpenses.map((exp, idx) => (
+                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors font-mono">
+                                <td className="py-2.5 px-3 text-on-surface-variant whitespace-nowrap">
+                                  {formatDate(exp.date)}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <p className="font-semibold text-white font-sans text-xs">{exp.specific_item}</p>
+                                  {exp.description && <p className="text-[10px] text-on-surface-variant mt-0.5">{exp.description}</p>}
+                                </td>
+                                <td className="py-2.5 px-3 text-on-surface-variant">
+                                  {exp.category_label} / {exp.subcategory}
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-on-surface-variant">
+                                  {exp.provider || '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-on-surface-variant">
+                                  {exp.quantity}
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-white font-bold font-mono">
+                                  {formatCurrency(exp.amount)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono border-t border-white/10 pt-1">
-                  <span>Saldo Pendiente:</span>
-                  <span className="font-bold text-error">
-                    {formatCurrency(selectedOrder.total_amount - selectedOrder.paid_amount)}
-                  </span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             <div className="flex justify-end pt-4 border-t border-white/5">
               <Button onClick={() => setSelectedOrder(null)}>
