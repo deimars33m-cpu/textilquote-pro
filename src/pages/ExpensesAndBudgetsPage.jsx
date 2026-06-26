@@ -514,11 +514,16 @@ export default function ExpensesAndBudgetsPage() {
 
   const suggestions = useMemo(() => {
     const q = form.providerName.trim().toLowerCase()
-    const genericName = terceroType === 'proveedor' ? 'proveedor genérico' : 'empleado genérico'
+    
+    const actualTerceroType = terceroType === 'pedido' 
+      ? (selectedQuoteItem?.type === 'proceso' ? 'dependiente' : 'proveedor') 
+      : terceroType;
+
+    const genericName = actualTerceroType === 'proveedor' ? 'proveedor genérico' : 'empleado genérico'
     if (!q || q === genericName) return []
-    const list = terceroType === 'proveedor' ? providers : dependientes
+    const list = actualTerceroType === 'proveedor' ? providers : dependientes
     return list.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
-  }, [providers, dependientes, form.providerName, terceroType])
+  }, [providers, dependientes, form.providerName, terceroType, selectedQuoteItem])
 
   const updateForm = (field, value) => {
     setForm(prev => {
