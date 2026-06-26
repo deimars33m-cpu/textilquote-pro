@@ -1,0 +1,1 @@
+﻿import { createClient } from '@supabase/supabase-js'; const supabase = createClient('https://kwrtxbnaiuooeyixgkuh.supabase.co', 'sb_publishable_le5DFZxNnavl5FJsIqZb_Q_WJacr-cf'); async function test() { const { data, error } = await supabase.from('expenses').select('id, payment_history').limit(1); console.log('Error:', error); console.log('Data:', data); } test();

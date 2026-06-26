@@ -217,6 +217,8 @@ export default function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [selectedPanelFilterEdit, setSelectedPanelFilterEdit] = useState('1 PANEL')
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [selectedPaymentOrder, setSelectedPaymentOrder] = useState(null)
 
   const clientSuggestions = useMemo(() => {
     const query = orderForm.clientName?.trim().toLowerCase()
