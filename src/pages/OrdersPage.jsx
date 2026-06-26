@@ -302,18 +302,27 @@ export default function OrdersPage() {
           setLinkedQuote(quoteData)
 
           if (quoteData?.quote_items) {
-            // Aplanar materiales
+            // Aplanar materiales usando lógica de compra al por mayor (historial cotización)
             const flattenedMaterials = quoteData.quote_items.flatMap(item => {
               const itemQty = Number(item.quantity) || 1
               const mats = item.quote_materials || []
               return mats.map(m => {
-                const qtyPerUnit = Number(m.quantity_per_unit) || 0
-                const wastePct = Number(m.waste_pct) || 0
+                const qtyReq = parseFloat(m.quantity_per_unit) || 0
+                const price = parseFloat(m.unit_price) || 0
+                const waste = parseFloat(m.waste_pct) || 0
+                const baseTotal = qtyReq * itemQty
+                const totalRequired = baseTotal + (baseTotal * waste / 100)
+                
+                const packQty = parseFloat(m.materials?.purchase_quantity) || 1
+                const toBuy = Math.ceil(totalRequired / packQty)
+                const purchaseCost = toBuy * packQty * price
+
                 return {
                   ...m,
                   item_quantity: itemQty,
-                  estimated_qty: itemQty * qtyPerUnit * (1 + wastePct / 100),
-                  estimated_cost: Number(m.total_cost) || 0
+                  estimated_qty: toBuy * packQty,
+                  estimated_cost: purchaseCost,
+                  raw_required: totalRequired
                 }
               })
             })
@@ -1371,7 +1380,9 @@ export default function OrdersPage() {
               <div className="space-y-4 animate-fade-in">
                 {approvedQuotes.length > 0 && (
                   <div className="relative">
-                    <label className="block text-[11px] font-medium text-on-surface-variant/70 mb-1 pl-1">Vincular Cotización Aprobada (Opcional)</label>
+                    <label className="block text-[11px] font-medium text-on-surface-variant/70 mb-1 pl-1">
+                      Vincular Cotización Aprobada (Solo para Producción Textil)
+                    </label>
                     <select
                       value={orderForm.quoteId}
                       onChange={(e) => handleQuoteSelection(e.target.value)}
@@ -1475,6 +1486,7 @@ export default function OrdersPage() {
                 )}
                 <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
                   {settings.categories.map((cat) => {
+                    if (orderForm.quoteId && cat.id !== 'produccion_textil') return null;
                     const isActive = orderForm.category === cat.id
                     return (
                       <button
