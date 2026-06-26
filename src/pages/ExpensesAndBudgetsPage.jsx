@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select } from '@/components/ui/index.jsx'
+import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, expenseStructure as defaultExpenseStructure } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
@@ -411,6 +411,8 @@ export default function ExpensesAndBudgetsPage() {
     setFormOpen(false)
   }
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [materials, setMaterials] = useState([])
@@ -652,6 +654,13 @@ export default function ExpensesAndBudgetsPage() {
         amount: Number(form.amount),
         advance_amount: form.advanceAmount ? Number(form.advanceAmount) : 0,
         payment_method: form.paymentMethod,
+        payment_history: form.advanceAmount && Number(form.advanceAmount) > 0 ? [{
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          amount: Number(form.advanceAmount),
+          method: form.paymentMethod,
+          note: 'Abono inicial'
+        }] : [],
         order_id: form.orderId || null,
         material_id: form.materialId || null
       }
@@ -702,30 +711,26 @@ export default function ExpensesAndBudgetsPage() {
     }
   }
 
-  const handleUpdateExpensePaymentStatus = async (expenseId, currentAdvance, expenseTotal) => {
-    let currentStatus = 'pendiente'
-    if (currentAdvance >= expenseTotal) {
-      currentStatus = 'pagado'
-    } else if (currentAdvance > 0) {
-      currentStatus = 'adelanto'
-    }
+  const handleUpdateExpensePaymentStatus = (expense) => {
+    setSelectedPaymentExpense(expense)
+    setPaymentModalOpen(true)
+  }
 
-    const statuses = ['pendiente', 'adelanto', 'pagado']
-    const nextIdx = (statuses.indexOf(currentStatus) + 1) % statuses.length
-    const nextStatus = statuses[nextIdx]
-
-    let nextPaidAmount = 0
-    if (nextStatus === 'pagado') {
-      nextPaidAmount = expenseTotal
-    } else if (nextStatus === 'adelanto') {
-      nextPaidAmount = expenseTotal * 0.5 // default to 50%
-    }
-
+  const handleSaveExpensePayments = async (updatedHistory) => {
+    if (!selectedPaymentExpense) return
+    
+    const newAdvanceAmount = updatedHistory.reduce((sum, p) => sum + Number(p.amount), 0)
+    
     try {
-      await updateExpense(expenseId, { advance_amount: nextPaidAmount })
+      await updateExpense(selectedPaymentExpense.id, { 
+        payment_history: updatedHistory,
+        advance_amount: newAdvanceAmount 
+      })
+      setSelectedPaymentExpense(null)
+      setPaymentModalOpen(false)
     } catch (err) {
-      console.error('Error updating expense payment status:', err)
-      alert('Error al actualizar el pago del gasto: ' + err.message)
+      console.error('Error updating expense payments:', err)
+      alert('Error al actualizar los pagos del gasto: ' + err.message)
     }
   }
 
@@ -2004,9 +2009,9 @@ export default function ExpensesAndBudgetsPage() {
 
                                     {/* Estado del pago (BOTON) */}
                                     <button
-                                      onClick={() => handleUpdateExpensePaymentStatus(e.id, adv, e.amount)}
+                                      onClick={() => handleUpdateExpensePaymentStatus(e)}
                                       className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
-                                      title="Click para cambiar estado de pago"
+                                      title="Click para administrar pagos"
                                     >
                                       {paymentLabels[paymentStatus]}
                                     </button>
@@ -2663,6 +2668,14 @@ export default function ExpensesAndBudgetsPage() {
           </div>
         )}
       </Modal>
+
+      <PaymentStatusModal
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        entityType="expense"
+        entityData={selectedPaymentExpense}
+        onSave={handleSaveExpensePayments}
+      />
     </>
   )
 }

@@ -318,3 +318,5 @@ export function Toggle({ checked, onChange, label }) {
     </label>
   )
 }
+
+export { default as PaymentStatusModal } from './PaymentStatusModal'

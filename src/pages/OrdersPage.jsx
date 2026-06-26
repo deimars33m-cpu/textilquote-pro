@@ -453,32 +453,42 @@ export default function OrdersPage() {
     }
   }
 
-  const handleUpdatePaymentStatus = async (orderId, currentPaymentStatus, orderTotal) => {
-    const paymentStatuses = ['pendiente', 'adelanto', 'pagado']
-    const nextIdx = (paymentStatuses.indexOf(currentPaymentStatus) + 1) % paymentStatuses.length
-    const nextPaymentStatus = paymentStatuses[nextIdx]
+  const handleUpdatePaymentStatus = (order) => {
+    setSelectedPaymentOrder(order)
+    setPaymentModalOpen(true)
+  }
+
+  const handleSavePayments = async (updatedHistory) => {
+    if (!selectedPaymentOrder) return
     
-    let nextPaidAmount = 0
-    if (nextPaymentStatus === 'pagado') {
-      nextPaidAmount = orderTotal
-    } else if (nextPaymentStatus === 'adelanto') {
-      nextPaidAmount = orderTotal * 0.5
-    }
+    const newPaidAmount = updatedHistory.reduce((sum, p) => sum + Number(p.amount), 0)
+    const total = Number(selectedPaymentOrder.total_amount)
+    const newPaymentStatus = newPaidAmount >= total ? 'pagado' : (newPaidAmount > 0 ? 'adelanto' : 'pendiente')
     
     try {
       const { error } = await supabase
         .from('orders')
         .update({ 
-          payment_status: nextPaymentStatus,
-          paid_amount: nextPaidAmount
+          payment_history: updatedHistory,
+          payment_status: newPaymentStatus,
+          paid_amount: newPaidAmount
         })
-        .eq('id', orderId)
+        .eq('id', selectedPaymentOrder.id)
+        
       if (error) throw error
       
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: nextPaymentStatus, paid_amount: nextPaidAmount } : o))
+      setOrders(prev => prev.map(o => o.id === selectedPaymentOrder.id ? { 
+        ...o, 
+        payment_history: updatedHistory,
+        payment_status: newPaymentStatus, 
+        paid_amount: newPaidAmount 
+      } : o))
+      
+      setSelectedPaymentOrder(null)
+      setPaymentModalOpen(false)
     } catch (err) {
-      console.error('Error updating payment status:', err)
-      alert('Error al actualizar el pago: ' + err.message)
+      console.error('Error updating payments:', err)
+      alert('Error al actualizar los pagos: ' + err.message)
     }
   }
 
@@ -1205,6 +1215,14 @@ export default function OrdersPage() {
       }
 
       // 2. Insertar el Pedido principal
+      const initialPaymentHistory = advance > 0 ? [{
+        id: crypto.randomUUID(),
+        date: new Date().toISOString(),
+        amount: advance,
+        method: 'efectivo', // Por defecto efectivo al crear el pedido
+        note: 'Adelanto inicial'
+      }] : []
+
       const { data: newOrder, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -1216,6 +1234,7 @@ export default function OrdersPage() {
           payment_status: advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente'),
           total_amount: total,
           paid_amount: advance,
+          payment_history: initialPaymentHistory,
           delivery_date: orderForm.deliveryDate ? new Date(orderForm.deliveryDate).toISOString().split('T')[0] : null,
           created_at: orderForm.orderDate ? new Date(orderForm.orderDate + 'T12:00:00Z').toISOString() : new Date().toISOString(),
           notes: orderForm.paymentNotes
@@ -2584,9 +2603,9 @@ export default function OrdersPage() {
 
                               {/* Estado de pago button */}
                               <button
-                                onClick={() => handleUpdatePaymentStatus(order.id, order.payment_status, order.total_amount)}
+                                onClick={() => handleUpdatePaymentStatus(order)}
                                 className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
-                                title="Click para cambiar estado de pago"
+                                title="Click para administrar pagos"
                               >
                                 {paymentLabels[order.payment_status]}
                               </button>
@@ -3789,6 +3808,14 @@ export default function OrdersPage() {
     >
       <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
     </Button>
+
+    <PaymentStatusModal
+      isOpen={paymentModalOpen}
+      onClose={() => setPaymentModalOpen(false)}
+      entityType="order"
+      entityData={selectedPaymentOrder}
+      onSave={handleSavePayments}
+    />
     </>
   )
 }
