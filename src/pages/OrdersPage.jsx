@@ -178,6 +178,8 @@ export default function OrdersPage() {
   // Estado para detalles de finanzas y sobras (Task #3)
   const [orderExpenses, setOrderExpenses] = useState([])
   const [estimatedMaterials, setEstimatedMaterials] = useState([])
+  const [estimatedProcesses, setEstimatedProcesses] = useState([])
+  const [linkedQuote, setLinkedQuote] = useState(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [detailsTab, setDetailsTab] = useState('trabajo') // 'trabajo' o 'finanzas'
 
@@ -206,8 +208,10 @@ export default function OrdersPage() {
     deliveryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     basePanelPrice: 10,
     panelSizes: initialPanelSizes,
-    panelSizePrices: getInitialPanelSizePrices(10)
+    panelSizePrices: getInitialPanelSizePrices(10),
+    quoteId: ''
   })
+  const [approvedQuotes, setApprovedQuotes] = useState([])
   const [formErrors, setFormErrors] = useState({})
 
   const [editingOrder, setEditingOrder] = useState(null)
@@ -233,8 +237,25 @@ export default function OrdersPage() {
     if (user) {
       fetchOrders()
       fetchClients()
+      fetchApprovedQuotes()
     }
   }, [user])
+
+  async function fetchApprovedQuotes() {
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('*, terceros(name)')
+        .eq('user_id', user.id)
+        .eq('status', 'aprobada')
+        .order('quote_number', { ascending: false })
+      if (!error && data) {
+        setApprovedQuotes(data)
+      }
+    } catch (e) {
+      console.error('Error fetching approved quotes:', e)
+    }
+  }
 
   // Cargar gastos relacionados y materiales estimados al seleccionar un pedido
   useEffect(() => {
@@ -242,41 +263,46 @@ export default function OrdersPage() {
       if (!selectedOrder) {
         setOrderExpenses([])
         setEstimatedMaterials([])
+        setEstimatedProcesses([])
+        setLinkedQuote(null)
         setDetailsTab('trabajo') // Reset tab
         return
       }
 
       setLoadingDetails(true)
       try {
-        // 1. Cargar gastos vinculados a este pedido
+        // 1. Cargar gastos vinculados a este pedido incluyendo terceros (dependientes)
         const { data: expensesData, error: expensesError } = await supabase
           .from('expenses')
-          .select('*, materials(*)')
+          .select('*, materials(*), terceros(*)')
           .eq('order_id', selectedOrder.id)
         
         if (expensesError) throw expensesError
         setOrderExpenses(expensesData || [])
 
-        // 2. Cargar materiales estimados de la cotización si existe
+        // 2. Cargar cotización, materiales estimados y procesos si existe
         if (selectedOrder.quote_id) {
           const { data: quoteData, error: quoteError } = await supabase
             .from('quotes')
             .select(`
+              *,
               quote_items (
                 quantity,
                 quote_materials (
                   *,
                   materials (*)
-                )
+                ),
+                quote_processes (*)
               )
             `)
             .eq('id', selectedOrder.quote_id)
             .single()
 
           if (quoteError) throw quoteError
+          setLinkedQuote(quoteData)
 
           if (quoteData?.quote_items) {
-            // Aplanar y pre-calcular cantidad estimada total
+            // Aplanar materiales
             const flattenedMaterials = quoteData.quote_items.flatMap(item => {
               const itemQty = Number(item.quantity) || 1
               const mats = item.quote_materials || []
@@ -292,11 +318,24 @@ export default function OrdersPage() {
               })
             })
             setEstimatedMaterials(flattenedMaterials)
+
+            // Aplanar procesos/mano de obra
+            const flattenedProcesses = quoteData.quote_items.flatMap(item => {
+              const procs = item.quote_processes || []
+              return procs.map(p => ({
+                ...p,
+                estimated_cost: Number(p.total_cost) || 0
+              }))
+            })
+            setEstimatedProcesses(flattenedProcesses)
           } else {
             setEstimatedMaterials([])
+            setEstimatedProcesses([])
           }
         } else {
           setEstimatedMaterials([])
+          setEstimatedProcesses([])
+          setLinkedQuote(null)
         }
       } catch (err) {
         console.error('Error fetching order finance details:', err)
@@ -324,12 +363,34 @@ export default function OrdersPage() {
     }
   }
 
+  // Pre-llenar desde cotización
+  const handleQuoteSelection = (selectedQuoteId) => {
+    if (!selectedQuoteId) {
+      setOrderForm(prev => ({ ...prev, quoteId: '' }))
+      return
+    }
+    const quote = approvedQuotes.find(q => q.id === selectedQuoteId)
+    if (quote) {
+      setOrderForm(prev => ({
+        ...prev,
+        quoteId: quote.id,
+        category: 'produccion_textil',
+        clientName: quote.terceros?.name || quote.client_name || '',
+        clientPhone: quote.client_phone || '',
+        clientEmail: quote.client_email || '',
+        productName: quote.project_name || '',
+        paymentNotes: quote.notes || ''
+      }))
+    }
+  }
+
   // Si viene una cotización para convertir en el URL, abre el panel/modal
   useEffect(() => {
     if (convertQuoteId) {
       setShowMobileForm(true)
+      handleQuoteSelection(convertQuoteId)
     }
-  }, [convertQuoteId])
+  }, [convertQuoteId, approvedQuotes])
 
   async function fetchOrders() {
     setLoading(true)
@@ -1140,6 +1201,7 @@ export default function OrdersPage() {
         .insert({
           user_id: user.id,
           tercero_id: clientId,
+          quote_id: orderForm.quoteId || null,
           order_type: orderForm.category === 'produccion_textil' ? 'pedido_cotizado' : 'servicio_diario',
           status: 'pendiente',
           payment_status: advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente'),
@@ -1307,6 +1369,24 @@ export default function OrdersPage() {
             {/* ─── PASO 1: Registro de Cliente ─── */}
             {currentStep === 1 && (
               <div className="space-y-4 animate-fade-in">
+                {approvedQuotes.length > 0 && (
+                  <div className="relative">
+                    <label className="block text-[11px] font-medium text-on-surface-variant/70 mb-1 pl-1">Vincular Cotización Aprobada (Opcional)</label>
+                    <select
+                      value={orderForm.quoteId}
+                      onChange={(e) => handleQuoteSelection(e.target.value)}
+                      className="w-full bg-surface-variant/30 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 appearance-none"
+                    >
+                      <option value="">-- Ninguna --</option>
+                      {approvedQuotes.map(q => (
+                        <option key={q.id} value={q.id}>
+                          #{q.quote_number?.toString().padStart(4, '0')} - {q.project_name || 'Sin proyecto'} - {q.terceros?.name || q.client_name || 'Cliente anónimo'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
                 <div className="flex justify-between items-center bg-white/[0.02] p-2 rounded-lg border border-white/5">
                   <p className="text-[11px] text-on-surface-variant/80">
                     ¿Es un cliente rápido?
@@ -2943,10 +3023,41 @@ export default function OrdersPage() {
 
               const consolidatedMaterials = Object.values(materialsMap);
 
-              // Filtrar gastos generales (que no son materiales)
+              // Consolidar Mano de Obra (Procesos estimados vs Gastos reales en dependientes)
+              const laborMap = {};
+
+              // 1. Agregar procesos estimados
+              estimatedProcesses.forEach(proc => {
+                const key = proc.name.toLowerCase().trim();
+                if (!laborMap[key]) {
+                  laborMap[key] = {
+                    name: proc.name,
+                    estimatedCost: 0,
+                    purchasedCost: 0
+                  };
+                }
+                laborMap[key].estimatedCost += proc.estimated_cost || 0;
+              });
+
+              // 2. Filtrar gastos de mano de obra (dependientes) y agregarlos
+              const laborExpenses = orderExpenses.filter(exp => exp.terceros?.role === 'dependiente');
+              laborExpenses.forEach(exp => {
+                const key = exp.specific_item?.toLowerCase().trim() || exp.description?.toLowerCase().trim() || 'mano de obra general';
+                if (!laborMap[key]) {
+                  laborMap[key] = {
+                    name: exp.specific_item || exp.description || 'Mano de Obra General',
+                    estimatedCost: 0,
+                    purchasedCost: 0
+                  };
+                }
+                laborMap[key].purchasedCost += Number(exp.amount) || 0;
+              });
+
+              const consolidatedLabor = Object.values(laborMap);
+
+              // Filtrar gastos generales (que no son materiales ni mano de obra)
               const generalExpenses = orderExpenses.filter(exp => {
-                // Si no tiene material_id y no es de categoría INSUMOS
-                return !exp.material_id && exp.category_key?.toUpperCase() !== 'INSUMOS';
+                return !exp.material_id && exp.category_key?.toUpperCase() !== 'INSUMOS' && exp.terceros?.role !== 'dependiente';
               });
 
               return (
@@ -3131,6 +3242,68 @@ export default function OrdersPage() {
                         </span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Tabla de Control de Mano de Obra */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-mono uppercase tracking-wider text-primary font-bold">
+                        Control de Mano de Obra (Procesos Estimados vs. Pagados a Dependientes)
+                      </h4>
+                      {selectedOrder.order_type !== 'servicio_diario' && (
+                        <span className="text-[10px] font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-on-surface-variant">
+                          Procesos de cotización
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-white/5">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-white/5 text-on-surface-variant font-mono uppercase text-[9px] border-b border-white/5">
+                            <th className="py-2.5 px-3">Proceso / Labor</th>
+                            <th className="py-2.5 px-3 text-right">Costo Estimado</th>
+                            <th className="py-2.5 px-3 text-right">Costo Real</th>
+                            <th className="py-2.5 px-3 text-right">Costo Dif.</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {consolidatedLabor.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" className="py-6 text-center text-on-surface-variant italic text-[11px] font-mono">
+                                Ningún proceso o mano de obra relacionada a este pedido todavía.
+                              </td>
+                            </tr>
+                          ) : (
+                            consolidatedLabor.map((lab, idx) => {
+                              const costDiff = lab.purchasedCost - lab.estimatedCost;
+
+                              return (
+                                <tr key={idx} className="hover:bg-white/[0.02] transition-colors font-mono">
+                                  <td className="py-2.5 px-3">
+                                    <p className="font-semibold text-white font-sans text-xs">{lab.name}</p>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-on-surface-variant">
+                                    {lab.estimatedCost > 0 ? formatCurrency(lab.estimatedCost) : '—'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-white font-bold">
+                                    {lab.purchasedCost > 0 ? formatCurrency(lab.purchasedCost) : '—'}
+                                  </td>
+                                  <td className={`py-2.5 px-3 text-right font-bold ${costDiff > 0 ? 'text-red-400' : costDiff < 0 ? 'text-emerald-400' : 'text-on-surface-variant'}`}>
+                                    {costDiff > 0 
+                                      ? `+${formatCurrency(costDiff)}` 
+                                      : costDiff < 0 
+                                        ? `-${formatCurrency(Math.abs(costDiff))}` 
+                                        : 'Bs 0.00'
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   {/* Tabla de Otros Gastos Generales (No materia prima) */}
