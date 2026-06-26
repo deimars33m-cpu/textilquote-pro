@@ -2989,12 +2989,13 @@ export default function OrdersPage() {
               // 1. Agregar estimados
               estimatedMaterials.forEach(est => {
                 const matId = est.material_id;
-                const key = matId || est.material_name.toLowerCase().trim();
+                const matName = est.material_name || 'Insumo Sin Nombre';
+                const key = matId || matName.toLowerCase().trim();
                 
                 if (!materialsMap[key]) {
                   materialsMap[key] = {
                     id: matId,
-                    name: est.material_name,
+                    name: matName,
                     category: est.materials?.category || 'Materia Prima',
                     unit: est.materials?.purchase_unit || 'uds',
                     estimatedQty: 0,
@@ -3040,10 +3041,11 @@ export default function OrdersPage() {
 
               // 1. Agregar procesos estimados
               estimatedProcesses.forEach(proc => {
-                const key = proc.name.toLowerCase().trim();
+                const procName = proc.process_name || proc.name || 'Proceso Sin Nombre';
+                const key = procName.toLowerCase().trim();
                 if (!laborMap[key]) {
                   laborMap[key] = {
-                    name: proc.name,
+                    name: procName,
                     estimatedCost: 0,
                     purchasedCost: 0
                   };
