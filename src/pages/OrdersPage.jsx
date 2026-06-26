@@ -3018,7 +3018,7 @@ export default function OrdersPage() {
                     id: matId,
                     name: matName,
                     category: est.materials?.category || 'Materia Prima',
-                    unit: est.materials?.purchase_unit || 'uds',
+                    unit: est.materials?.unit_measure || est.materials?.purchase_unit || 'uds',
                     estimatedQty: 0,
                     estimatedCost: 0,
                     purchasedQty: 0,
@@ -3026,7 +3026,7 @@ export default function OrdersPage() {
                   };
                 }
                 
-                materialsMap[key].estimatedQty += est.estimated_qty || 0;
+                materialsMap[key].estimatedQty += est.raw_required || est.estimated_qty || 0;
                 materialsMap[key].estimatedCost += est.estimated_cost || 0;
               });
 
