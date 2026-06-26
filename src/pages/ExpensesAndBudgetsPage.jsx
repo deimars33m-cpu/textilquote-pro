@@ -533,12 +533,17 @@ export default function ExpensesAndBudgetsPage() {
     setForm(prev => {
       const next = { ...prev, [field]: value }
 
-      // Auto-calcular total si cambian cantidad o precio unitario
-      if (field === 'quantity' || field === 'unitPrice') {
+      // Auto-calcular total si cambian cantidad, precio unitario o por mayor
+      if (field === 'quantity' || field === 'unitPrice' || field === 'wholesaleQuantity') {
         const q = Number(next.quantity) || 0
         const p = Number(next.unitPrice) || 0
+        const w = Number(next.wholesaleQuantity) || 0
         if (q > 0 && p > 0) {
-          next.amount = (q * p).toFixed(2)
+          if (w > 0) {
+            next.amount = (w * q * p).toFixed(2)
+          } else {
+            next.amount = (q * p).toFixed(2)
+          }
         }
       }
       return next
@@ -651,7 +656,7 @@ export default function ExpensesAndBudgetsPage() {
         description: form.description.trim() || null,
         provider: trimmedProvider,
         provider_id: providerId,
-        quantity: Number(form.quantity),
+        quantity: Number(form.wholesaleQuantity) > 0 ? Number(form.wholesaleQuantity) * Number(form.quantity) : Number(form.quantity),
         unit_price: Number(form.unitPrice),
         amount: Number(form.amount),
         advance_amount: form.advanceAmount ? Number(form.advanceAmount) : 0,
@@ -1632,8 +1637,7 @@ export default function ExpensesAndBudgetsPage() {
                             const val = e.target.value;
                             updateForm('wholesaleQuantity', val);
                             if (val && Number(val) > 0) {
-                              const newTotalQty = Number(val) * packQty;
-                              updateForm('quantity', newTotalQty);
+                              updateForm('quantity', packQty);
                             }
                           }}
                           className={`w-full px-3 py-2.5 min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors h-[42px]`}
