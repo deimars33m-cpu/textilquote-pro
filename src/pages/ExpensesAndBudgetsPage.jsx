@@ -413,6 +413,8 @@ export default function ExpensesAndBudgetsPage() {
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
+  const [calculatorPacks, setCalculatorPacks] = useState('')
+  const [calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [materials, setMaterials] = useState([])
@@ -1375,6 +1377,8 @@ export default function ExpensesAndBudgetsPage() {
                               updateForm('materialId', mat.material_id);
                               updateForm('quantity', mat.estimated_qty);
                               updateForm('unitPrice', (mat.estimated_cost / mat.estimated_qty).toFixed(2) || 0);
+                              setCalculatorPacks('');
+                              setCalculatorPricePerPack('');
                               setSelectedQuoteItem({ type: 'material', data: mat });
                               setCurrentStep(5);
                             }}
@@ -1598,6 +1602,50 @@ export default function ExpensesAndBudgetsPage() {
                   <div className="mt-1 pt-2 border-t border-primary/10 flex justify-between items-center text-xs">
                     <span className="opacity-70 text-[9px] uppercase tracking-wider">Por Mayor Sugerido:</span>
                     <span className="font-bold text-primary">{Math.ceil(selectedQuoteItem.data.raw_required / selectedQuoteItem.data.pack_qty)} {selectedQuoteItem.data.pack_unit}(s)</span>
+                  </div>
+                  
+                  {/* Calculadora Interactiva por Empaque */}
+                  <div className="mt-3 bg-surface-container rounded-lg p-2.5 border border-primary/10 space-y-2">
+                    <span className="text-[10px] font-bold text-primary uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">calculate</span>
+                      Calculadora de Empaques ({selectedQuoteItem.data.pack_unit}s)
+                    </span>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="text-[9px] text-on-surface-variant block mb-1">Cant. de {selectedQuoteItem.data.pack_unit}s comprados</label>
+                        <input
+                          type="number"
+                          placeholder="Ej. 39"
+                          value={calculatorPacks}
+                          onChange={e => setCalculatorPacks(e.target.value)}
+                          className="w-full px-2 py-1 bg-surface-container-low border border-outline-variant/30 rounded text-xs font-mono text-on-surface outline-none focus:border-primary/50"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[9px] text-on-surface-variant block mb-1">Precio x {selectedQuoteItem.data.pack_unit} (Bs)</label>
+                        <input
+                          type="number"
+                          placeholder="Ej. 1190"
+                          value={calculatorPricePerPack}
+                          onChange={e => setCalculatorPricePerPack(e.target.value)}
+                          className="w-full px-2 py-1 bg-surface-container-low border border-outline-variant/30 rounded text-xs font-mono text-on-surface outline-none focus:border-primary/50"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!calculatorPacks || !calculatorPricePerPack}
+                        onClick={() => {
+                          const packs = Number(calculatorPacks);
+                          const pricePerPack = Number(calculatorPricePerPack);
+                          const totalPackUsage = packs * selectedQuoteItem.data.pack_qty;
+                          updateForm('quantity', totalPackUsage);
+                          updateForm('unitPrice', (pricePerPack / selectedQuoteItem.data.pack_qty).toFixed(4));
+                        }}
+                        className="px-3 py-1 bg-primary text-on-primary rounded text-[10px] font-bold disabled:opacity-50 transition-colors h-[26px]"
+                      >
+                        Aplicar
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
