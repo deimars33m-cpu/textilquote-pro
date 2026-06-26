@@ -200,6 +200,11 @@ export const terceroTypes = {
   proveedor_insumos: 'Insumos',
   proveedor_servicios: 'Servicios Externos',
   dependiente: 'Empleado Interno / Dependiente',
+  taller_externo_costura: 'Taller Externo / Costura',
+  disenador_grafico_externo: 'Diseñador Gráfico / Externo',
+  taller_externo_corte: 'Taller Externo / Corte Industrial',
+  contabilidad_externo: 'Contabilidad / Externo',
+  comercializador_ventas: 'Comercializador / Ventas',
   otro: 'Otro',
 }
 

@@ -782,6 +782,11 @@ const providerTypeOptions = [
 
 const dependienteTypeOptions = [
   { value: 'dependiente', label: 'Empleado Interno / Dependiente' },
+  { value: 'taller_externo_costura', label: 'Taller Externo / Costura' },
+  { value: 'disenador_grafico_externo', label: 'Diseñador Gráfico / Externo' },
+  { value: 'taller_externo_corte', label: 'Taller Externo / Corte Industrial' },
+  { value: 'contabilidad_externo', label: 'Contabilidad / Externo' },
+  { value: 'comercializador_ventas', label: 'Comercializador / Ventas' },
   { value: 'otro', label: 'Otro' }
 ]
 
