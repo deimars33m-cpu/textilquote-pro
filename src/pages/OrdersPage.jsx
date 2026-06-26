@@ -3420,10 +3420,10 @@ export default function OrdersPage() {
         >
           <div className="space-y-6 text-left">
             {/* Cabecera Informativa */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-white/5 text-on-surface">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-outline-variant/30 dark:border-white/5 text-on-surface">
               <div>
                 <p className="text-xs text-on-surface-variant font-mono uppercase">Cliente</p>
-                <p className="text-sm font-semibold text-white mt-0.5">{editForm.clientName}</p>
+                <p className="text-sm font-semibold text-on-surface dark:text-white mt-0.5">{editForm.clientName}</p>
                 <p className="text-[10px] text-on-surface-variant font-mono mt-1">
                   CATEGORÍA: {settings.categories.find(c => c.id === editForm.category)?.label || '—'}
                 </p>
@@ -3440,7 +3440,7 @@ export default function OrdersPage() {
                     type="date"
                     value={editForm.deliveryDate}
                     onChange={e => updateEditForm('deliveryDate', e.target.value)}
-                    className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-mono"
+                    className="w-full bg-surface-variant/30 dark:bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-on-surface dark:text-white outline-none focus:ring-1 focus:ring-primary/50 font-mono"
                   />
                 </div>
               </div>
@@ -3457,7 +3457,7 @@ export default function OrdersPage() {
                   onChange={e => updateEditForm('particularDetails', e.target.value)}
                   placeholder="Ej. Nombre del equipo, diseño, patrocinadores, etc."
                   rows="3"
-                  className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
+                  className="w-full bg-surface-variant/30 dark:bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-on-surface dark:text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
                 />
               </div>
               <div>
@@ -3469,13 +3469,13 @@ export default function OrdersPage() {
                   onChange={e => updateEditForm('orderNotes', e.target.value)}
                   placeholder="Ej. Saldo contra entrega, observaciones del cliente, etc."
                   rows="3"
-                  className="w-full bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
+                  className="w-full bg-surface-variant/30 dark:bg-[#0d1527] border border-outline-variant/30 rounded-xl px-3 py-2 text-xs text-on-surface dark:text-white outline-none focus:ring-1 focus:ring-primary/50 font-sans resize-none"
                 />
               </div>
             </div>
 
             {/* Configuración de Cantidades y Precios */}
-            <div className="border-t border-white/5 pt-4 space-y-4">
+            <div className="border-t border-outline-variant/30 dark:border-white/5 pt-4 space-y-4">
               <h4 className="text-xs font-mono uppercase tracking-wider text-primary font-bold">
                 Configuración de Tallas / Cantidades
               </h4>
@@ -3496,7 +3496,7 @@ export default function OrdersPage() {
                           const qty = editForm.sizes[size] || 0
                           const price = editForm.sizePrices[size] || 0
                           return (
-                            <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-2 text-on-surface">
+                            <div key={size} className="min-w-[155px] w-[155px] flex-shrink-0 snap-start p-3 bg-surface-variant/30 dark:bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-2 text-on-surface">
                               <div className="flex justify-between items-center border-b border-outline-variant/30 pb-1">
                                 <span className="text-body-md font-bold text-primary">{size}</span>
                                 <div className="flex items-center gap-1">
@@ -3514,7 +3514,7 @@ export default function OrdersPage() {
                                 <button
                                   type="button"
                                   onClick={() => updateEditSizeQty(size, -1)}
-                                  className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
+                                  className="w-7 h-7 flex items-center justify-center rounded bg-surface dark:bg-surface-variant border border-outline-variant/30 active:scale-95 text-xs text-on-surface hover:text-[#ff5c00] cursor-pointer"
                                 >
                                   <span className="material-symbols-outlined text-[12px]">remove</span>
                                 </button>
@@ -3534,7 +3534,7 @@ export default function OrdersPage() {
                                 <button
                                   type="button"
                                   onClick={() => updateEditSizeQty(size, 1)}
-                                  className="w-7 h-7 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
+                                  className="w-7 h-7 flex items-center justify-center rounded bg-surface dark:bg-surface-variant border border-outline-variant/30 active:scale-95 text-xs text-primary cursor-pointer"
                                 >
                                   <span className="material-symbols-outlined text-[12px]">add</span>
                                 </button>
@@ -3557,10 +3557,10 @@ export default function OrdersPage() {
                   return (
                     <div className="space-y-4">
                       {/* Configuración de Tarifa Base por Panel */}
-                      <div className="neu-pressed px-3 py-2 rounded-xl flex items-center justify-between gap-3 bg-[#0d1527]">
+                      <div className="neu-pressed px-3 py-2 rounded-xl flex items-center justify-between gap-3 bg-surface-variant/30 dark:bg-[#0d1527]">
                         <div className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[#ff7a00] text-sm">payments</span>
-                          <span className="text-xs font-bold text-white">Precio Base por Panel:</span>
+                          <span className="text-xs font-bold text-on-surface dark:text-white">Precio Base por Panel:</span>
                         </div>
                         <div className="w-[90px] shrink-0">
                           <input
@@ -3595,7 +3595,7 @@ export default function OrdersPage() {
                       </div>
 
                       {/* Panel Editor de Tallas Activo */}
-                      <div key={panel} className="w-full p-4 bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-4 text-on-surface">
+                      <div key={panel} className="w-full p-4 bg-surface-variant/30 dark:bg-[#0d1527] rounded-xl border border-outline-variant/30 space-y-4 text-on-surface">
                         <div className="flex justify-between items-center border-b border-outline-variant/30 pb-2">
                           <div>
                             <span className="text-sm font-black text-primary block">{panel}</span>
@@ -3617,7 +3617,7 @@ export default function OrdersPage() {
                                     const val = e.target.value
                                     updateEditFormItemType(panel, val)
                                   }}
-                                  className="w-full bg-transparent border-none rounded px-2 py-1 text-[11px] font-semibold text-white outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
+                                  className="w-full bg-transparent border-none rounded px-2 py-1 text-[11px] font-semibold text-on-surface dark:text-white outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer neu-pressed"
                                 >
                                   {options.map(opt => (
                                     <option key={opt} value={opt} className="bg-surface text-on-surface text-[11px]">{opt}</option>
@@ -3652,7 +3652,7 @@ export default function OrdersPage() {
                                   <button
                                     type="button"
                                     onClick={() => updateEditPanelSizeQty(panel, size, -1)}
-                                    className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-on-surface hover:text-[#ff5c00] cursor-pointer"
+                                    className="w-5 h-5 flex items-center justify-center rounded bg-surface dark:bg-surface-variant border border-outline-variant/30 active:scale-95 text-[10px] text-on-surface hover:text-[#ff5c00] cursor-pointer"
                                   >
                                     -
                                   </button>
@@ -3670,7 +3670,7 @@ export default function OrdersPage() {
                                   <button
                                     type="button"
                                     onClick={() => updateEditPanelSizeQty(panel, size, 1)}
-                                    className="w-5 h-5 flex items-center justify-center rounded bg-[#f1f5f9] border border-outline-variant/30 active:scale-95 text-[10px] text-primary cursor-pointer"
+                                    className="w-5 h-5 flex items-center justify-center rounded bg-surface dark:bg-surface-variant border border-outline-variant/30 active:scale-95 text-[10px] text-primary cursor-pointer"
                                   >
                                     +
                                   </button>
@@ -3682,9 +3682,9 @@ export default function OrdersPage() {
                         </div>
 
                         {/* Subtotal del Módulo */}
-                        <div className="text-right border-t border-white/5 pt-2 flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
+                        <div className="text-right border-t border-outline-variant/30 dark:border-white/5 pt-2 flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
                           <span>SUBTOTAL MÓDULO:</span>
-                          <span className="text-xs text-white font-bold">
+                          <span className="text-xs text-on-surface dark:text-white font-bold">
                             {(() => {
                               const sub = SUBLIMATION_SIZES.reduce((sum, size) => {
                                 const q = editForm.panelSizes[panel]?.[size] || 0
@@ -3701,7 +3701,7 @@ export default function OrdersPage() {
                       <div className="grid grid-cols-3 gap-2 bg-[#ff5c00]/5 border border-primary/20 p-3 rounded-xl text-center">
                         <div>
                           <p className="text-[8px] text-on-surface-variant uppercase font-mono">Paneles Nominales</p>
-                          <p className="text-sm font-mono font-bold text-white mt-0.5">
+                          <p className="text-sm font-mono font-bold text-on-surface dark:text-white mt-0.5">
                             {editMetrics.totalNominalPanels}
                           </p>
                         </div>
@@ -3760,17 +3760,17 @@ export default function OrdersPage() {
             </div>
 
             {/* Total general y Acciones de guardado */}
-            <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2 bg-[#0d1527]">
+            <div className="border-t border-outline-variant/30 dark:border-white/5 pt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="w-full sm:w-auto neu-pressed p-4 rounded-xl min-w-[200px] text-right space-y-2 bg-surface-variant/30 dark:bg-[#0d1527]">
                 <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
                   <span>Subtotal:</span>
-                  <span className="font-bold text-white">{formatCurrency(editTotalAmount / 1.18)}</span>
+                  <span className="font-bold text-on-surface dark:text-white">{formatCurrency(editTotalAmount / 1.18)}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
                   <span>IGV (18%):</span>
-                  <span className="font-bold text-white">{formatCurrency(editTotalAmount - (editTotalAmount / 1.18))}</span>
+                  <span className="font-bold text-on-surface dark:text-white">{formatCurrency(editTotalAmount - (editTotalAmount / 1.18))}</span>
                 </div>
-                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono border-t border-white/10 pt-1">
+                <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono border-t border-outline-variant/30 dark:border-white/10 pt-1">
                   <span>Total Estimado:</span>
                   <span className="font-bold text-primary text-sm font-mono">
                     {formatCurrency(editTotalAmount)}
