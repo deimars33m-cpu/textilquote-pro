@@ -1341,7 +1341,15 @@ export default function ExpensesAndBudgetsPage() {
                             const totalRequired = baseTotal + (baseTotal * waste / 100);
                             const packQty = parseFloat(m.materials?.purchase_quantity) || 1;
                             const toBuy = Math.ceil(totalRequired / packQty);
-                            return { ...m, estimated_qty: toBuy * packQty, estimated_cost: toBuy * packQty * price };
+                            return { 
+                              ...m, 
+                              estimated_qty: toBuy * packQty, 
+                              estimated_cost: toBuy * packQty * price,
+                              raw_required: totalRequired,
+                              pack_qty: packQty,
+                              pack_unit: m.materials?.purchase_unit || m.materials?.usage_unit || 'uds',
+                              usage_unit: m.materials?.usage_unit || 'uds'
+                            };
                           });
                         });
 
@@ -1562,6 +1570,29 @@ export default function ExpensesAndBudgetsPage() {
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {terceroType === 'pedido' && selectedQuoteItem?.type === 'material' && selectedQuoteItem.data?.raw_required && (
+                <div className="bg-primary/5 p-3 rounded-lg border border-primary/20 flex flex-col gap-1 text-[11px] text-on-surface-variant">
+                  <div className="flex justify-between items-center pb-1 border-b border-primary/10">
+                    <span className="font-bold text-primary flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">info</span> Referencia de Compra (Datos Cotizados)</span>
+                    <span className="font-mono text-[10px] uppercase tracking-wider">{selectedQuoteItem.data.material_name}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div>
+                      <span className="block text-[9px] uppercase tracking-wider opacity-70">Total Requerido:</span>
+                      <span className="font-bold text-on-surface">{Number(selectedQuoteItem.data.raw_required).toFixed(2)} {selectedQuoteItem.data.usage_unit}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] uppercase tracking-wider opacity-70">Empaque DB:</span>
+                      <span className="font-bold text-on-surface">{selectedQuoteItem.data.pack_qty} {selectedQuoteItem.data.usage_unit} / {selectedQuoteItem.data.pack_unit}</span>
+                    </div>
+                  </div>
+                  <div className="mt-1 pt-2 border-t border-primary/10 flex justify-between items-center text-xs">
+                    <span className="opacity-70 text-[9px] uppercase tracking-wider">Por Mayor Sugerido:</span>
+                    <span className="font-bold text-primary">{Math.ceil(selectedQuoteItem.data.raw_required / selectedQuoteItem.data.pack_qty)} {selectedQuoteItem.data.pack_unit}(s)</span>
                   </div>
                 </div>
               )}
