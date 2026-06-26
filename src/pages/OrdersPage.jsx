@@ -76,6 +76,379 @@ const calculateItemMetrics = (sizeDistribution) => {
   return { totalGarments, totalNominalPanels, totalEquivalentPanels, totalM2 }
 }
 
+const calculateSublimationItemPrices = (item) => {
+  if (!item || !item.size_distribution) return { basePanelPrice: 0, desgloses: {} };
+
+  // Calculate the total equivalent panels for price
+  let totalEquivalentPanelsForPrice = 0;
+  PANELS_LIST.forEach(panel => {
+    const pData = item.size_distribution[panel];
+    if (pData && pData.tallas) {
+      const match = panel.match(/^(\d+)/);
+      const panelsCount = match ? parseInt(match[1]) : 1;
+      SUBLIMATION_SIZES.forEach(size => {
+        const qty = pData.tallas[size] || 0;
+        if (qty > 0) {
+          const factor = SIZE_FACTORS[size]?.priceFactor || 1.0;
+          totalEquivalentPanelsForPrice += qty * factor * panelsCount;
+        }
+      });
+    }
+  });
+
+  const basePanelPrice = totalEquivalentPanelsForPrice > 0 
+    ? item.total_price / totalEquivalentPanelsForPrice 
+    : 0;
+
+  const desgloses = {};
+
+  PANELS_LIST.forEach(panel => {
+    const pData = item.size_distribution[panel];
+    if (pData && pData.tallas) {
+      const match = panel.match(/^(\d+)/);
+      const panelsCount = match ? parseInt(match[1]) : 1;
+      const tallasDesglose = [];
+
+      SUBLIMATION_SIZES.forEach(size => {
+        const qty = pData.tallas[size] || 0;
+        if (qty > 0) {
+          const factor = SIZE_FACTORS[size]?.priceFactor || 1.0;
+          const unitPrice = basePanelPrice * factor * panelsCount;
+          const subtotal = qty * unitPrice;
+          tallasDesglose.push({
+            size,
+            qty,
+            unitPrice,
+            subtotal
+          });
+        }
+      });
+
+      if (tallasDesglose.length > 0) {
+        desgloses[panel] = {
+          tipo: pData.tipo || 'Otros',
+          tallas: tallasDesglose
+        };
+      }
+    }
+  });
+
+  return { basePanelPrice, desgloses };
+};
+
+const formatWhatsAppInvoiceText = (order, formatCurrency) => {
+  if (!order) return '';
+  const orderNum = order.order_number?.toString().padStart(4, '0') || '0000';
+  const clientName = order.terceros?.name || 'Cliente General';
+  
+  let text = `*DETALLE DE COBRANZA - PEDIDO #${orderNum}*\n`;
+  text += `*Cliente:* ${clientName}\n`;
+  if (order.delivery_date) {
+    const formattedDate = new Date(order.delivery_date).toLocaleDateString('es-ES', { timeZone: 'UTC' });
+    text += `*Fecha de Entrega:* ${formattedDate}\n`;
+  }
+  text += `\n*Detalle del Pedido:*\n`;
+
+  order.order_items?.forEach(item => {
+    const isSub = 
+      (item.category || '').toLowerCase().includes('sublimaci') && 
+      (item.product_category || '').toLowerCase().includes('panel');
+
+    if (isSub) {
+      const { desgloses } = calculateSublimationItemPrices(item);
+      Object.entries(desgloses).forEach(([panel, data]) => {
+        const match = panel.match(/^(\d+)/);
+        const panelsText = match ? `${match[1]} paneles` : panel.toLowerCase();
+        text += `\n*- ${data.tipo}: (${panelsText})*\n`;
+        data.tallas.forEach(t => {
+          text += `  Talla ${t.size}: ${t.qty} u. x ${formatCurrency(t.unitPrice)} = ${formatCurrency(t.subtotal)}\n`;
+        });
+      });
+    } else {
+      text += `\n*- ${item.name}*\n`;
+      text += `  Cantidad: ${item.quantity} x ${formatCurrency(item.unit_price)} = ${formatCurrency(item.total_price)}\n`;
+    }
+  });
+
+  const total = order.total_amount || 0;
+  const paid = order.paid_amount || 0;
+  const balance = total - paid;
+
+  text += `\n----------------------------------\n`;
+  text += `*Total del Pedido:* ${formatCurrency(total)}\n`;
+  text += `*Adelantos:* ${formatCurrency(paid)}\n`;
+  text += `*Saldo final:* ${formatCurrency(balance)}\n`;
+
+  return text;
+};
+
+const printClientReceipt = (order, formatCurrency) => {
+  const orderNum = order.order_number?.toString().padStart(4, '0') || '0000';
+  const clientName = order.terceros?.name || 'Cliente General';
+  const clientPhone = order.terceros?.phone || '';
+  const dateStr = new Date(order.created_at).toLocaleDateString('es-ES');
+  const deliveryStr = order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('es-ES') : '—';
+  
+  let itemsHtml = '';
+  
+  order.order_items?.forEach(item => {
+    const isSub = 
+      (item.category || '').toLowerCase().includes('sublimaci') && 
+      (item.product_category || '').toLowerCase().includes('panel');
+
+    if (isSub) {
+      const { desgloses } = calculateSublimationItemPrices(item);
+      Object.entries(desgloses).forEach(([panel, data]) => {
+        const match = panel.match(/^(\d+)/);
+        const panelsText = match ? `${match[1]} paneles` : panel.toLowerCase();
+        itemsHtml += `
+          <div class="item-group">
+            <div class="item-header">- ${data.tipo} (${panelsText})</div>
+            <table class="sizes-table">
+              <thead>
+                <tr>
+                  <th>Talla</th>
+                  <th>Cantidad</th>
+                  <th>Precio Unitario</th>
+                  <th>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
+        data.tallas.forEach(t => {
+          itemsHtml += `
+            <tr>
+              <td>Talla ${t.size}</td>
+              <td>${t.qty}</td>
+              <td>${formatCurrency(t.unitPrice)}</td>
+              <td>${formatCurrency(t.subtotal)}</td>
+            </tr>
+          `;
+        });
+        itemsHtml += `
+              </tbody>
+            </table>
+          </div>
+        `;
+      });
+    } else {
+      itemsHtml += `
+        <div class="item-group">
+          <div class="item-header">- ${item.name}</div>
+          <table class="sizes-table">
+            <thead>
+              <tr>
+                <th>Detalle</th>
+                <th>Cantidad</th>
+                <th>Precio Unitario</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>General</td>
+                <td>${item.quantity}</td>
+                <td>${formatCurrency(item.unit_price)}</td>
+                <td>${formatCurrency(item.total_price)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+  });
+
+  const total = order.total_amount || 0;
+  const paid = order.paid_amount || 0;
+  const balance = total - paid;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Recibo de Cobranza #${orderNum}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #333;
+          margin: 40px;
+          line-height: 1.4;
+        }
+        .header {
+          text-align: center;
+          border-bottom: 2px solid #333;
+          padding-bottom: 20px;
+          margin-bottom: 25px;
+        }
+        .title {
+          font-size: 24px;
+          font-weight: bold;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          margin: 0;
+        }
+        .subtitle {
+          font-size: 14px;
+          color: #666;
+          margin-top: 5px;
+        }
+        .info-grid {
+          display: grid;
+          grid-template-cols: 1fr 1fr;
+          gap: 15px;
+          margin-bottom: 30px;
+          font-size: 14px;
+        }
+        .info-label {
+          font-weight: bold;
+          text-transform: uppercase;
+          font-size: 12px;
+          color: #555;
+        }
+        .info-value {
+          margin-top: 2px;
+          font-weight: 600;
+        }
+        .item-group {
+          margin-bottom: 20px;
+        }
+        .item-header {
+          font-size: 16px;
+          font-weight: bold;
+          margin-bottom: 8px;
+          border-bottom: 1px solid #ddd;
+          padding-bottom: 4px;
+        }
+        .sizes-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 10px;
+          font-size: 13px;
+        }
+        .sizes-table th, .sizes-table td {
+          border: 1px solid #eee;
+          padding: 8px 12px;
+          text-align: left;
+        }
+        .sizes-table th {
+          background-color: #f9f9f9;
+          font-weight: bold;
+        }
+        .sizes-table td:nth-child(2), .sizes-table td:nth-child(3), .sizes-table td:nth-child(4),
+        .sizes-table th:nth-child(2), .sizes-table th:nth-child(3), .sizes-table th:nth-child(4) {
+          text-align: right;
+        }
+        .totals-section {
+          margin-top: 40px;
+          border-top: 2px solid #333;
+          padding-top: 15px;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .totals-table {
+          width: 300px;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
+        .totals-table td {
+          padding: 6px 12px;
+        }
+        .totals-table td:last-child {
+          text-align: right;
+          font-weight: bold;
+        }
+        .totals-table tr.total-row {
+          font-size: 16px;
+          border-bottom: 1px solid #ddd;
+        }
+        .totals-table tr.balance-row {
+          font-size: 18px;
+          color: #d32f2f;
+        }
+        .footer {
+          margin-top: 80px;
+          text-align: center;
+          font-size: 11px;
+          color: #999;
+          border-top: 1px dashed #ccc;
+          padding-top: 20px;
+        }
+        @media print {
+          body {
+            margin: 20px;
+          }
+          button {
+            display: none;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1 class="title">Recibo de Cobranza</h1>
+        <div class="subtitle">TEXTILQUOTE PRO - COMPROBANTE DE PAGO</div>
+      </div>
+      
+      <div class="info-grid">
+        <div>
+          <div><span class="info-label">Cliente:</span></div>
+          <div class="info-value">${clientName}</div>
+          ${clientPhone ? `<div style="font-size: 12px; color: #555; margin-top: 2px;">Teléfono: ${clientPhone}</div>` : ''}
+        </div>
+        <div style="text-align: right;">
+          <div><span class="info-label">No. Pedido:</span></div>
+          <div class="info-value" style="font-size: 16px; color: #3b82f6;">#${orderNum}</div>
+          <div style="margin-top: 5px;"><span class="info-label">Fecha Emisión:</span> ${dateStr}</div>
+          <div><span class="info-label">Fecha Entrega:</span> ${deliveryStr}</div>
+        </div>
+      </div>
+      
+      <div class="details">
+        <h2 style="font-size: 16px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ddd; padding-bottom: 5px;">Detalle de Trabajo</h2>
+        ${itemsHtml}
+      </div>
+      
+      <div class="totals-section">
+        <table class="totals-table">
+          <tr class="total-row">
+            <td>Total del Pedido:</td>
+            <td>${formatCurrency(total)}</td>
+          </tr>
+          <tr>
+            <td style="color: #2e7d32;">Adelantos / Pagos:</td>
+            <td style="color: #2e7d32;">${formatCurrency(paid)}</td>
+          </tr>
+          <tr class="balance-row">
+            <td>Saldo Final Pendiente:</td>
+            <td>${formatCurrency(balance)}</td>
+          </tr>
+        </table>
+      </div>
+      
+      <div class="footer">
+        Este documento es un comprobante de cobranza emitido digitalmente.<br>
+        Gracias por su preferencia y confianza.
+      </div>
+      
+      <script>
+        window.onload = function() {
+          window.print();
+        }
+      </script>
+    </body>
+    </html>
+  `;
+  
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
+  } else {
+    alert('Por favor, permita las ventanas emergentes (popups) para poder imprimir el recibo.');
+  }
+};
+
 const initialPanelSizes = PANELS_LIST.reduce((acc, panel) => ({
   ...acc,
   [panel]: SUBLIMATION_SIZES.reduce((accSize, size) => ({ ...accSize, [size]: 0 }), {})
@@ -219,6 +592,7 @@ export default function OrdersPage() {
   const [selectedPanelFilterEdit, setSelectedPanelFilterEdit] = useState('1 PANEL')
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentOrder, setSelectedPaymentOrder] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   const clientSuggestions = useMemo(() => {
     const query = orderForm.clientName?.trim().toLowerCase()
@@ -2757,9 +3131,142 @@ export default function OrdersPage() {
               </button>
             </div>
 
-            {detailsTab === 'trabajo' && (
-              <>
-                {/* Ítems del pedido */}
+            {detailsTab === 'trabajo' && (() => {
+              const hasSublimation = selectedOrder.order_items?.some(item => 
+                (item.category || '').toLowerCase().includes('sublimaci') && 
+                (item.product_category || '').toLowerCase().includes('panel')
+              );
+
+              const total = selectedOrder.total_amount || 0;
+              const paid = selectedOrder.paid_amount || 0;
+              const balance = total - paid;
+
+              const handleCopy = () => {
+                const text = formatWhatsAppInvoiceText(selectedOrder, formatCurrency);
+                navigator.clipboard.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              };
+
+              return (
+                <>
+                  {hasSublimation && (
+                    <Card className="bg-[#0b1329] border-2 border-primary/20 shadow-[0_0_20px_rgba(255,92,0,0.08)] rounded-2xl p-5 mb-6 space-y-4 text-left">
+                      <div className="flex justify-between items-center border-b border-white/10 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary text-xl">receipt_long</span>
+                          <div>
+                            <h4 className="text-sm font-bold text-white tracking-wide uppercase">Detalle de Cobranza</h4>
+                            <p className="text-[10px] text-on-surface-variant">Extracto oficial para el cliente</p>
+                          </div>
+                        </div>
+                        <span className="font-mono text-primary font-bold text-lg">
+                          No. #{selectedOrder.order_number?.toString().padStart(4, '0')}
+                        </span>
+                      </div>
+
+                      {/* Información de Cliente y Fechas */}
+                      <div className="grid grid-cols-2 gap-3 text-xs bg-white/[0.02] p-3 rounded-xl border border-white/5 font-mono">
+                        <div>
+                          <span className="text-on-surface-variant block text-[9px] uppercase">Cliente</span>
+                          <span className="font-bold text-white">{selectedOrder.terceros?.name || 'Cliente general'}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-on-surface-variant block text-[9px] uppercase">Fecha de Entrega</span>
+                          <span className="font-bold text-primary">
+                            {selectedOrder.delivery_date ? new Date(selectedOrder.delivery_date).toLocaleDateString('es-ES', { timeZone: 'UTC' }) : '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Desglose de ítems */}
+                      <div className="space-y-3 py-1 font-mono text-xs">
+                        {selectedOrder.order_items?.map(item => {
+                          const isSub = 
+                            (item.category || '').toLowerCase().includes('sublimaci') && 
+                            (item.product_category || '').toLowerCase().includes('panel');
+
+                          if (isSub) {
+                            const { desgloses } = calculateSublimationItemPrices(item);
+                            return Object.entries(desgloses).map(([panel, data]) => {
+                              const match = panel.match(/^(\d+)/);
+                              const panelsText = match ? `${match[1]} paneles` : panel.toLowerCase();
+                              return (
+                                <div key={panel} className="space-y-1.5 bg-white/[0.01] p-3 rounded-xl border border-white/5">
+                                  <div className="text-xs font-bold text-white flex items-center justify-between border-b border-white/5 pb-1">
+                                    <span>- {data.tipo}</span>
+                                    <span className="text-primary text-[10px] uppercase font-semibold">({panelsText})</span>
+                                  </div>
+                                  <div className="space-y-1 pl-2 text-on-surface-variant text-[11px]">
+                                    {data.tallas.map(t => (
+                                      <div key={t.size} className="flex justify-between">
+                                        <span>Talla {t.size}:</span>
+                                        <span>
+                                          {t.qty} x {formatCurrency(t.unitPrice)} = <strong className="text-white font-bold">{formatCurrency(t.subtotal)}</strong>
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          } else {
+                            return (
+                              <div key={item.id} className="space-y-1 bg-white/[0.01] p-3 rounded-xl border border-white/5">
+                                <div className="text-xs font-bold text-white border-b border-white/5 pb-1">
+                                  - {item.name}
+                                </div>
+                                <div className="flex justify-between pl-2 text-on-surface-variant text-[11px] pt-1">
+                                  <span>General:</span>
+                                  <span>
+                                    {item.quantity} x {formatCurrency(item.unit_price)} = <strong className="text-white font-bold">{formatCurrency(item.total_price)}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          }
+                        })}
+                      </div>
+
+                      {/* Resumen de Cuentas */}
+                      <div className="bg-black/30 p-4 rounded-xl border border-white/5 space-y-2 font-mono text-xs">
+                        <div className="flex justify-between items-center text-on-surface-variant">
+                          <span>Total del pedido:</span>
+                          <span className="font-bold text-white text-sm">{formatCurrency(total)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-on-surface-variant">
+                          <span>Adelantos:</span>
+                          <span className="font-bold text-emerald-400">{formatCurrency(paid)}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-white/10 pt-2">
+                          <span className="font-semibold text-white">Saldo final:</span>
+                          <span className={`text-sm font-bold ${balance > 0 ? 'text-[#ff5c00]' : 'text-emerald-400'}`}>
+                            {formatCurrency(balance)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                        <button
+                          onClick={handleCopy}
+                          className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 py-2 px-4 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold transition-all cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">share</span>
+                          {copied ? '¡Copiado al Portapapeles!' : 'Copiar para WhatsApp'}
+                        </button>
+                        <button
+                          onClick={() => printClientReceipt(selectedOrder, formatCurrency)}
+                          className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 py-2 px-4 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold transition-all cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">print</span>
+                          Imprimir Recibo / PDF
+                        </button>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Ítems del pedido */}
                 <div className="space-y-3">
                   <h4 className="text-xs font-mono uppercase tracking-wider text-on-surface-variant font-semibold text-left">
                     Detalle de Servicios / Productos
@@ -2987,7 +3494,8 @@ export default function OrdersPage() {
                   </div>
                 </div>
               </>
-            )}
+            );
+          })()}
 
             {detailsTab === 'finanzas' && (() => {
               if (loadingDetails) {
