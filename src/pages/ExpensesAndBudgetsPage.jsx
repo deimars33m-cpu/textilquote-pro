@@ -1375,7 +1375,7 @@ export default function ExpensesAndBudgetsPage() {
                               updateForm('subcategory', subcategory);
                               updateForm('specificItem', mat.material_name);
                               updateForm('materialId', mat.material_id);
-                              updateForm('quantity', mat.estimated_qty);
+                              updateForm('quantity', '');
                               updateForm('unitPrice', (mat.estimated_cost / mat.estimated_qty).toFixed(2) || 0);
                               setCalculatorPacks('');
                               setCalculatorPricePerPack('');
@@ -1651,31 +1651,18 @@ export default function ExpensesAndBudgetsPage() {
                         Cant. (Menor)
                       </label>
                       <div className="flex gap-1.5 items-center h-[42px]">
-                        <button
-                          type="button"
-                          onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))}
-                          className="btn-3d-raised w-10 h-full shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-[#ff5c00] cursor-pointer"
-                        >
-                          -
-                        </button>
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           step="0.01"
-                          value={form.quantity}
+                          placeholder="0"
+                          value={form.quantity || ''}
                           onChange={(e) => {
                             updateForm('quantity', e.target.value);
                             updateForm('wholesaleQuantity', ''); // Limpiar 'por mayor' si editan manualmente
                           }}
-                          className="w-full h-full min-w-0 px-2 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
+                          className="w-full h-full min-w-0 px-3 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
                         />
-                        <button
-                          type="button"
-                          onClick={() => updateForm('quantity', Number(form.quantity) + 1)}
-                          className="btn-3d-raised w-10 h-full shrink-0 flex items-center justify-center rounded-lg text-white font-bold text-base hover:text-emerald-400 cursor-pointer"
-                        >
-                          +
-                        </button>
                       </div>
                     </div>
 
