@@ -1616,9 +1616,9 @@ export default function ExpensesAndBudgetsPage() {
                 const showWholesale = selectedQuoteItem?.type === 'material' || form.materialId;
 
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                     {showWholesale && (
-                      <div className="space-y-0 w-full">
+                      <div className="w-full">
                         <label className="block text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1 whitespace-nowrap">
                           <span className="material-symbols-outlined text-[14px]">inventory_2</span> Por Mayor
                         </label>
@@ -1636,21 +1636,21 @@ export default function ExpensesAndBudgetsPage() {
                               updateForm('quantity', newTotalQty);
                             }
                           }}
-                          className={`w-full px-3 py-2.5 min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors`}
+                          className={`w-full px-3 py-2.5 min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors h-[42px]`}
                         />
                         {Number(form.wholesaleQuantity) > 0 && (
-                          <span className="text-[9px] text-primary text-center block mt-1 whitespace-nowrap">
+                          <span className="text-[9px] text-primary text-center block mt-1 absolute whitespace-nowrap">
                             {packQty} uds / {packUnit}
                           </span>
                         )}
                       </div>
                     )}
                     
-                    <div className="space-y-0 w-full">
+                    <div className="w-full">
                       <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5 ml-1 whitespace-nowrap truncate">
                         Cant. (Menor)
                       </label>
-                      <div className="flex gap-1.5 items-center h-[40px]">
+                      <div className="flex gap-1.5 items-center h-[42px]">
                         <button
                           type="button"
                           onClick={() => updateForm('quantity', Math.max(1, Number(form.quantity) - 1))}
@@ -1667,7 +1667,7 @@ export default function ExpensesAndBudgetsPage() {
                             updateForm('quantity', e.target.value);
                             updateForm('wholesaleQuantity', ''); // Limpiar 'por mayor' si editan manualmente
                           }}
-                          className="w-full h-full min-w-[50px] px-1 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
+                          className="w-full h-full min-w-0 px-2 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
                         />
                         <button
                           type="button"
@@ -1679,16 +1679,18 @@ export default function ExpensesAndBudgetsPage() {
                       </div>
                     </div>
 
-                    <Input
-                      label="P. Unit. (Bs)"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.unitPrice}
-                      onChange={(e) => updateForm('unitPrice', e.target.value)}
-                      className="font-mono text-lg text-white w-full"
-                    />
+                    <div className="w-full">
+                      <Input
+                        label="P. Unit. (Bs)"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={form.unitPrice}
+                        onChange={(e) => updateForm('unitPrice', e.target.value)}
+                        className="font-mono text-lg text-white [&>input]:h-[42px]"
+                      />
+                    </div>
                   </div>
                 );
               })()}
