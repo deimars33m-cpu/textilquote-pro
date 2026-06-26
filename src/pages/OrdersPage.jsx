@@ -1407,11 +1407,11 @@ export default function OrdersPage() {
                     <select
                       value={orderForm.quoteId}
                       onChange={(e) => handleQuoteSelection(e.target.value)}
-                      className="w-full bg-surface-variant/30 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 appearance-none"
+                      className="w-full bg-surface-variant/30 dark:bg-[#1e1e1e] border border-white/10 dark:border-white/20 rounded-lg px-3 py-2 text-[13px] text-on-surface dark:text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 appearance-none"
                     >
-                      <option value="">-- Ninguna --</option>
+                      <option value="" className="dark:bg-[#1e1e1e] dark:text-white">-- Ninguna --</option>
                       {approvedQuotes.map(q => (
-                        <option key={q.id} value={q.id}>
+                        <option key={q.id} value={q.id} className="dark:bg-[#1e1e1e] dark:text-white">
                           #{q.quote_number?.toString().padStart(4, '0')} - {q.project_name || 'Sin proyecto'} - {q.terceros?.name || q.client_name || 'Cliente anónimo'}
                         </option>
                       ))}
