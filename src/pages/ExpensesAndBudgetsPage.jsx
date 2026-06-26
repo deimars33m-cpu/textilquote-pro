@@ -1259,7 +1259,7 @@ export default function ExpensesAndBudgetsPage() {
                           className="w-full text-left p-3 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-primary/50 transition-colors flex items-center justify-between group"
                         >
                           <div>
-                            <span className="text-sm font-bold text-on-surface block group-hover:text-primary transition-colors">#{o.order_number?.toString().padStart(4, '0')} - {o.terceros?.name || 'Cliente'}</span>
+                            <span className="text-sm font-bold text-on-surface block group-hover:text-primary transition-colors">#{o.order_number ? o.order_number.toString().padStart(4, '0') : 'S/N'} - {o.terceros?.name || 'Cliente'}</span>
                             <span className="text-[10px] text-on-surface-variant uppercase font-mono">{o.status}</span>
                           </div>
                           <span className="material-symbols-outlined text-primary text-[18px]">chevron_right</span>
@@ -1317,7 +1317,7 @@ export default function ExpensesAndBudgetsPage() {
                   <div className="bg-primary/10 border border-primary/30 p-3 rounded-lg flex items-center justify-between">
                     <div>
                       <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Cotización Vinculada</span>
-                      <p className="text-sm font-bold text-on-surface">#{selectedQuoteForExpense.quote_number?.toString().padStart(4, '0')} - {selectedQuoteForExpense.project_name}</p>
+                      <p className="text-sm font-bold text-on-surface">#{selectedQuoteForExpense.quote_number ? selectedQuoteForExpense.quote_number.toString().padStart(4, '0') : 'S/N'} - {selectedQuoteForExpense.project_name}</p>
                     </div>
                   </div>
 
@@ -1326,7 +1326,7 @@ export default function ExpensesAndBudgetsPage() {
                     <label className="text-[10px] font-mono text-primary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">inventory_2</span> Materia Prima a Comprar</label>
                     <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
                       {(() => {
-                        const quoteMats = selectedQuoteForExpense.quote_items.flatMap(item => {
+                        const quoteMats = (selectedQuoteForExpense.quote_items || []).flatMap(item => {
                           const itemQty = Number(item.quantity) || 1;
                           return (item.quote_materials || []).map(m => {
                             const qtyReq = parseFloat(m.quantity_per_unit) || 0;
@@ -1381,7 +1381,7 @@ export default function ExpensesAndBudgetsPage() {
                     <label className="text-[10px] font-mono text-secondary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">badge</span> Procesos (Mano de Obra)</label>
                     <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
                       {(() => {
-                        const quoteProcs = selectedQuoteForExpense.quote_items.flatMap(item => {
+                        const quoteProcs = (selectedQuoteForExpense.quote_items || []).flatMap(item => {
                           return (item.quote_processes || []).map(p => ({ ...p, estimated_cost: Number(p.total_cost) || 0 }));
                         });
 
