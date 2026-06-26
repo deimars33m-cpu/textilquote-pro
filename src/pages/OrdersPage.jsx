@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { Card, SearchInput, Button, StatusBadge,
   LoadingSpinner, EmptyState, Select, AlertBanner, Modal,
-  Input, Textarea
+  Input, Textarea, PaymentStatusModal
 } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, formatQuoteNumber } from '@/lib/formatters'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
