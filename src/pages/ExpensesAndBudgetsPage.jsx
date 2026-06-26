@@ -371,8 +371,45 @@ export default function ExpensesAndBudgetsPage() {
   const [productionAvg, setProductionAvg] = useState(1000)
   const [providers, setProviders] = useState([])
   const [dependientes, setDependientes] = useState([])
-  const [terceroType, setTerceroType] = useState('proveedor')
-  const [saving, setSaving] = useState(false)
+  const [terceroType, setTerceroType] = useState('proveedor') // 'proveedor' o 'dependiente' o 'pedido'
+  const [selectedQuoteForExpense, setSelectedQuoteForExpense] = useState(null)
+  const [loadingQuoteForExpense, setLoadingQuoteForExpense] = useState(false)
+  const [selectedQuoteItem, setSelectedQuoteItem] = useState(null) // para saber si elegimos un material o un proceso
+
+  const fetchOrderQuoteDetails = async (orderId, quoteId) => {
+    if (!quoteId) return;
+    setLoadingQuoteForExpense(true);
+    setSelectedQuoteForExpense(null);
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select(`
+          *,
+          quote_items (
+            quantity,
+            quote_materials (
+              *,
+              materials (*)
+            ),
+            quote_processes (*)
+          )
+        `)
+        .eq('id', quoteId)
+        .single();
+      
+      if (!error && data) {
+        setSelectedQuoteForExpense(data);
+      }
+    } catch (e) {
+      console.error('Error fetching quote details:', e);
+    } finally {
+      setLoadingQuoteForExpense(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormOpen(false)
+  }
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
@@ -425,6 +462,8 @@ export default function ExpensesAndBudgetsPage() {
             total_amount,
             paid_amount,
             status,
+            quote_id,
+            category,
             terceros (name),
             order_items (
               id,
@@ -554,11 +593,15 @@ export default function ExpensesAndBudgetsPage() {
     setSaving(true)
     setError(null)
     try {
-      const defaultGenericName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
+      const actualTerceroType = terceroType === 'pedido'
+        ? (selectedQuoteItem?.type === 'proceso' ? 'dependiente' : 'proveedor')
+        : terceroType;
+
+      const defaultGenericName = actualTerceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
       const trimmedProvider = form.providerName.trim() || defaultGenericName
       let providerId = null
 
-      const list = terceroType === 'proveedor' ? providers : dependientes
+      const list = actualTerceroType === 'proveedor' ? providers : dependientes
       const existing = list.find(p => p.name.toLowerCase() === trimmedProvider.toLowerCase())
       if (existing) {
         providerId = existing.id
@@ -569,17 +612,17 @@ export default function ExpensesAndBudgetsPage() {
             .insert({
               user_id: user.id,
               name: trimmedProvider,
-              role: terceroType,
-              phone: form.providerPhone.trim() || null,
-              email: form.providerEmail.trim() || null,
-              notes: form.providerNit ? (terceroType === 'proveedor' ? `NIT: ${form.providerNit}` : `CI: ${form.providerNit}`) : null,
-              client_type: terceroType === 'proveedor' ? 'otro' : 'dependiente'
+              role: actualTerceroType,
+              phone: form.providerPhone?.trim() || null,
+              email: form.providerEmail?.trim() || null,
+              notes: form.providerNit ? (actualTerceroType === 'proveedor' ? `NIT: ${form.providerNit}` : `CI: ${form.providerNit}`) : null,
+              client_type: actualTerceroType === 'proveedor' ? 'otro' : 'dependiente'
             })
             .select()
             .single()
           if (!errProv && newProv) {
             providerId = newProv.id
-            if (terceroType === 'proveedor') {
+            if (actualTerceroType === 'proveedor') {
               setProviders(prev => [...prev, newProv])
             } else {
               setDependientes(prev => [...prev, newProv])
@@ -630,6 +673,8 @@ export default function ExpensesAndBudgetsPage() {
         materialId: ''
       })
       setTerceroType('proveedor')
+      setSelectedQuoteForExpense(null)
+      setSelectedQuoteItem(null)
       setCurrentStep(1)
       setSuccess('Transacción registrada con éxito')
       setFormOpen(false) // Cerrar modal si está en móvil
@@ -1101,34 +1146,50 @@ export default function ExpensesAndBudgetsPage() {
                   <span className="material-symbols-outlined text-[14px]">badge</span>
                   Dependiente
                 </button>
-              </div>
-
-              <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
-                <p className="text-[10px] text-on-surface-variant/80">
-                  {terceroType === 'proveedor' ? '¿Proveedor rápido?' : '¿Empleado rápido?'}
-                </p>
                 <button
                   type="button"
                   onClick={() => {
-                    const defaultName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
-                    updateForm('providerName', defaultName)
-                    updateForm('providerNit', '')
-                    updateForm('providerPhone', '')
-                    updateForm('providerEmail', '')
-                    setCurrentStep(2)
+                    setTerceroType('pedido')
                   }}
-                  className="btn-3d-raised px-2 py-1 rounded-md text-[9px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-0.5"
+                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
+                    terceroType === 'pedido'
+                      ? 'bg-[#ff5c00] text-white shadow-sm'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-[12px]">bolt</span>
-                  Usar Genérico
+                  <span className="material-symbols-outlined text-[14px]">inventory_2</span>
+                  Pedido Cotizado
                 </button>
               </div>
 
-              <div className="space-y-3">
-                <div className="relative">
-                  <Input
-                    label={terceroType === 'proveedor' ? "Nombre o Razón Social" : "Nombre del Empleado"}
-                    value={form.providerName}
+              {terceroType !== 'pedido' ? (
+                <>
+                  <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
+                    <p className="text-[10px] text-on-surface-variant/80">
+                      {terceroType === 'proveedor' ? '¿Proveedor rápido?' : '¿Empleado rápido?'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
+                        updateForm('providerName', defaultName)
+                        updateForm('providerNit', '')
+                        updateForm('providerPhone', '')
+                        updateForm('providerEmail', '')
+                        setCurrentStep(2)
+                      }}
+                      className="btn-3d-raised px-2 py-1 rounded-md text-[9px] font-bold text-[#ff5c00] hover:text-white transition-colors cursor-pointer flex items-center gap-0.5"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">bolt</span>
+                      Usar Genérico
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Input
+                        label={terceroType === 'proveedor' ? "Nombre o Razón Social" : "Nombre del Empleado"}
+                        value={form.providerName}
                     onChange={e => updateForm('providerName', e.target.value)}
                     placeholder={terceroType === 'proveedor' ? "Ej. Comercializadora XYZ S.A." : "Ej. Juan Pérez"}
                     error={error && !form.providerName ? 'Requerido' : null}
@@ -1178,6 +1239,36 @@ export default function ExpensesAndBudgetsPage() {
                   />
                 </div>
               </div>
+            </>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-on-surface-variant/80">Selecciona el pedido activo al cual deseas asignarle este gasto:</p>
+                  <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                    {orders.filter(o => o.quote_id && ['pendiente', 'en_proceso'].includes(o.status)).length === 0 ? (
+                      <div className="text-xs italic text-on-surface-variant p-4 text-center">No hay pedidos cotizados activos.</div>
+                    ) : (
+                      orders.filter(o => o.quote_id && ['pendiente', 'en_proceso'].includes(o.status)).map(o => (
+                        <button
+                          key={o.id}
+                          type="button"
+                          onClick={() => {
+                            updateForm('orderId', o.id);
+                            fetchOrderQuoteDetails(o.id, o.quote_id);
+                            setCurrentStep(2.5); // 2.5 is the new special step
+                          }}
+                          className="w-full text-left p-3 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-primary/50 transition-colors flex items-center justify-between group"
+                        >
+                          <div>
+                            <span className="text-sm font-bold text-on-surface block group-hover:text-primary transition-colors">#{o.order_number?.toString().padStart(4, '0')} - {o.terceros?.name || 'Cliente'}</span>
+                            <span className="text-[10px] text-on-surface-variant uppercase font-mono">{o.status}</span>
+                          </div>
+                          <span className="material-symbols-outlined text-primary text-[18px]">chevron_right</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1213,6 +1304,135 @@ export default function ExpensesAndBudgetsPage() {
                   })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* PASO 2.5: Selección de Ítems Cotizados (Solo para modo "Pedido") */}
+          {currentStep === 2.5 && (
+            <div className="space-y-6 animate-fade-in">
+              {loadingQuoteForExpense ? (
+                <div className="flex justify-center p-8"><span className="material-symbols-outlined animate-spin text-primary text-3xl">refresh</span></div>
+              ) : selectedQuoteForExpense ? (
+                <div className="space-y-6">
+                  <div className="bg-primary/10 border border-primary/30 p-3 rounded-lg flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Cotización Vinculada</span>
+                      <p className="text-sm font-bold text-on-surface">#{selectedQuoteForExpense.quote_number?.toString().padStart(4, '0')} - {selectedQuoteForExpense.project_name}</p>
+                    </div>
+                  </div>
+
+                  {/* Materiales */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-mono text-primary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">inventory_2</span> Materia Prima a Comprar</label>
+                    <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                      {(() => {
+                        const quoteMats = selectedQuoteForExpense.quote_items.flatMap(item => {
+                          const itemQty = Number(item.quantity) || 1;
+                          return (item.quote_materials || []).map(m => {
+                            const qtyReq = parseFloat(m.quantity_per_unit) || 0;
+                            const price = parseFloat(m.unit_price) || 0;
+                            const waste = parseFloat(m.waste_pct) || 0;
+                            const baseTotal = qtyReq * itemQty;
+                            const totalRequired = baseTotal + (baseTotal * waste / 100);
+                            const packQty = parseFloat(m.materials?.purchase_quantity) || 1;
+                            const toBuy = Math.ceil(totalRequired / packQty);
+                            return { ...m, estimated_qty: toBuy * packQty, estimated_cost: toBuy * packQty * price };
+                          });
+                        });
+
+                        return quoteMats.length === 0 ? (
+                          <p className="text-xs text-on-surface-variant italic">No hay materiales cotizados.</p>
+                        ) : quoteMats.map((mat, idx) => (
+                          <button
+                            key={`mat-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              const categoryKey = Object.keys(expenseStructure).find(k => expenseStructure[k].label?.toLowerCase().includes('materia prima') || expenseStructure[k].label?.toLowerCase().includes('insumos')) || Object.keys(expenseStructure)[0];
+                              const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
+                              const subcategory = subcats.find(s => s.toLowerCase().includes('insumo') || s.toLowerCase().includes('tela')) || subcats[0] || 'Insumos';
+                              
+                              updateForm('categoryKey', categoryKey);
+                              updateForm('subcategory', subcategory);
+                              updateForm('specificItem', mat.material_name);
+                              updateForm('materialId', mat.material_id);
+                              updateForm('quantity', mat.estimated_qty);
+                              updateForm('unitPrice', (mat.estimated_cost / mat.estimated_qty).toFixed(2) || 0);
+                              setSelectedQuoteItem({ type: 'material', data: mat });
+                              setCurrentStep(5);
+                            }}
+                            className="w-full text-left p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-primary/50 transition-colors group"
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className="text-[12px] font-bold text-on-surface group-hover:text-primary transition-colors">{mat.material_name}</span>
+                              <span className="text-[10px] font-mono text-on-surface-variant">{mat.estimated_qty} uds</span>
+                            </div>
+                            <div className="flex justify-between items-end mt-1">
+                              <span className="text-[10px] text-on-surface-variant line-clamp-1">Est. {mat.estimated_cost.toFixed(2)} Bs</span>
+                              <span className="material-symbols-outlined text-primary text-[14px]">arrow_forward</span>
+                            </div>
+                          </button>
+                        ))
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Mano de Obra */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-mono text-secondary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">badge</span> Procesos (Mano de Obra)</label>
+                    <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                      {(() => {
+                        const quoteProcs = selectedQuoteForExpense.quote_items.flatMap(item => {
+                          return (item.quote_processes || []).map(p => ({ ...p, estimated_cost: Number(p.total_cost) || 0 }));
+                        });
+
+                        return quoteProcs.length === 0 ? (
+                          <p className="text-xs text-on-surface-variant italic">No hay procesos cotizados.</p>
+                        ) : quoteProcs.map((proc, idx) => (
+                          <button
+                            key={`proc-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              const categoryKey = Object.keys(expenseStructure).find(k => expenseStructure[k].label?.toLowerCase().includes('mano de obra')) || Object.keys(expenseStructure)[0];
+                              const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
+                              const subcategory = subcats.find(s => s.toLowerCase().includes('destajo') || s.toLowerCase().includes(proc.process_name?.toLowerCase())) || subcats[0] || 'Destajo';
+                              
+                              updateForm('categoryKey', categoryKey);
+                              updateForm('subcategory', subcategory);
+                              updateForm('specificItem', proc.process_name || proc.name);
+                              updateForm('quantity', 1);
+                              updateForm('unitPrice', proc.estimated_cost || 0);
+                              setSelectedQuoteItem({ type: 'proceso', data: proc });
+                              setCurrentStep(5);
+                            }}
+                            className="w-full text-left p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-secondary/50 transition-colors group"
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className="text-[12px] font-bold text-on-surface group-hover:text-secondary transition-colors">{proc.process_name || proc.name}</span>
+                              <span className="text-[10px] font-mono text-on-surface-variant">Est. {proc.estimated_cost.toFixed(2)} Bs</span>
+                            </div>
+                          </button>
+                        ))
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Varios / Otros */}
+                  <div className="pt-2 border-t border-outline-variant/30">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedQuoteItem({ type: 'otros', data: null });
+                        setCurrentStep(2); // Jump back to regular category selection, but keeping orderId
+                      }}
+                      className="w-full text-center p-2 rounded-lg bg-surface-container border border-outline-variant/50 hover:bg-white/[0.02] text-xs font-bold text-on-surface-variant hover:text-on-surface transition-colors"
+                    >
+                      Asignar un Gasto Vario a este Pedido (Ej. Transporte)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-error">Error al cargar la cotización.</p>
+              )}
             </div>
           )}
 
@@ -1306,6 +1526,40 @@ export default function ExpensesAndBudgetsPage() {
                 value={form.date}
                 onChange={(e) => updateForm('date', e.target.value)}
               />
+
+              {terceroType === 'pedido' && selectedQuoteItem?.type !== 'otros' && (
+                <div className="bg-surface-container-high p-3 rounded-lg border border-outline-variant/30 space-y-3">
+                  <label className="text-[11px] font-bold text-on-surface-variant">
+                    {selectedQuoteItem?.type === 'material' ? '¿A qué proveedor se le compró?' : '¿A qué dependiente se le pagó?'}
+                  </label>
+                  <div className="relative">
+                    <Input
+                      value={form.providerName}
+                      onChange={e => updateForm('providerName', e.target.value)}
+                      placeholder={selectedQuoteItem?.type === 'material' ? "Proveedor Genérico" : "Empleado Genérico"}
+                      error={error && !form.providerName ? 'Requerido' : null}
+                    />
+                    {suggestions.length > 0 && (
+                      <div className="absolute z-30 w-full mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-outline-variant/30">
+                        {suggestions.map(prov => (
+                          <div
+                            key={prov.id}
+                            className="p-3 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
+                            onClick={() => {
+                              updateForm('providerName', prov.name)
+                              updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || prov.notes?.match(/CI:\s*([^\s,]+)/)?.[1] || '')
+                              updateForm('providerPhone', prov.phone || '')
+                              updateForm('providerEmail', prov.email || '')
+                            }}
+                          >
+                            <span className="font-semibold text-left block">{prov.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
