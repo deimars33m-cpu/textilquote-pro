@@ -1616,7 +1616,7 @@ export default function ExpensesAndBudgetsPage() {
                 const showWholesale = selectedQuoteItem?.type === 'material' || form.materialId;
 
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                     {showWholesale && (
                       <div className="w-full">
                         <label className="block text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1 whitespace-nowrap">
