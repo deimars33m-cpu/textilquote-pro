@@ -511,6 +511,7 @@ export default function ExpensesAndBudgetsPage() {
   })
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   const suggestions = useMemo(() => {
     const q = form.providerName.trim().toLowerCase()
