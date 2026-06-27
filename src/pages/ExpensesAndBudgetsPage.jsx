@@ -1704,7 +1704,7 @@ export default function ExpensesAndBudgetsPage() {
                     <button
                       type="button"
                       onClick={() => updateForm('advanceAmount', form.amount)}
-                      className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                      className="btn-3d-raised px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
                     >
                       <span className="material-symbols-outlined text-[14px]">done_all</span>
                       Pagar 100%
@@ -1744,7 +1744,7 @@ export default function ExpensesAndBudgetsPage() {
                         key={method.id}
                         type="button"
                         onClick={() => updateForm('paymentMethod', method.id)}
-                        className={`btn-3d-raised rounded-xl py-2 px-3 flex items-center gap-2 cursor-pointer ${isActive ? 'btn-3d-active border-emerald-500/50 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'hover:bg-white/[0.02] text-on-surface'
+                        className={`btn-3d-raised rounded-xl py-2 px-3 flex items-center gap-2 cursor-pointer ${isActive ? 'btn-3d-active border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'hover:bg-white/[0.02] text-on-surface'
                           }`}
                       >
                         <span className="material-symbols-outlined text-[18px]">{method.icon}</span>
@@ -2037,7 +2037,7 @@ export default function ExpensesAndBudgetsPage() {
                                   <span className="text-[10px] text-on-surface-variant block mt-0.5">
                                     {e.quantity} uds × {formatCurrency(price, 0)}
                                   </span>
-                                  <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
                                     Adelanto: {formatCurrency(adv || 0)}
                                   </span>
                                 </td>
@@ -2046,7 +2046,7 @@ export default function ExpensesAndBudgetsPage() {
                                 <td className="py-2.5 px-4 text-center min-w-[170px]">
                                   <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                                     {/* Método de pago */}
-                                    <span className="text-[10px] font-semibold text-white/70 uppercase font-mono">{method}</span>
+                                    <span className="text-[10px] font-semibold text-on-surface-variant/80 uppercase font-mono">{method}</span>
 
                                     {/* Estado del pago (BOTON) */}
                                     <button
@@ -2674,7 +2674,7 @@ export default function ExpensesAndBudgetsPage() {
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] font-mono uppercase text-on-surface-variant block">Monto Pagado / Adelanto</span>
-                <span className="text-lg font-mono font-bold text-emerald-400">
+                <span className="text-lg font-mono font-bold text-emerald-600 dark:text-emerald-400">
                   {formatCurrency(selectedExpense.advance_amount || selectedExpense.advanceAmount || selectedExpense.amount)}
                 </span>
               </div>
