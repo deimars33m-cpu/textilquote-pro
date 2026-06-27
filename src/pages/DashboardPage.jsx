@@ -285,7 +285,7 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
               {data.map((item, idx) => {
                 const percent = item.value / total
                 const dashArray = `${percent * circumference} ${circumference}`
-                const dashOffset = circumference - (accumulatedPercent * circumference)
+                const dashOffset = -(accumulatedPercent * circumference)
                 accumulatedPercent += percent
 
                 const isHovered = hoveredIndex === idx
