@@ -2797,11 +2797,11 @@ export default function OrdersPage() {
                       const firstItem = order.order_items?.[0]
                       const orderNum = `#${order.order_number?.toString().padStart(4, '0')}`
 
-                      // Mapeos visuales de estados de pago
+                      // Mapeos visuales de estados de pago (estilo 3D con luces/sombras sin bordes)
                       const paymentBadges = {
-                        pendiente: 'bg-error-container/20 text-error border border-error/20 hover:bg-error-container/30',
-                        adelanto: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
-                        pagado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20'
+                        pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
                       }
 
                       const paymentLabels = {
@@ -2810,13 +2810,13 @@ export default function OrdersPage() {
                         pagado: 'Pagado'
                       }
 
-                      // Mapeo visual de producción
+                      // Mapeo visual de producción (estilo 3D con luces/sombras sin bordes)
                       const statusBadges = {
-                        pendiente: 'bg-white/5 text-on-surface-variant border border-white/10 hover:bg-white/10',
-                        en_proceso: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
-                        listo: 'bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20',
-                        entregado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20',
-                        cancelado: 'bg-error-container/25 text-error border border-error/20 hover:bg-error-container/35'
+                        pendiente: 'bg-gradient-to-b from-[#64748b] to-[#475569] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(71,85,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        en_proceso: 'bg-gradient-to-b from-[#ffb03a] to-[#d97706] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(217,119,6,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        listo: 'bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(29,78,216,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        entregado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                        cancelado: 'bg-gradient-to-b from-[#ef4444] to-[#dc2626] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(220,38,38,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
                       }
 
                       const statusLabels = {
@@ -2971,7 +2971,7 @@ export default function OrdersPage() {
                               {/* Estado de produccion button */}
                               <button
                                 onClick={() => handleUpdateStatus(order.id, order.status)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
                                 title="Click para cambiar estado de producción"
                               >
                                 {statusLabels[order.status]}
@@ -2980,7 +2980,7 @@ export default function OrdersPage() {
                               {/* Estado de pago button */}
                               <button
                                 onClick={() => handleUpdatePaymentStatus(order)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
                                 title="Click para administrar pagos"
                               >
                                 {paymentLabels[order.payment_status]}

@@ -1988,9 +1988,9 @@ export default function ExpensesAndBudgetsPage() {
                               pagado: 'Pagado'
                             }
                             const paymentBadges = {
-                              pendiente: 'bg-error-container/20 text-error border border-error/20 hover:bg-error-container/30',
-                              adelanto: 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20',
-                              pagado: 'bg-tertiary/10 text-tertiary border border-tertiary/20 hover:bg-tertiary/20'
+                              pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                              adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                              pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
                             }
 
                             return (
@@ -2051,7 +2051,7 @@ export default function ExpensesAndBudgetsPage() {
                                     {/* Estado del pago (BOTON) */}
                                     <button
                                       onClick={() => handleUpdateExpensePaymentStatus(e)}
-                                      className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
+                                      className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
                                       title="Click para administrar pagos"
                                     >
                                       {paymentLabels[paymentStatus]}
