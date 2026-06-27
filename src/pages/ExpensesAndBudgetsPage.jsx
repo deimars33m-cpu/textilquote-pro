@@ -1049,28 +1049,22 @@ export default function ExpensesAndBudgetsPage() {
     const subRevenueRatio = totalPeriodRevenue > 0 ? (periodRevenues.servicios_sublimacion / totalPeriodRevenue) : 0
     const subProratedOverhead = subRevenueRatio * periodOverheadCosts
 
-    // Prorratear los costos de insumos entre paneles y metros basados en sus ingresos correspondientes (ventas actuales)
-    const panelRevenueRatio = totalSubRevenue > 0 ? panelRevenue / totalSubRevenue : 0
-    const meterRevenueRatio = totalSubRevenue > 0 ? meterRevenue / totalSubRevenue : 0
-
-    const expensesAllocatedToPanels = totalSubExpenses * panelRevenueRatio
-
-    // Costos directos de insumos por unidad
-    const avgInkCostPerPanel = totalNominalPanels > 0 ? (inkCost * panelRevenueRatio) / totalNominalPanels : 0
-    const avgPaperCostPerPanel = totalNominalPanels > 0 ? (paperCost * panelRevenueRatio) / totalNominalPanels : 0
+    // Divisón directa y limpia de insumos y gastos fijos entre el volumen de producción
+    const avgInkCostPerPanel = totalNominalPanels > 0 ? inkCost / totalNominalPanels : 0
+    const avgPaperCostPerPanel = totalNominalPanels > 0 ? paperCost / totalNominalPanels : 0
     
-    // Costo por panel nominal vendido (Costo asignado a paneles ÷ Paneles nominales)
-    const avgCombinedCostPerPanel = totalNominalPanels > 0 ? expensesAllocatedToPanels / totalNominalPanels : 0
+    // Costo directo por panel nominal (Suma total de insumos ÷ Paneles nominales)
+    const avgCombinedCostPerPanel = totalNominalPanels > 0 ? totalSubExpenses / totalNominalPanels : 0
     
-    // Costo por panel equivalente/prorrateado (Costo asignado a paneles ÷ Paneles prorrateados)
-    const avgCostPerEquivalentPanel = totalEquivalentPanels > 0 ? expensesAllocatedToPanels / totalEquivalentPanels : 0
+    // Costo directo por panel equivalente (Suma total de insumos ÷ Paneles prorrateados)
+    const avgCostPerEquivalentPanel = totalEquivalentPanels > 0 ? totalSubExpenses / totalEquivalentPanels : 0
     
-    // Costo por metro cuadrado de impresión (m²) global
+    // Costo directo por metro cuadrado (m²) (Suma total de insumos ÷ Metraje total m²)
     const avgCostPerM2 = totalM2 > 0 ? totalSubExpenses / totalM2 : 0
 
-    // Overhead asignado a sublimación prorrateado por volumen
-    const overheadPerNominalPanel = totalNominalPanels > 0 ? (subProratedOverhead * panelRevenueRatio) / totalNominalPanels : 0
-    const overheadPerEquivalentPanel = totalEquivalentPanels > 0 ? (subProratedOverhead * panelRevenueRatio) / totalEquivalentPanels : 0
+    // Overhead asignado a sublimación prorrateado directamente por volumen
+    const overheadPerNominalPanel = totalNominalPanels > 0 ? subProratedOverhead / totalNominalPanels : 0
+    const overheadPerEquivalentPanel = totalEquivalentPanels > 0 ? subProratedOverhead / totalEquivalentPanels : 0
     const overheadPerM2 = totalM2 > 0 ? subProratedOverhead / totalM2 : 0
 
     // Costos totales unitarios (Directo + Prorrateo Fijo)
