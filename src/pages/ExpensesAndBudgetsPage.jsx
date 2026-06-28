@@ -22,6 +22,16 @@ const CATEGORY_ICONS = {
   CASA_FAMILIA: 'home'
 }
 
+const CATEGORY_COLORS = {
+  INSUMOS: '#f59e0b',       // Naranja Cálido / Amber (Insumos)
+  GASTOS_FIJOS: '#ef4444',  // Coral / Crimson Red (Gastos Fijos)
+  OPERATIVOS: '#3b82f6',    // Azul Vibrante
+  INDIRECTOS: '#a855f7',    // Púrpura Eléctrico
+  PERSONAL: '#ec4899',      // Magenta / Rosa Vivo
+  CASA_FAMILIA: '#06b6d4',  // Cian / Turquesa
+  TERCEROS: '#10b981'       // Esmeralda
+}
+
 // --- Neural line chart component for futuristic trend ---
 function NeuralLineChart({ data, total }) {
   const maxAmount = Math.max(...data.map(d => d.amount), 100)
@@ -139,33 +149,34 @@ function NeuralLineChart({ data, total }) {
   )
 }
 
-// --- Neural donut chart component ---
+// --- Neural pie chart component for expense distribution ---
 function NeuralDonut({ data, total }) {
   const [hoveredIndex, setHoveredIndex] = useState(-1)
   
-  const radius = 50
-  const strokeWidth = 12
   const size = 120
-  const circumference = 2 * Math.PI * radius // ~314.16
-  
-  const colors = [
-    'var(--color-primary)',
-    'var(--color-secondary)',
-    'var(--color-tertiary)',
-    '#38bdf8', // Light blue
-    '#f59e0b', // Amber
-    '#ec4899', // Pink
-    '#a855f7'  // Purple
+  const radius = 52
+  const cx = size / 2
+  const cy = size / 2
+
+  const fallbackColors = [
+    '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#ec4899', '#06b6d4', '#10b981', '#8b5cf6'
   ]
 
-  let accumulatedPercent = 0
+  const getItemColor = (item, idx) => {
+    if (item.key && CATEGORY_COLORS[item.key]) {
+      return CATEGORY_COLORS[item.key]
+    }
+    return fallbackColors[idx % fallbackColors.length]
+  }
+
+  let currentAngle = -Math.PI / 2
 
   return (
     <div className="neu-surface p-5 transition-all duration-300 flex flex-col justify-between h-auto lg:h-full relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.05),rgba(255,255,255,0))] pointer-events-none" />
       <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-3 z-10">
         <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
-          <span className="material-symbols-outlined text-[18px] text-tertiary animate-spin-slow">donut_large</span>
+          <span className="material-symbols-outlined text-[18px] text-primary animate-pulse">pie_chart</span>
           Distribución de Egresos
         </h3>
       </div>
@@ -177,76 +188,70 @@ function NeuralDonut({ data, total }) {
         </div>
       ) : (
         <div className="flex flex-col sm:flex-row items-center gap-4 flex-grow z-10">
-          {/* SVG Doughnut */}
+          {/* SVG Solid Pie Chart (Torta) */}
           <div className="relative flex items-center justify-center shrink-0 select-none">
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform rotate-[-90deg]">
-              <circle
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="none"
-                stroke="var(--color-outline-variant)"
-                strokeWidth={strokeWidth}
-                opacity="0.08"
-              />
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="overflow-visible">
               {data.map((item, idx) => {
                 const percent = item.value / total
-                const dashArray = `${percent * circumference} ${circumference}`
-                const dashOffset = -(accumulatedPercent * circumference)
-                accumulatedPercent += percent
+                const angleSpan = percent * 2 * Math.PI
+                const startAngle = currentAngle
+                const endAngle = currentAngle + angleSpan
+                currentAngle = endAngle
 
                 const isHovered = hoveredIndex === idx
-                const color = colors[idx % colors.length]
+                const color = getItemColor(item, idx)
+
+                if (data.length === 1 || percent >= 0.999) {
+                  return (
+                    <circle
+                      key={item.key}
+                      cx={cx}
+                      cy={cy}
+                      r={radius}
+                      fill={color}
+                      className="cursor-pointer transition-all duration-300"
+                      onMouseEnter={() => setHoveredIndex(idx)}
+                      onMouseLeave={() => setHoveredIndex(-1)}
+                    />
+                  )
+                }
+
+                const midAngle = (startAngle + endAngle) / 2
+                const shift = isHovered ? 4 : 0
+                const shiftX = Math.cos(midAngle) * shift
+                const shiftY = Math.sin(midAngle) * shift
+
+                const x1 = cx + radius * Math.cos(startAngle)
+                const y1 = cy + radius * Math.sin(startAngle)
+                const x2 = cx + radius * Math.cos(endAngle)
+                const y2 = cy + radius * Math.sin(endAngle)
+                const largeArcFlag = angleSpan > Math.PI ? 1 : 0
+
+                const pathData = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`
 
                 return (
-                  <circle
+                  <path
                     key={item.key}
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={isHovered ? strokeWidth + 2 : strokeWidth}
-                    strokeDasharray={dashArray}
-                    strokeDashoffset={dashOffset}
-                    strokeLinecap="round"
+                    d={pathData}
+                    fill={color}
                     className="cursor-pointer transition-all duration-300 origin-center"
+                    style={{
+                      transform: `translate(${shiftX}px, ${shiftY}px)`,
+                      filter: isHovered ? 'brightness(1.15) drop-shadow(0 0 6px rgba(255,255,255,0.4))' : 'none'
+                    }}
                     onMouseEnter={() => setHoveredIndex(idx)}
                     onMouseLeave={() => setHoveredIndex(-1)}
                   />
                 )
               })}
             </svg>
-            
-            <div className="absolute flex flex-col items-center justify-center text-center max-w-[75px] pointer-events-none">
-              {hoveredIndex === -1 ? (
-                <>
-                  <span className="text-[8px] uppercase font-bold text-on-surface-variant/80 tracking-tight leading-none mb-0.5">Total</span>
-                  <span className="font-mono text-[10px] font-black text-on-surface leading-none truncate w-full">
-                    {formatCurrency(total, 0)}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="text-[8px] uppercase font-bold text-primary tracking-tight leading-none mb-0.5 truncate w-full">
-                    {data[hoveredIndex].name}
-                  </span>
-                  <span className="font-mono text-[10px] font-black text-on-surface leading-none">
-                    {formatCurrency(data[hoveredIndex].value, 0)}
-                  </span>
-                  <span className="text-[8px] text-on-surface-variant/80 font-mono mt-0.5 font-bold leading-none">
-                    {Math.round((data[hoveredIndex].value / total) * 100)}%
-                  </span>
-                </>
-              )}
-            </div>
           </div>
 
           {/* Legend Items */}
-          <div className="flex-1 w-full space-y-1 max-h-[120px] overflow-y-auto pr-1">
-            {data.slice(0, 5).map((item, idx) => {
+          <div className="flex-1 w-full space-y-1 max-h-[130px] overflow-y-auto pr-1">
+            {data.slice(0, 6).map((item, idx) => {
               const percent = Math.round((item.value / total) * 100)
-              const color = colors[idx % colors.length]
+              const color = getItemColor(item, idx)
               const isHovered = hoveredIndex === idx
 
               return (
@@ -262,7 +267,7 @@ function NeuralDonut({ data, total }) {
                 >
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: color }}
                     />
                     <span className="font-medium text-on-surface truncate pr-1">
