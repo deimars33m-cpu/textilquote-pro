@@ -956,7 +956,7 @@ export default function ExpensesAndBudgetsPage() {
       }
     })
     
-    const totalSubExpenses = inkCost + paperCost + otherSubCost
+    const totalSubExpenses = inkCost + paperCost
 
     // 2. Filtrar pedidos por periodo
     const filteredOrders = orders.filter(o => {
