@@ -36,109 +36,151 @@ const CATEGORY_COLORS = {
 function NeuralLineChart({ data, total }) {
   const maxAmount = Math.max(...data.map(d => d.amount), 100)
   const width = 500
-  const height = 160
-  const padding = 20
-  
+  const height = 140
+  const paddingTop = 20
+  const paddingBottom = 25
+  const paddingSide = 25
+
   const points = data.map((d, i) => {
-    const x = padding + (i * (width - 2 * padding)) / (data.length - 1)
-    const y = height - padding - (d.amount / maxAmount) * (height - 2 * padding)
+    const x = paddingSide + (i * (width - 2 * paddingSide)) / Math.max(1, data.length - 1)
+    const y = height - paddingBottom - (d.amount / maxAmount) * (height - paddingTop - paddingBottom)
     return { x, y, ...d }
   })
-  
+
+  // Smooth spline calculation
   const pathD = points.reduce((acc, p, i) => {
-    return i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`
+    if (i === 0) return `M ${p.x} ${p.y}`
+    const prev = points[i - 1]
+    const cx = (prev.x + p.x) / 2
+    return `${acc} C ${cx} ${prev.y}, ${cx} ${p.y}, ${p.x} ${p.y}`
   }, '')
 
-  const areaD = points.length > 0 
-    ? `${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
+  const areaD = points.length > 0
+    ? `${pathD} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`
     : ''
 
   const [hoveredPoint, setHoveredPoint] = useState(null)
 
   return (
-    <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto lg:h-full">
+    <div className="neu-surface p-5 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-auto rounded-2xl">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,122,0,0.07),rgba(255,255,255,0))] pointer-events-none" />
-      <div className="flex items-center justify-between mb-4 z-10">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2 z-10">
         <div>
           <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-primary animate-pulse">insights</span>
             Flujo Neural de Gastos (Últimos 15 Días)
           </h3>
-          <p className="text-[10px] text-on-surface-variant">Monitoreo continuo de egresos por día</p>
+          <p className="text-[10px] text-on-surface-variant">Monitoreo continuo de egresos diarios con escala adaptativa</p>
         </div>
         {hoveredPoint ? (
           <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 animate-fade-in whitespace-nowrap">
             Día {hoveredPoint.label}: {formatCurrency(hoveredPoint.amount)}
           </span>
         ) : (
-          <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">Promedio: {formatCurrency(total / 15)}/día</span>
+          <div className="text-right">
+            <span className="text-[10px] font-mono text-on-surface-variant block whitespace-nowrap">Máx: {formatCurrency(maxAmount)}</span>
+            <span className="text-[9px] font-mono text-primary/80 block whitespace-nowrap">Prom: {formatCurrency(total / 15)}/día</span>
+          </div>
         )}
       </div>
 
-      <div className="relative h-[130px] w-full z-10">
+      {/* SVG Container (Compact & Adaptive) */}
+      <div className="relative h-[130px] w-full z-10 mt-1">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
           <defs>
-            <linearGradient id="neon-glow" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="var(--color-primary)" />
-              <stop offset="100%" stopColor="var(--color-secondary)" />
+            <linearGradient id="neon-glow" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#f59e0b" />
+              <stop offset="50%" stopColor="#ff5c00" />
+              <stop offset="100%" stopColor="#ef4444" />
             </linearGradient>
             <linearGradient id="area-glow" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#ff5c00" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#ff5c00" stopOpacity="0.0" />
             </linearGradient>
             <filter id="glow-effect" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
 
-          {/* Grid lines */}
-          {[0, 0.25, 0.5, 0.75, 1].map((p, idx) => {
-            const y = padding + p * (height - 2 * padding)
+          {/* Grid horizontal reference lines */}
+          {[0, 0.33, 0.66, 1].map((p, idx) => {
+            const y = paddingTop + p * (height - paddingTop - paddingBottom)
             return (
               <line 
                 key={idx} 
-                x1={padding} 
+                x1={paddingSide} 
                 y1={y} 
-                x2={width - padding} 
+                x2={width - paddingSide} 
                 y2={y} 
                 stroke="var(--color-outline-variant)" 
                 strokeWidth="1" 
-                opacity="0.06" 
-                strokeDasharray="4 4"
+                opacity="0.08" 
+                strokeDasharray="3 3"
               />
             )
           })}
 
-          {/* Area under the line */}
+          {/* Gradient Area under curve */}
           {areaD && (
             <path d={areaD} fill="url(#area-glow)" />
           )}
 
-          {/* Spark Line */}
+          {/* Smooth Curved Line */}
           {pathD && (
             <path 
               d={pathD} 
               fill="none" 
               stroke="url(#neon-glow)" 
-              strokeWidth="3" 
+              strokeWidth="2.5" 
               strokeLinecap="round"
               strokeLinejoin="round"
               filter="url(#glow-effect)"
             />
           )}
 
-          {/* Points */}
+          {/* X-Axis Ticks & Day Labels */}
+          {points.map((p, i) => (
+            <g key={`tick-${i}`}>
+              {/* Tick mark line */}
+              <line
+                x1={p.x}
+                y1={height - paddingBottom}
+                x2={p.x}
+                y2={height - paddingBottom + 3}
+                stroke="var(--color-outline-variant)"
+                strokeWidth="1"
+                opacity="0.3"
+              />
+              {/* Day Label */}
+              <text
+                x={p.x}
+                y={height - 8}
+                textAnchor="middle"
+                fontSize="9"
+                fill={hoveredPoint?.date === p.date ? 'var(--color-primary)' : 'var(--color-on-surface-variant)'}
+                opacity={hoveredPoint?.date === p.date ? 1 : 0.6}
+                fontWeight={hoveredPoint?.date === p.date ? 'bold' : 'normal'}
+                className="font-mono select-none transition-colors duration-200"
+              >
+                {p.label}
+              </text>
+            </g>
+          ))}
+
+          {/* Interactive Glowing Points */}
           {points.map((p, i) => (
             <circle
-              key={i}
+              key={`point-${i}`}
               cx={p.x}
               cy={p.y}
-              r={hoveredPoint?.date === p.date ? 5.5 : 3}
-              fill={hoveredPoint?.date === p.date ? 'var(--color-secondary)' : 'var(--color-primary)'}
-              stroke="var(--color-surface)"
+              r={hoveredPoint?.date === p.date ? 5 : 2.5}
+              fill={hoveredPoint?.date === p.date ? '#ffffff' : '#ff5c00'}
+              stroke={hoveredPoint?.date === p.date ? '#ff5c00' : 'var(--color-surface)'}
               strokeWidth={hoveredPoint?.date === p.date ? 2 : 1}
-              className="cursor-pointer transition-all duration-200"
+              className="cursor-pointer transition-all duration-200 origin-center"
               onMouseEnter={() => setHoveredPoint(p)}
               onMouseLeave={() => setHoveredPoint(null)}
             />
