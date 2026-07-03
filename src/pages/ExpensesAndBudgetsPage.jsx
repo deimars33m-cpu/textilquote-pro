@@ -2755,8 +2755,20 @@ export default function ExpensesAndBudgetsPage() {
                               <tr className="hover:bg-white/[0.02] transition-colors bg-surface-container/20 font-semibold font-mono">
                                 <td className="py-2 px-3 text-white font-sans text-left">📦 Total Insumos Estimados</td>
                                 <td className="py-2 px-3 text-center text-white">—</td>
-                                <td className="py-2 px-3 text-right text-white">{formatCurrency(sublimationStats.inkCost + sublimationStats.paperCost)}</td>
+                                <td className="py-2 px-3 text-right text-white">{formatCurrency(sublimationStats.totalSubExpenses)}</td>
                                 <td className="py-2 px-3 text-right text-[#a855f7]">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.avgCombinedCostPerPanel) : '—'}</td>
+                              </tr>
+                              <tr className="hover:bg-white/[0.02] transition-colors">
+                                <td className="py-2 px-3 text-white font-sans text-left">🏛️ Gastos Fijos Prorrateados</td>
+                                <td className="py-2 px-3 text-center text-on-surface-variant">—</td>
+                                <td className="py-2 px-3 text-right text-on-surface-variant">{formatCurrency(sublimationStats.subProratedOverhead)}</td>
+                                <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.overheadPerNominalPanel) : '—'}</td>
+                              </tr>
+                              <tr className="hover:bg-white/[0.02] transition-colors bg-primary/10 font-bold font-mono border-t border-primary/20">
+                                <td className="py-2.5 px-3 text-primary font-sans text-left">💼 Costo Total Global (Insumos + Fijos)</td>
+                                <td className="py-2.5 px-3 text-center text-primary">—</td>
+                                <td className="py-2.5 px-3 text-right text-primary">{formatCurrency(sublimationStats.totalSubExpenses + sublimationStats.subProratedOverhead)}</td>
+                                <td className="py-2.5 px-3 text-right text-emerald-400">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.totalCostPerNominalPanel) : '—'}</td>
                               </tr>
                             </tbody>
                           </table>
