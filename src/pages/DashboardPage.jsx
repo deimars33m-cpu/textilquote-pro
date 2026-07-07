@@ -444,7 +444,62 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  const loading = loadingExpenses || loadingOrders || loadingQuotes
+  // Préstamos Activos (para deuda de préstamos)
+  const { data: loans = [], isLoading: loadingLoans } = useQuery({
+    queryKey: ['dashboard_loans', user?.id],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('loans')
+          .select('id, principal_amount, status')
+        if (error) {
+          if (error.code === '42P01') return []
+          throw error
+        }
+        return data || []
+      } catch (err) {
+        console.warn("Loans table not ready yet on dashboard:", err)
+        return []
+      }
+    },
+    enabled: !!user,
+  })
+
+  // Pagos de préstamos
+  const { data: loanPayments = [], isLoading: loadingLoanPayments } = useQuery({
+    queryKey: ['dashboard_loan_payments', user?.id],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('loan_payments')
+          .select('loan_id, principal_component')
+        if (error) {
+          if (error.code === '42P01') return []
+          throw error
+        }
+        return data || []
+      } catch (err) {
+        console.warn("Loan payments table not ready yet on dashboard:", err)
+        return []
+      }
+    },
+    enabled: !!user,
+  })
+
+  const loading = loadingExpenses || loadingOrders || loadingQuotes || loadingLoans || loadingLoanPayments
+
+  const totalLoanDebt = useMemo(() => {
+    let total = 0
+    loans.forEach(loan => {
+      if (loan.status === 'activo') {
+        const paid = loanPayments
+          .filter(p => p.loan_id === loan.id)
+          .reduce((sum, p) => sum + Number(p.principal_component || 0), 0)
+        total += Math.max(0, Number(loan.principal_amount || 0) - paid)
+      }
+    })
+    return total
+  }, [loans, loanPayments])
 
   // --- Cálculos de Metas de Ventas ---
   const salesGoalsMetrics = useMemo(() => {
@@ -591,7 +646,9 @@ export default function DashboardPage() {
           <Skeleton variant="text" className="h-8 w-48" />
           <Skeleton variant="text" className="h-4 w-96 opacity-60" />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <Skeleton variant="rectangular" className="h-[96px]" />
+          <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
           <Skeleton variant="rectangular" className="h-[96px]" />
@@ -625,11 +682,25 @@ export default function DashboardPage() {
       iconColor: 'text-cyan-500'
     },
     {
+      label: 'Cuentas por Cobrar',
+      value: formatCurrency(financialKPIs.pendingBalance),
+      icon: 'hourglass_empty',
+      effectClass: 'border-l-4 border-l-amber-500 border-t border-r border-b border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.15)] bg-white/10',
+      iconColor: 'text-amber-500'
+    },
+    {
       label: 'Gastos del Mes',
       value: formatCurrency(financialKPIs.totalExpensesMonth),
       icon: 'account_balance_wallet',
       effectClass: 'border-l-4 border-l-error border-t border-r border-b border-error/20 shadow-[0_0_12px_rgba(239,68,68,0.15)] bg-white/10',
       iconColor: 'text-error'
+    },
+    {
+      label: 'Deuda Financiera',
+      value: formatCurrency(totalLoanDebt),
+      icon: 'account_balance',
+      effectClass: 'border-l-4 border-l-pink-500 border-t border-r border-b border-pink-500/20 shadow-[0_0_12px_rgba(236,72,153,0.15)] bg-white/10',
+      iconColor: 'text-pink-500'
     },
     {
       label: 'Utilidad Neta',
@@ -677,7 +748,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {metricCards.map((card) => (
           <Card
             key={card.label}
