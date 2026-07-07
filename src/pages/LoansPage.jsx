@@ -5,15 +5,15 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
 const LOAN_TYPES = [
-  { id: 'banco', label: 'Bancario', icon: 'account_balance', color: 'text-sky-400 bg-sky-500/10 border-sky-500/30' },
-  { id: 'privado', label: 'Privado', icon: 'person', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' }
+  { id: 'banco', value: 'banco', label: 'Bancario', icon: 'account_balance', color: 'text-sky-400 bg-sky-500/10 border-sky-500/30' },
+  { id: 'privado', value: 'privado', label: 'Privado', icon: 'person', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' }
 ]
 
 const PAYMENT_METHODS = [
-  { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
-  { id: 'transferencia', label: 'Transferencia', icon: 'account_balance' },
-  { id: 'qr', label: 'QR', icon: 'qr_code_scanner' },
-  { id: 'tarjeta', label: 'Tarjeta', icon: 'credit_card' }
+  { id: 'efectivo', value: 'efectivo', label: 'Efectivo', icon: 'payments' },
+  { id: 'transferencia', value: 'transferencia', label: 'Transferencia', icon: 'account_balance' },
+  { id: 'qr', value: 'qr', label: 'QR', icon: 'qr_code_scanner' },
+  { id: 'tarjeta', value: 'tarjeta', label: 'Tarjeta', icon: 'credit_card' }
 ]
 
 export default function LoansPage() {
@@ -750,9 +750,9 @@ export default function LoansPage() {
                 value={newLoan.creditor_id}
                 onChange={e => setNewLoan(prev => ({ ...prev, creditor_id: e.target.value }))}
                 options={[
-                  { id: '', label: 'Seleccionar...' },
-                  ...creditors.map(c => ({ id: c.id, label: c.name })),
-                  { id: 'new', label: '+ Registrar Nuevo...' }
+                  { value: '', label: 'Seleccionar...' },
+                  ...creditors.map(c => ({ value: c.id, label: c.name })),
+                  { value: 'new', label: '+ Registrar Nuevo...' }
                 ]}
               />
               
