@@ -3,15 +3,15 @@
 -- Ejecuta este script en el editor SQL de Supabase
 -- ==========================================
 
--- 0. Modificar la restricción de 'role' en terceros para incluir 'acreedor'
+-- 0. Eliminar restricciones check de 'role' y 'client_type' en terceros
+-- Esto permite el registro flexible de cualquier tipo de tercero o acreedor sin restricciones de base de datos.
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS clientes_role_check;
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS clients_role_check;
 ALTER TABLE terceros DROP CONSTRAINT IF EXISTS terceros_role_check;
-ALTER TABLE terceros ADD CONSTRAINT terceros_role_check CHECK (role IN ('cliente', 'proveedor', 'dependiente', 'acreedor'));
 
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS clientes_client_type_check;
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS clients_client_type_check;
 ALTER TABLE terceros DROP CONSTRAINT IF EXISTS terceros_client_type_check;
-ALTER TABLE terceros ADD CONSTRAINT terceros_client_type_check CHECK (client_type IN (
-  'minorista', 'mayorista', 'club_deportivo', 'colegio', 'empresa', 'revendedor', 'otro',
-  'proveedor_materia_prima', 'proveedor_insumos', 'proveedor_servicios', 'dependiente', 'acreedor'
-));
 
 -- 1. Crear la tabla de préstamos (loans)
 CREATE TABLE IF NOT EXISTS loans (
