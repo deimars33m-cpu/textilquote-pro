@@ -611,12 +611,16 @@ export default function DashboardPage() {
     let totalExpensesMonth = 0
     let ordersCount = 0
     let todayRevenue = 0
+    let unpaidOrdersCount = 0
 
     monthOrders.forEach(o => {
       if (o.status !== 'cancelado') {
         totalRevenue += parseFloat(o.total_amount) || 0
         totalCollected += parseFloat(o.paid_amount) || 0
         ordersCount++
+        if (o.payment_status !== 'pagado') {
+          unpaidOrdersCount++
+        }
         if (o.created_at?.split('T')[0] === today) {
           todayRevenue += parseFloat(o.total_amount) || 0
         }
@@ -627,6 +631,10 @@ export default function DashboardPage() {
       totalExpensesMonth += parseFloat(exp.amount) || 0
     })
 
+    const collectionRate = totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0
+    const netProfit = totalCollected - totalExpensesMonth
+    const netMargin = totalCollected > 0 ? Math.round((netProfit / totalCollected) * 100) : 0
+
     return {
       totalRevenue,
       totalCollected,
@@ -634,9 +642,16 @@ export default function DashboardPage() {
       pendingBalance: totalRevenue - totalCollected,
       ordersCount,
       todayRevenue,
-      netProfit: totalCollected - totalExpensesMonth
+      netProfit,
+      unpaidOrdersCount,
+      collectionRate,
+      netMargin
     }
   }, [monthOrders, monthExpenses, today])
+
+  const activeLoansCount = useMemo(() => {
+    return loans.filter(l => l.status === 'activo').length
+  }, [loans])
 
   // --- Loading State ---
   if (loading) {
@@ -647,12 +662,12 @@ export default function DashboardPage() {
           <Skeleton variant="text" className="h-4 w-96 opacity-60" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          <Skeleton variant="rectangular" className="h-[96px]" />
-          <Skeleton variant="rectangular" className="h-[96px]" />
-          <Skeleton variant="rectangular" className="h-[96px]" />
-          <Skeleton variant="rectangular" className="h-[96px]" />
-          <Skeleton variant="rectangular" className="h-[96px]" />
-          <Skeleton variant="rectangular" className="h-[96px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
+          <Skeleton variant="rectangular" className="h-[136px]" />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -670,44 +685,64 @@ export default function DashboardPage() {
     {
       label: 'Ventas del Mes',
       value: formatCurrency(financialKPIs.totalRevenue),
+      subtext: `${financialKPIs.ordersCount} pedidos registrados`,
       icon: 'trending_up',
-      effectClass: 'border-l-4 border-l-emerald-500 border-t border-r border-b border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.15)] bg-white/10',
-      iconColor: 'text-emerald-500'
+      trendIcon: 'show_chart',
+      effectClass: 'border-emerald-500/20 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.03)]',
+      iconColor: 'text-emerald-400',
+      trendColor: 'text-emerald-500/60'
     },
     {
       label: 'Cobrado del Mes',
       value: formatCurrency(financialKPIs.totalCollected),
+      subtext: `${financialKPIs.collectionRate}% de ventas cobradas`,
       icon: 'payments',
-      effectClass: 'border-l-4 border-l-cyan-500 border-t border-r border-b border-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.15)] bg-white/10',
-      iconColor: 'text-cyan-500'
+      trendIcon: 'account_balance_wallet',
+      effectClass: 'border-cyan-500/20 bg-cyan-500/5 shadow-[0_0_15px_rgba(6,182,212,0.03)]',
+      iconColor: 'text-cyan-400',
+      trendColor: 'text-cyan-500/60'
     },
     {
       label: 'Cuentas por Cobrar',
       value: formatCurrency(financialKPIs.pendingBalance),
+      subtext: `${financialKPIs.unpaidOrdersCount} pedidos con saldo`,
       icon: 'hourglass_empty',
-      effectClass: 'border-l-4 border-l-amber-500 border-t border-r border-b border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.15)] bg-white/10',
-      iconColor: 'text-amber-500'
+      trendIcon: 'hourglass_top',
+      effectClass: 'border-amber-500/20 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.03)]',
+      iconColor: 'text-amber-400',
+      trendColor: 'text-amber-500/60'
     },
     {
       label: 'Gastos del Mes',
       value: formatCurrency(financialKPIs.totalExpensesMonth),
+      subtext: `${monthExpenses.length} egresos registrados`,
       icon: 'account_balance_wallet',
-      effectClass: 'border-l-4 border-l-error border-t border-r border-b border-error/20 shadow-[0_0_12px_rgba(239,68,68,0.15)] bg-white/10',
-      iconColor: 'text-error'
+      trendIcon: 'call_made',
+      effectClass: 'border-red-500/20 bg-red-500/5 shadow-[0_0_15px_rgba(239,68,68,0.03)]',
+      iconColor: 'text-red-400',
+      trendColor: 'text-red-500/60'
     },
     {
       label: 'Deuda Financiera',
       value: formatCurrency(totalLoanDebt),
+      subtext: `${activeLoansCount} préstamos activos`,
       icon: 'account_balance',
-      effectClass: 'border-l-4 border-l-pink-500 border-t border-r border-b border-pink-500/20 shadow-[0_0_12px_rgba(236,72,153,0.15)] bg-white/10',
-      iconColor: 'text-pink-500'
+      trendIcon: 'credit_card',
+      effectClass: 'border-pink-500/20 bg-pink-500/5 shadow-[0_0_15px_rgba(236,72,153,0.03)]',
+      iconColor: 'text-pink-400',
+      trendColor: 'text-pink-500/60'
     },
     {
       label: 'Utilidad Neta',
       value: formatCurrency(financialKPIs.netProfit),
+      subtext: `Margen: ${financialKPIs.netMargin}% del cobro`,
       icon: 'savings',
-      effectClass: `border-l-4 ${financialKPIs.netProfit >= 0 ? 'border-l-primary border-primary/20 shadow-[0_0_12px_rgba(255,122,0,0.15)]' : 'border-l-error border-error/20 shadow-[0_0_12px_rgba(239,68,68,0.15)]'} border-t border-r border-b bg-white/10`,
-      iconColor: financialKPIs.netProfit >= 0 ? 'text-primary' : 'text-error'
+      trendIcon: 'insights',
+      effectClass: financialKPIs.netProfit >= 0 
+        ? 'border-primary/20 bg-primary/5 shadow-[0_0_15px_rgba(255,122,0,0.03)]' 
+        : 'border-red-500/20 bg-red-500/5 shadow-[0_0_15px_rgba(239,68,68,0.03)]',
+      iconColor: financialKPIs.netProfit >= 0 ? 'text-primary' : 'text-red-400',
+      trendColor: financialKPIs.netProfit >= 0 ? 'text-primary/60' : 'text-red-500/60'
     },
   ]
 
@@ -752,27 +787,33 @@ export default function DashboardPage() {
         {metricCards.map((card) => (
           <Card
             key={card.label}
-            className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] ${card.effectClass}`}
+            className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between h-[136px] p-5 border ${card.effectClass}`}
           >
-            <div className="p-4 relative overflow-hidden h-[98px] flex flex-col justify-between">
-              {/* Row 1: Label and Icon */}
-              <div className="flex items-center justify-between gap-2 w-full">
-                <span className="text-[10px] font-bold font-sans uppercase tracking-widest text-on-surface-variant truncate pr-1">
-                  {card.label}
-                </span>
-                <div className="w-7 h-7 bg-surface-container-high rounded-full flex items-center justify-center shrink-0 border border-white/5">
-                  <span className={`material-symbols-outlined text-[15px] ${card.iconColor}`}>
-                    {card.icon}
-                  </span>
-                </div>
-              </div>
-              
-              {/* Row 2: Large Value taking full width */}
-              <div className="mt-auto">
-                <p className="font-mono font-black text-xl text-white tracking-tight leading-none">
-                  {card.value}
-                </p>
-              </div>
+            {/* Top Row: Title and Main Icon */}
+            <div className="flex items-center justify-between w-full">
+              <span className="text-sm font-semibold text-on-surface-variant">
+                {card.label}
+              </span>
+              <span className={`material-symbols-outlined text-[20px] ${card.iconColor}`}>
+                {card.icon}
+              </span>
+            </div>
+
+            {/* Middle Row: Large Value */}
+            <div className="my-auto">
+              <p className="font-mono font-bold text-2xl text-white leading-none tracking-tight">
+                {card.value}
+              </p>
+            </div>
+
+            {/* Bottom Row: Subtext and Trend/Mini Icon */}
+            <div className="flex items-end justify-between w-full text-[11px] text-on-surface-variant/70 font-sans">
+              <span>
+                {card.subtext}
+              </span>
+              <span className={`material-symbols-outlined text-[15px] ${card.trendColor}`}>
+                {card.trendIcon}
+              </span>
             </div>
           </Card>
         ))}
