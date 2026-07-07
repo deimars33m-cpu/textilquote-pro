@@ -566,42 +566,42 @@ function EstadoCuentaModal({ client, onClose }) {
       ) : (
         <div className="space-y-6">
           {/* KPI Mini-Cards */}
-          {client.role === 'acreedor' ? (
+          {client?.role === 'acreedor' ? (
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Prestado</span>
-                <span className="text-lg font-mono font-bold text-white">{formatCurrency(acreedorTotals.totalBorrowed)}</span>
+                <span className="text-lg font-mono font-bold text-white">{formatCurrency(acreedorTotals?.totalBorrowed)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Capital Devuelto</span>
-                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(acreedorTotals.totalPaidPrincipal)}</span>
+                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(acreedorTotals?.totalPaidPrincipal)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-amber-500 flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Interés Pagado</span>
-                <span className="text-lg font-mono font-bold text-amber-400">{formatCurrency(acreedorTotals.totalPaidInterest)}</span>
+                <span className="text-lg font-mono font-bold text-amber-400">{formatCurrency(acreedorTotals?.totalPaidInterest)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Pendiente</span>
-                <span className="text-lg font-mono font-bold text-error">{formatCurrency(acreedorTotals.remainingDebt)}</span>
+                <span className="text-lg font-mono font-bold text-error">{formatCurrency(acreedorTotals?.remainingDebt)}</span>
               </Card>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Facturado</span>
-                <span className="text-lg font-mono font-bold text-white">{formatCurrency(totals.totalBilled)}</span>
+                <span className="text-lg font-mono font-bold text-white">{formatCurrency(totals?.totalBilled)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Cobrado</span>
-                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(totals.totalPaid)}</span>
+                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(totals?.totalPaid)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Restante</span>
-                <span className="text-lg font-mono font-bold text-error">{formatCurrency(totals.totalDebt)}</span>
+                <span className="text-lg font-mono font-bold text-error">{formatCurrency(totals?.totalDebt)}</span>
               </Card>
               <Card className="p-3 neu-surface border-l-2 border-l-violet-500 flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Saldo a Favor</span>
-                <span className="text-lg font-mono font-bold text-violet-400">{formatCurrency(totals.creditBalance)}</span>
+                <span className="text-lg font-mono font-bold text-violet-400">{formatCurrency(totals?.creditBalance)}</span>
               </Card>
             </div>
           )}
@@ -609,7 +609,7 @@ function EstadoCuentaModal({ client, onClose }) {
           {/* Action buttons */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5 pt-4">
             <div className="flex gap-2 bg-surface-container/30 p-1 rounded-lg border border-white/5 w-fit">
-              {client.role === 'acreedor' ? (
+              {client?.role === 'acreedor' ? (
                 <>
                   <button
                     onClick={() => setActiveTab('prestamos')}
@@ -658,7 +658,7 @@ function EstadoCuentaModal({ client, onClose }) {
               )}
             </div>
 
-            {client.role !== 'acreedor' && (
+            {client?.role !== 'acreedor' && (
               <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
                 <span className="material-symbols-outlined text-[16px]">{showAddForm ? 'close' : 'add'}</span>
                 {showAddForm ? 'Cerrar Formulario' : 'Registrar Adelanto General'}
@@ -667,7 +667,7 @@ function EstadoCuentaModal({ client, onClose }) {
           </div>
 
           {/* Formulario de Adelanto */}
-          {showAddForm && client.role !== 'acreedor' && (
+          {showAddForm && client?.role !== 'acreedor' && (
             <Card className="p-4 border border-primary/20 bg-primary/5 animate-scale-in">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px] text-primary">payments</span>
@@ -723,7 +723,7 @@ function EstadoCuentaModal({ client, onClose }) {
           )}
 
           {/* Listados */}
-          {client.role === 'acreedor' ? (
+          {client?.role === 'acreedor' ? (
             activeTab === 'prestamos' ? (
               <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
                 <table className="w-full text-sm text-left">
@@ -854,7 +854,7 @@ function EstadoCuentaModal({ client, onClose }) {
                     {orders.map(o => {
                       const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
                       const isCancelled = o.status === 'cancelado'
-                      const orderAllocations = totals.clientAllocations.filter(a => a.order_id === o.id)
+                      const orderAllocations = totals?.clientAllocations?.filter(a => a.order_id === o.id) || []
 
                       return (
                         <tr key={o.id} className="border-b border-white/5 hover:bg-white/[0.01]">
@@ -923,7 +923,7 @@ function EstadoCuentaModal({ client, onClose }) {
                   </thead>
                   <tbody>
                     {payments.map(p => {
-                      const paymentAllocations = totals.clientAllocations.filter(a => a.tercero_payment_id === p.id)
+                      const paymentAllocations = totals?.clientAllocations?.filter(a => a.tercero_payment_id === p.id) || []
                       const totalAllocated = paymentAllocations.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
                       const remaining = Math.max(0, p.amount - totalAllocated)
 
