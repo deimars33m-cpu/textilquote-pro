@@ -4,7 +4,7 @@ import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
   Card, SearchInput, LoadingSpinner, EmptyState, StatusBadge
 } from '@/components/ui/index.jsx'
-import { clientTypes, terceroTypes, formatCurrency } from '@/lib/formatters'
+import { clientTypes, terceroTypes, formatCurrency, formatDate } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
