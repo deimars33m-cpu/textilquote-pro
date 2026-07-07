@@ -16,6 +16,7 @@ import QuoteDetailPage from '@/pages/QuoteDetailPage'
 import CompanySettingsPage from '@/pages/CompanySettingsPage'
 import OrdersPage from '@/pages/OrdersPage'
 import GlobalSettingsPage from '@/pages/GlobalSettingsPage'
+import LoansPage from '@/pages/LoansPage'
 import { GlobalSettingsProvider } from '@/context/GlobalSettingsContext'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -75,6 +76,7 @@ function AppRoutes() {
         <Route path="/materials" element={<MaterialsPage />} />
         <Route path="/processes" element={<ProcessesPage />} />
         <Route path="/expenses" element={<ExpensesAndBudgetsPage />} />
+        <Route path="/loans" element={<LoansPage />} />
         <Route path="/templates" element={<ProductTemplatesPage />} />
         <Route path="/templates/:id" element={<TemplateDetailPage />} />
         <Route path="/terceros" element={<TercerosPage />} />

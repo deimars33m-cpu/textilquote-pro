@@ -5,6 +5,7 @@ const navItems = [
   { path: '/', icon: 'dashboard', label: 'Dashboard' },
   { type: 'divider' },
   { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos y Presup.' },
+  { path: '/loans', icon: 'account_balance', label: 'Préstamos' },
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
   { path: '/terceros', icon: 'groups', label: 'Terceros' },
   { type: 'divider' },
