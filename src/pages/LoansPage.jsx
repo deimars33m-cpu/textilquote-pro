@@ -88,7 +88,7 @@ export default function LoansPage() {
       }
     } catch (err) {
       console.error("Error loading loan data:", err)
-      setErrorMsg('No se pudieron cargar los datos de préstamos. Por favor reintenta.')
+      setErrorMsg('No se pudieron cargar los datos de préstamos: ' + (err.message || 'Por favor reintenta.'))
     } finally {
       setLoading(false)
     }
@@ -206,7 +206,7 @@ export default function LoansPage() {
       await fetchData()
     } catch (err) {
       console.error("Error creating loan:", err)
-      setErrorMsg('No se pudo registrar el préstamo. Revisa tu conexión.')
+      setErrorMsg('No se pudo registrar el préstamo: ' + (err.message || 'Revisa tu conexión.'))
     } finally {
       setSaving(false)
     }
@@ -325,7 +325,7 @@ export default function LoansPage() {
       await fetchData()
     } catch (err) {
       console.error("Error creating payment:", err)
-      setErrorMsg('No se pudo procesar la amortización. Verifica la base de datos.')
+      setErrorMsg('No se pudo procesar la amortización: ' + (err.message || 'Verifica la base de datos.'))
     } finally {
       setSaving(false)
     }
