@@ -369,6 +369,8 @@ function EstadoCuentaModal({ client, onClose }) {
   const [orders, setOrders] = useState([])
   const [payments, setPayments] = useState([])
   const [allocations, setAllocations] = useState([])
+  const [loans, setLoans] = useState([])
+  const [loanPayments, setLoanPayments] = useState([])
   const [loading, setLoading] = useState(true)
 
   const [showAddForm, setShowAddForm] = useState(false)
@@ -384,19 +386,45 @@ function EstadoCuentaModal({ client, onClose }) {
     if (!user || !client) return
     setLoading(true)
     try {
-      const [ordersRes, paymentsRes, allocationsRes] = await Promise.all([
-        supabase.from('orders').select('*').eq('tercero_id', client.id).order('created_at', { ascending: false }),
-        supabase.from('tercero_payments').select('*').eq('tercero_id', client.id).order('date', { ascending: false }),
-        supabase.from('order_payment_allocations').select('*').eq('user_id', user.id)
-      ])
-      
-      if (ordersRes.error) throw ordersRes.error
-      if (paymentsRes.error && paymentsRes.error.code !== '42P01') throw paymentsRes.error
-      if (allocationsRes.error && allocationsRes.error.code !== '42P01') throw allocationsRes.error
+      if (client.role === 'acreedor') {
+        const { data: loansData, error: loansError } = await supabase
+          .from('loans')
+          .select('*')
+          .eq('creditor_id', client.id)
+          .order('created_at', { ascending: false })
 
-      setOrders(ordersRes.data || [])
-      setPayments(paymentsRes.data || [])
-      setAllocations(allocationsRes.data || [])
+        if (loansError) throw loansError
+
+        const loanIds = (loansData || []).map(l => l.id)
+        
+        let paymentsData = []
+        if (loanIds.length > 0) {
+          const { data, error } = await supabase
+            .from('loan_payments')
+            .select('*, loans(creditor_name)')
+            .in('loan_id', loanIds)
+            .order('payment_date', { ascending: false })
+          if (error) throw error
+          paymentsData = data || []
+        }
+
+        setLoans(loansData || [])
+        setLoanPayments(paymentsData || [])
+      } else {
+        const [ordersRes, paymentsRes, allocationsRes] = await Promise.all([
+          supabase.from('orders').select('*').eq('tercero_id', client.id).order('created_at', { ascending: false }),
+          supabase.from('tercero_payments').select('*').eq('tercero_id', client.id).order('date', { ascending: false }),
+          supabase.from('order_payment_allocations').select('*').eq('user_id', user.id)
+        ])
+        
+        if (ordersRes.error) throw ordersRes.error
+        if (paymentsRes.error && paymentsRes.error.code !== '42P01') throw paymentsRes.error
+        if (allocationsRes.error && allocationsRes.error.code !== '42P01') throw allocationsRes.error
+
+        setOrders(ordersRes.data || [])
+        setPayments(paymentsRes.data || [])
+        setAllocations(allocationsRes.data || [])
+      }
     } catch (e) {
       console.error('Error fetching statement data:', e)
     } finally {
@@ -405,10 +433,14 @@ function EstadoCuentaModal({ client, onClose }) {
   }
 
   useEffect(() => {
-    fetchData()
+    if (client) {
+      setActiveTab(client.role === 'acreedor' ? 'prestamos' : 'pedidos')
+      fetchData()
+    }
   }, [client, user])
 
   const totals = useMemo(() => {
+    if (client?.role === 'acreedor') return null
     const activeOrders = orders.filter(o => o.status !== 'cancelado')
     const totalBilled = activeOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
     const totalPaid = activeOrders.reduce((sum, o) => sum + (Number(o.paid_amount) || 0), 0)
@@ -429,7 +461,34 @@ function EstadoCuentaModal({ client, onClose }) {
       creditBalance,
       clientAllocations
     }
-  }, [orders, payments, allocations])
+  }, [orders, payments, allocations, client])
+
+  const acreedorTotals = useMemo(() => {
+    if (client?.role !== 'acreedor') return null
+    
+    let totalBorrowed = 0
+    let totalPaidPrincipal = 0
+    let totalPaidInterest = 0
+    
+    loans.forEach(loan => {
+      const loanPayList = loanPayments.filter(p => p.loan_id === loan.id)
+      const paidPrincipal = loanPayList.reduce((sum, p) => sum + Number(p.principal_component || 0), 0)
+      const paidInterest = loanPayList.reduce((sum, p) => sum + Number(p.interest_component || 0), 0)
+      
+      totalBorrowed += Number(loan.principal_amount || 0)
+      totalPaidPrincipal += paidPrincipal
+      totalPaidInterest += paidInterest
+    })
+    
+    const remainingDebt = Math.max(0, totalBorrowed - totalPaidPrincipal)
+    
+    return {
+      totalBorrowed,
+      totalPaidPrincipal,
+      totalPaidInterest,
+      remainingDebt
+    }
+  }, [loans, loanPayments, client])
 
   const handleAddPayment = async (e) => {
     e.preventDefault()
@@ -507,58 +566,108 @@ function EstadoCuentaModal({ client, onClose }) {
       ) : (
         <div className="space-y-6">
           {/* KPI Mini-Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Facturado</span>
-              <span className="text-lg font-mono font-bold text-white">{formatCurrency(totals.totalBilled)}</span>
-            </Card>
-            <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Cobrado</span>
-              <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(totals.totalPaid)}</span>
-            </Card>
-            <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Restante</span>
-              <span className="text-lg font-mono font-bold text-error">{formatCurrency(totals.totalDebt)}</span>
-            </Card>
-            <Card className="p-3 neu-surface border-l-2 border-l-violet-500 flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Saldo a Favor</span>
-              <span className="text-lg font-mono font-bold text-violet-400">{formatCurrency(totals.creditBalance)}</span>
-            </Card>
-          </div>
+          {client.role === 'acreedor' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Prestado</span>
+                <span className="text-lg font-mono font-bold text-white">{formatCurrency(acreedorTotals.totalBorrowed)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Capital Devuelto</span>
+                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(acreedorTotals.totalPaidPrincipal)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-amber-500 flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Interés Pagado</span>
+                <span className="text-lg font-mono font-bold text-amber-400">{formatCurrency(acreedorTotals.totalPaidInterest)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Pendiente</span>
+                <span className="text-lg font-mono font-bold text-error">{formatCurrency(acreedorTotals.remainingDebt)}</span>
+              </Card>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-3 neu-surface border-l-2 border-l-primary flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Facturado</span>
+                <span className="text-lg font-mono font-bold text-white">{formatCurrency(totals.totalBilled)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-emerald-500 flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Total Cobrado</span>
+                <span className="text-lg font-mono font-bold text-emerald-400">{formatCurrency(totals.totalPaid)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-error flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Deuda Restante</span>
+                <span className="text-lg font-mono font-bold text-error">{formatCurrency(totals.totalDebt)}</span>
+              </Card>
+              <Card className="p-3 neu-surface border-l-2 border-l-violet-500 flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Saldo a Favor</span>
+                <span className="text-lg font-mono font-bold text-violet-400">{formatCurrency(totals.creditBalance)}</span>
+              </Card>
+            </div>
+          )}
 
           {/* Action buttons */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5 pt-4">
             <div className="flex gap-2 bg-surface-container/30 p-1 rounded-lg border border-white/5 w-fit">
-              <button
-                onClick={() => setActiveTab('pedidos')}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                  activeTab === 'pedidos'
-                    ? 'bg-primary/10 text-primary border border-primary/20'
-                    : 'text-on-surface-variant hover:text-white border border-transparent'
-                }`}
-              >
-                Pedidos del Cliente
-              </button>
-              <button
-                onClick={() => setActiveTab('adelantos')}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                  activeTab === 'adelantos'
-                    ? 'bg-primary/10 text-primary border border-primary/20'
-                    : 'text-on-surface-variant hover:text-white border border-transparent'
-                }`}
-              >
-                Historial de Adelantos
-              </button>
+              {client.role === 'acreedor' ? (
+                <>
+                  <button
+                    onClick={() => setActiveTab('prestamos')}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                      activeTab === 'prestamos'
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'text-on-surface-variant hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Préstamos Recibidos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('pagos')}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                      activeTab === 'pagos'
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'text-on-surface-variant hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Historial de Cuotas Pagadas
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setActiveTab('pedidos')}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                      activeTab === 'pedidos'
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'text-on-surface-variant hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Pedidos del Cliente
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('adelantos')}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                      activeTab === 'adelantos'
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'text-on-surface-variant hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Historial de Adelantos
+                  </button>
+                </>
+              )}
             </div>
 
-            <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
-              <span className="material-symbols-outlined text-[16px]">{showAddForm ? 'close' : 'add'}</span>
-              {showAddForm ? 'Cerrar Formulario' : 'Registrar Adelanto General'}
-            </Button>
+            {client.role !== 'acreedor' && (
+              <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
+                <span className="material-symbols-outlined text-[16px]">{showAddForm ? 'close' : 'add'}</span>
+                {showAddForm ? 'Cerrar Formulario' : 'Registrar Adelanto General'}
+              </Button>
+            )}
           </div>
 
           {/* Formulario de Adelanto */}
-          {showAddForm && (
+          {showAddForm && client.role !== 'acreedor' && (
             <Card className="p-4 border border-primary/20 bg-primary/5 animate-scale-in">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px] text-primary">payments</span>
@@ -614,145 +723,259 @@ function EstadoCuentaModal({ client, onClose }) {
           )}
 
           {/* Listados */}
-          {activeTab === 'pedidos' ? (
-            <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
-                    <th className="p-3">Pedido</th>
-                    <th className="p-3">Fecha</th>
-                    <th className="p-3 text-right">Total</th>
-                    <th className="p-3 text-right">Cobrado</th>
-                    <th className="p-3 text-right">Saldo</th>
-                    <th className="p-3 text-center">Estado Pago</th>
-                    <th className="p-3 text-center">Producción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map(o => {
-                    const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
-                    const isCancelled = o.status === 'cancelado'
-                    const orderAllocations = totals.clientAllocations.filter(a => a.order_id === o.id)
+          {client.role === 'acreedor' ? (
+            activeTab === 'prestamos' ? (
+              <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                      <th className="p-3">Concepto / Notas</th>
+                      <th className="p-3 text-center">Tipo</th>
+                      <th className="p-3 text-center">Fecha Inicio</th>
+                      <th className="p-3 text-right">Capital</th>
+                      <th className="p-3 text-right">Cuota Mensual</th>
+                      <th className="p-3 text-right">Deuda Restante</th>
+                      <th className="p-3 text-center">Reembolso %</th>
+                      <th className="p-3 text-center">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loans.map(loan => {
+                      const paidPrincipal = loanPayments
+                        .filter(p => p.loan_id === loan.id)
+                        .reduce((sum, p) => sum + Number(p.principal_component || 0), 0)
+                      const remaining = Math.max(0, Number(loan.principal_amount) - paidPrincipal)
+                      const progress = Number(loan.principal_amount) > 0
+                        ? Math.min(100, Math.round((paidPrincipal / Number(loan.principal_amount)) * 100))
+                        : 0
 
-                    return (
-                      <tr key={o.id} className="border-b border-white/5 hover:bg-white/[0.01]">
-                        <td className="p-3 font-medium text-white">
-                          <div>
-                            <span className="font-bold">{orderNum}</span>
-                            <div className="mt-1 space-y-0.5">
-                              {Number(o.direct_paid_amount) > 0 && (
-                                <span className="text-[10px] text-emerald-400/80 block">
-                                  • Abono directo: {formatCurrency(o.direct_paid_amount)}
-                                </span>
-                              )}
-                              {orderAllocations.map(a => {
-                                const matchedPayment = payments.find(p => p.id === a.tercero_payment_id)
-                                const payDate = matchedPayment ? new Date(matchedPayment.date).toLocaleDateString() : ''
+                      return (
+                        <tr key={loan.id} className="border-b border-white/5 hover:bg-white/[0.01] font-mono text-xs">
+                          <td className="p-3 font-sans text-white text-left font-semibold">
+                            <div>
+                              <span>{loan.notes ? `${loan.notes.substring(0, 30)}${loan.notes.length > 30 ? '...' : ''}` : 'Crédito recibido'}</span>
+                              <span className="text-[10px] text-on-surface-variant block mt-0.5 font-normal">Interés: {loan.interest_rate}% ({loan.interest_period})</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase ${
+                              loan.loan_type === 'banco'
+                                ? 'text-sky-400 bg-sky-500/10'
+                                : 'text-amber-400 bg-amber-500/10'
+                            }`}>
+                              {loan.loan_type}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center text-on-surface-variant">{formatDate(loan.start_date)}</td>
+                          <td className="p-3 text-right text-white">{formatCurrency(loan.principal_amount)}</td>
+                          <td className="p-3 text-right text-white">{formatCurrency(loan.monthly_payment)}</td>
+                          <td className="p-3 text-right text-error font-bold">{formatCurrency(remaining)}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="w-12 bg-white/5 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-primary h-full rounded-full" style={{ width: `${progress}%` }} />
+                              </div>
+                              <span className="text-[10px] text-on-surface-variant">{progress}%</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              loan.status === 'activo'
+                                ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                : 'text-on-surface-variant bg-white/5 border border-white/10'
+                            }`}>
+                              {loan.status}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {loans.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-6 text-center text-on-surface-variant italic">
+                          No hay préstamos registrados para este acreedor.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                      <th className="p-3">Fecha</th>
+                      <th className="p-3 text-right">Cuota Total</th>
+                      <th className="p-3 text-right">Capital Amortizado</th>
+                      <th className="p-3 text-right">Interés Cuota</th>
+                      <th className="p-3">Detalle / Notas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loanPayments.map(pay => (
+                      <tr key={pay.id} className="border-b border-white/5 hover:bg-white/[0.01] font-mono text-xs">
+                        <td className="p-3 text-on-surface-variant">{formatDate(pay.payment_date)}</td>
+                        <td className="p-3 text-right font-bold text-white">{formatCurrency(pay.amount)}</td>
+                        <td className="p-3 text-right text-emerald-400">{formatCurrency(pay.principal_component)}</td>
+                        <td className="p-3 text-right text-amber-400">{formatCurrency(pay.interest_component)}</td>
+                        <td className="p-3 text-left text-on-surface-variant truncate max-w-[200px]" title={pay.notes}>
+                          {pay.notes || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    {loanPayments.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-6 text-center text-on-surface-variant italic">
+                          No se han registrado cuotas pagadas para este acreedor.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            activeTab === 'pedidos' ? (
+              <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                      <th className="p-3">Pedido</th>
+                      <th className="p-3">Fecha</th>
+                      <th className="p-3 text-right">Total</th>
+                      <th className="p-3 text-right">Cobrado</th>
+                      <th className="p-3 text-right">Saldo</th>
+                      <th className="p-3 text-center">Estado Pago</th>
+                      <th className="p-3 text-center">Producción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map(o => {
+                      const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
+                      const isCancelled = o.status === 'cancelado'
+                      const orderAllocations = totals.clientAllocations.filter(a => a.order_id === o.id)
+
+                      return (
+                        <tr key={o.id} className="border-b border-white/5 hover:bg-white/[0.01]">
+                          <td className="p-3 font-medium text-white">
+                            <div>
+                              <span className="font-bold">{orderNum}</span>
+                              <div className="mt-1 space-y-0.5">
+                                {Number(o.direct_paid_amount) > 0 && (
+                                  <span className="text-[10px] text-emerald-400/80 block">
+                                    • Abono directo: {formatCurrency(o.direct_paid_amount)}
+                                  </span>
+                                )}
+                                {orderAllocations.map(a => {
+                                  const matchedPayment = payments.find(p => p.id === a.tercero_payment_id)
+                                  const payDate = matchedPayment ? new Date(matchedPayment.date).toLocaleDateString() : ''
+                                  return (
+                                    <span key={a.id} className="text-[10px] text-violet-400 block">
+                                      • Adelanto general ({payDate}): +{formatCurrency(a.amount)}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(o.created_at).toLocaleDateString()}</td>
+                          <td className="p-3 text-right font-mono text-white">{formatCurrency(o.total_amount)}</td>
+                          <td className="p-3 text-right font-mono text-emerald-400">{formatCurrency(o.paid_amount)}</td>
+                          <td className="p-3 text-right font-mono text-error font-bold">
+                            {isCancelled ? formatCurrency(0) : formatCurrency(Math.max(0, o.total_amount - o.paid_amount))}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${paymentBadges[o.payment_status]}`}>
+                              {paymentLabels[o.payment_status]}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${statusBadges[o.status]}`}>
+                              {o.status}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {orders.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="p-6 text-center text-on-surface-variant">
+                          No hay pedidos registrados para este cliente.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
+                      <th className="p-3">Fecha</th>
+                      <th className="p-3 text-right">Monto</th>
+                      <th className="p-3">Método</th>
+                      <th className="p-3">Asignaciones / Pedidos</th>
+                      <th className="p-3">Detalle / Notas</th>
+                      <th className="p-3 text-center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map(p => {
+                      const paymentAllocations = totals.clientAllocations.filter(a => a.tercero_payment_id === p.id)
+                      const totalAllocated = paymentAllocations.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+                      const remaining = Math.max(0, p.amount - totalAllocated)
+
+                      return (
+                        <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.01]">
+                          <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(p.date).toLocaleDateString()}</td>
+                          <td className="p-3 text-right font-mono font-bold text-white">{formatCurrency(p.amount)}</td>
+                          <td className="p-3 text-on-surface-variant capitalize text-xs">{p.payment_method}</td>
+                          <td className="p-3 text-xs text-on-surface-variant">
+                            <div className="space-y-0.5">
+                              {paymentAllocations.map(a => {
+                                const ord = orders.find(o => o.id === a.order_id)
+                                const ordNum = ord ? `#${ord.order_number?.toString().padStart(4, '0')}` : 'Pedido'
                                 return (
-                                  <span key={a.id} className="text-[10px] text-violet-400 block">
-                                    • Adelanto general ({payDate}): +{formatCurrency(a.amount)}
+                                  <span key={a.id} className="block text-violet-400">
+                                    Aplicado {ordNum}: -{formatCurrency(a.amount)}
                                   </span>
                                 )
                               })}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(o.created_at).toLocaleDateString()}</td>
-                        <td className="p-3 text-right font-mono text-white">{formatCurrency(o.total_amount)}</td>
-                        <td className="p-3 text-right font-mono text-emerald-400">{formatCurrency(o.paid_amount)}</td>
-                        <td className="p-3 text-right font-mono text-error font-bold">
-                          {isCancelled ? formatCurrency(0) : formatCurrency(Math.max(0, o.total_amount - o.paid_amount))}
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${paymentBadges[o.payment_status]}`}>
-                            {paymentLabels[o.payment_status]}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${statusBadges[o.status]}`}>
-                            {o.status}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {orders.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-6 text-center text-on-surface-variant">
-                        No hay pedidos registrados para este cliente.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="overflow-x-auto border border-white/5 rounded-xl bg-surface-container/20">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="bg-surface-container-high border-b border-white/5 text-on-surface-variant text-xs font-mono uppercase">
-                    <th className="p-3">Fecha</th>
-                    <th className="p-3 text-right">Monto</th>
-                    <th className="p-3">Método</th>
-                    <th className="p-3">Asignaciones / Pedidos</th>
-                    <th className="p-3">Detalle / Notas</th>
-                    <th className="p-3 text-center">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payments.map(p => {
-                    const paymentAllocations = totals.clientAllocations.filter(a => a.tercero_payment_id === p.id)
-                    const totalAllocated = paymentAllocations.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
-                    const remaining = Math.max(0, p.amount - totalAllocated)
-
-                    return (
-                      <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.01]">
-                        <td className="p-3 font-mono text-on-surface-variant text-xs">{new Date(p.date).toLocaleDateString()}</td>
-                        <td className="p-3 text-right font-mono font-bold text-white">{formatCurrency(p.amount)}</td>
-                        <td className="p-3 text-on-surface-variant capitalize text-xs">{p.payment_method}</td>
-                        <td className="p-3 text-xs text-on-surface-variant">
-                          <div className="space-y-0.5">
-                            {paymentAllocations.map(a => {
-                              const ord = orders.find(o => o.id === a.order_id)
-                              const ordNum = ord ? `#${ord.order_number?.toString().padStart(4, '0')}` : 'Pedido'
-                              return (
-                                <span key={a.id} className="block text-violet-400">
-                                  Aplicado {ordNum}: -{formatCurrency(a.amount)}
+                              {remaining > 0 && (
+                                <span className="block text-emerald-400 font-bold">
+                                  Saldo libre: {formatCurrency(remaining)}
                                 </span>
-                              )
-                            })}
-                            {remaining > 0 && (
-                              <span className="block text-emerald-400 font-bold">
-                                Saldo libre: {formatCurrency(remaining)}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-on-surface-variant text-xs truncate max-w-[200px]" title={p.notes}>
-                          {p.notes || '—'}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => handleDeletePayment(p.id)}
-                            className="p-1.5 rounded-lg hover:bg-error-container/20 text-on-surface-variant hover:text-error transition-colors"
-                            title="Eliminar abono"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                          </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-on-surface-variant text-xs truncate max-w-[200px]" title={p.notes}>
+                            {p.notes || '—'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => handleDeletePayment(p.id)}
+                              className="p-1.5 rounded-lg hover:bg-error-container/20 text-on-surface-variant hover:text-error transition-colors"
+                              title="Eliminar abono"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {payments.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-on-surface-variant">
+                          No hay adelantos globales registrados para este cliente.
                         </td>
                       </tr>
-                    )
-                  })}
-                  {payments.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="p-6 text-center text-on-surface-variant">
-                        No hay adelantos globales registrados para este cliente.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       )}
@@ -790,13 +1013,18 @@ const dependienteTypeOptions = [
   { value: 'otro', label: 'Otro' }
 ]
 
+const acreedorTypeOptions = [
+  { value: 'acreedor', label: 'Entidad Bancaria o Acreedor Privado' },
+  { value: 'otro', label: 'Otro' }
+]
+
 export default function TercerosPage() {
   const { data: terceros, loading, error, create, update, remove } = useCRUD('terceros', {
     orderBy: 'name',
     orderAsc: true,
   })
 
-  const [roleFilter, setRoleFilter] = useState('todos') // 'todos', 'cliente', 'proveedor', 'dependiente'
+  const [roleFilter, setRoleFilter] = useState('todos') // 'todos', 'cliente', 'proveedor', 'dependiente', 'acreedor'
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -825,7 +1053,7 @@ export default function TercerosPage() {
     setForm({
       ...EMPTY_FORM,
       role: roleFilter === 'todos' ? 'cliente' : roleFilter,
-      client_type: roleFilter === 'dependiente' ? 'dependiente' : 'otro'
+      client_type: roleFilter === 'dependiente' ? 'dependiente' : roleFilter === 'acreedor' ? 'acreedor' : 'otro'
     })
     setErrors({})
     setModalOpen(true)
@@ -903,7 +1131,7 @@ export default function TercerosPage() {
       const next = { ...prev, [field]: value }
       if (field === 'role') {
         // Reset client_type depending on role
-        next.client_type = value === 'dependiente' ? 'dependiente' : 'otro'
+        next.client_type = value === 'dependiente' ? 'dependiente' : value === 'acreedor' ? 'acreedor' : 'otro'
       }
       return next
     })
@@ -949,7 +1177,8 @@ export default function TercerosPage() {
           { id: 'todos', label: 'Todos', icon: 'groups' },
           { id: 'cliente', label: 'Clientes', icon: 'person' },
           { id: 'proveedor', label: 'Proveedores', icon: 'local_shipping' },
-          { id: 'dependiente', label: 'Dependientes', icon: 'badge' }
+          { id: 'dependiente', label: 'Dependientes', icon: 'badge' },
+          { id: 'acreedor', label: 'Acreedores', icon: 'account_balance' }
         ].map(filter => (
           <button
             key={filter.id}
@@ -1032,12 +1261,14 @@ export default function TercerosPage() {
                           ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
                           : c.role === 'dependiente'
                             ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : c.role === 'acreedor'
+                              ? 'bg-sky-500/10 text-sky-450 border-sky-500/20'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                       }`}>
                         <span className="material-symbols-outlined text-[12px]">
-                          {c.role === 'proveedor' ? 'local_shipping' : c.role === 'dependiente' ? 'badge' : 'person'}
+                          {c.role === 'proveedor' ? 'local_shipping' : c.role === 'dependiente' ? 'badge' : c.role === 'acreedor' ? 'account_balance' : 'person'}
                         </span>
-                        {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : 'Cliente'}
+                        {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : c.role === 'acreedor' ? 'Acreedor' : 'Cliente'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-on-surface-variant">
@@ -1059,7 +1290,7 @@ export default function TercerosPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        {c.role === 'cliente' && (
+                        {(c.role === 'cliente' || c.role === 'acreedor') && (
                           <button
                             onClick={() => setDetailsTarget(c)}
                             className="p-1.5 rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
@@ -1121,12 +1352,13 @@ export default function TercerosPage() {
               className="sm:col-span-2"
             />
 
-             <Select
+              <Select
               label="Rol"
               options={[
                 { value: 'cliente', label: 'Cliente' },
                 { value: 'proveedor', label: 'Proveedor' },
-                { value: 'dependiente', label: 'Dependiente (Empleado)' }
+                { value: 'dependiente', label: 'Dependiente (Empleado)' },
+                { value: 'acreedor', label: 'Acreedor (Banco / Privado)' }
               ]}
               value={form.role}
               onChange={(e) => updateField('role', e.target.value)}
@@ -1140,7 +1372,9 @@ export default function TercerosPage() {
                   ? providerTypeOptions 
                   : form.role === 'dependiente'
                     ? dependienteTypeOptions
-                    : clientTypeOptions
+                    : form.role === 'acreedor'
+                      ? acreedorTypeOptions
+                      : clientTypeOptions
               }
               value={form.client_type}
               onChange={(e) => updateField('client_type', e.target.value)}

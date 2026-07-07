@@ -205,6 +205,7 @@ export const terceroTypes = {
   taller_externo_corte: 'Taller Externo / Corte Industrial',
   contabilidad_externo: 'Contabilidad / Externo',
   comercializador_ventas: 'Comercializador / Ventas',
+  acreedor: 'Acreedor / Entidad Financiera',
   otro: 'Otro',
 }
 

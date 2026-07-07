@@ -22,6 +22,7 @@ export default function LoansPage() {
   // Data State
   const [loans, setLoans] = useState([])
   const [payments, setPayments] = useState([])
+  const [creditors, setCreditors] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -36,7 +37,8 @@ export default function LoansPage() {
 
   // Forms State
   const [newLoan, setNewLoan] = useState({
-    creditor_name: '',
+    creditor_id: '',
+    new_creditor_name: '',
     loan_type: 'banco',
     principal_amount: '',
     interest_rate: '',
@@ -78,8 +80,18 @@ export default function LoansPage() {
 
       if (paymentsError) throw paymentsError
 
+      // 3. Fetch Creditors (terceros with role 'acreedor')
+      const { data: creditorsData, error: creditorsError } = await supabase
+        .from('terceros')
+        .select('*')
+        .eq('role', 'acreedor')
+        .order('name', { ascending: true })
+
+      if (creditorsError) throw creditorsError
+
       setLoans(loansData || [])
       setPayments(paymentsData || [])
+      setCreditors(creditorsData || [])
 
       // Update selected loan reference if active
       if (selectedLoan) {
@@ -162,7 +174,11 @@ export default function LoansPage() {
   // --- Handlers ---
   const handleCreateLoan = async (e) => {
     e.preventDefault()
-    if (!newLoan.creditor_name || !newLoan.principal_amount || !newLoan.monthly_payment) {
+    
+    const isNewCreditor = newLoan.creditor_id === 'new' || !newLoan.creditor_id
+    const finalCreditorName = isNewCreditor ? newLoan.new_creditor_name?.trim() : ''
+    
+    if ((isNewCreditor && !finalCreditorName) || !newLoan.principal_amount || !newLoan.monthly_payment) {
       setErrorMsg('Por favor completa los campos requeridos (*).')
       return
     }
@@ -170,11 +186,37 @@ export default function LoansPage() {
     setSaving(true)
     setErrorMsg('')
     try {
+      let creditorId = newLoan.creditor_id
+      let creditorName = ''
+
+      if (isNewCreditor) {
+        // Create the creditor in terceros table first
+        const { data: thirdData, error: thirdError } = await supabase
+          .from('terceros')
+          .insert({
+            user_id: user.id,
+            name: finalCreditorName,
+            role: 'acreedor',
+            client_type: 'acreedor'
+          })
+          .select()
+
+        if (thirdError) throw thirdError
+        creditorId = thirdData[0].id
+        creditorName = thirdData[0].name
+      } else {
+        const selected = creditors.find(c => c.id === newLoan.creditor_id)
+        if (!selected) throw new Error('Acreedor seleccionado no encontrado.')
+        creditorId = selected.id
+        creditorName = selected.name
+      }
+
       const { data, error } = await supabase
         .from('loans')
         .insert({
           user_id: user.id,
-          creditor_name: newLoan.creditor_name,
+          creditor_id: creditorId,
+          creditor_name: creditorName,
           loan_type: newLoan.loan_type,
           principal_amount: Number(newLoan.principal_amount),
           interest_rate: Number(newLoan.interest_rate || 0),
@@ -193,7 +235,8 @@ export default function LoansPage() {
       setShowAddModal(false)
       // Reset form
       setNewLoan({
-        creditor_name: '',
+        creditor_id: '',
+        new_creditor_name: '',
         loan_type: 'banco',
         principal_amount: '',
         interest_rate: '',
@@ -274,7 +317,8 @@ export default function LoansPage() {
           quantity: 1,
           unit_price: payAmount,
           amount: payAmount,
-          payment_method: newPayment.payment_method
+          payment_method: newPayment.payment_method,
+          provider_id: selectedLoan.creditor_id
         })
         .select()
 
@@ -701,13 +745,15 @@ export default function LoansPage() {
         >
           <form onSubmit={handleCreateLoan} className="space-y-4 text-left">
             <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Nombre del Acreedor *"
-                type="text"
-                placeholder="Ej. Banco Mercantil"
-                value={newLoan.creditor_name}
-                onChange={e => setNewLoan(prev => ({ ...prev, creditor_name: e.target.value }))}
-                required
+              <Select
+                label="Acreedor *"
+                value={newLoan.creditor_id}
+                onChange={e => setNewLoan(prev => ({ ...prev, creditor_id: e.target.value }))}
+                options={[
+                  { id: '', label: 'Seleccionar...' },
+                  ...creditors.map(c => ({ id: c.id, label: c.name })),
+                  { id: 'new', label: '+ Registrar Nuevo...' }
+                ]}
               />
               
               <Select
@@ -717,6 +763,17 @@ export default function LoansPage() {
                 options={LOAN_TYPES}
               />
             </div>
+
+            {(newLoan.creditor_id === 'new' || !newLoan.creditor_id) && (
+              <Input
+                label="Nombre del Nuevo Acreedor *"
+                type="text"
+                placeholder="Ej. Banco Mercantil o Prestamista Privado"
+                value={newLoan.new_creditor_name}
+                onChange={e => setNewLoan(prev => ({ ...prev, new_creditor_name: e.target.value }))}
+                required
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <Input

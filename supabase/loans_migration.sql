@@ -3,10 +3,21 @@
 -- Ejecuta este script en el editor SQL de Supabase
 -- ==========================================
 
+-- 0. Modificar la restricción de 'role' en terceros para incluir 'acreedor'
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS terceros_role_check;
+ALTER TABLE terceros ADD CONSTRAINT terceros_role_check CHECK (role IN ('cliente', 'proveedor', 'dependiente', 'acreedor'));
+
+ALTER TABLE terceros DROP CONSTRAINT IF EXISTS terceros_client_type_check;
+ALTER TABLE terceros ADD CONSTRAINT terceros_client_type_check CHECK (client_type IN (
+  'minorista', 'mayorista', 'club_deportivo', 'colegio', 'empresa', 'revendedor', 'otro',
+  'proveedor_materia_prima', 'proveedor_insumos', 'proveedor_servicios', 'dependiente', 'acreedor'
+));
+
 -- 1. Crear la tabla de préstamos (loans)
 CREATE TABLE IF NOT EXISTS loans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  creditor_id UUID REFERENCES terceros(id) ON DELETE SET NULL, -- Enlace relacional con la tabla terceros
   creditor_name TEXT NOT NULL,
   loan_type TEXT NOT NULL CHECK (loan_type IN ('banco', 'privado')),
   principal_amount DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (principal_amount >= 0),
@@ -20,6 +31,8 @@ CREATE TABLE IF NOT EXISTS loans (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_loans_creditor_id ON loans(creditor_id);
 
 -- 2. Crear la tabla de cuotas / pagos de préstamos (loan_payments)
 CREATE TABLE IF NOT EXISTS loan_payments (
