@@ -754,21 +754,24 @@ export default function DashboardPage() {
             key={card.label}
             className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] ${card.effectClass}`}
           >
-            <div className="p-4 relative overflow-hidden h-full flex flex-col justify-between">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <p className="text-[10px] font-bold font-mono uppercase tracking-wider text-on-surface-variant truncate">
-                    {card.label}
-                  </p>
-                  <p className="font-mono font-bold text-headline-sm text-on-surface truncate">
-                    {card.value}
-                  </p>
-                </div>
-                <div className="w-8 h-8 bg-surface-container-high rounded-lg flex items-center justify-center shrink-0">
-                  <span className={`material-symbols-outlined text-[18px] ${card.iconColor}`}>
+            <div className="p-4 relative overflow-hidden h-[98px] flex flex-col justify-between">
+              {/* Row 1: Label and Icon */}
+              <div className="flex items-center justify-between gap-2 w-full">
+                <span className="text-[10px] font-bold font-sans uppercase tracking-widest text-on-surface-variant truncate pr-1">
+                  {card.label}
+                </span>
+                <div className="w-7 h-7 bg-surface-container-high rounded-full flex items-center justify-center shrink-0 border border-white/5">
+                  <span className={`material-symbols-outlined text-[15px] ${card.iconColor}`}>
                     {card.icon}
                   </span>
                 </div>
+              </div>
+              
+              {/* Row 2: Large Value taking full width */}
+              <div className="mt-auto">
+                <p className="font-mono font-black text-xl text-white tracking-tight leading-none">
+                  {card.value}
+                </p>
               </div>
             </div>
           </Card>
