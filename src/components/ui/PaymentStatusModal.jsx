@@ -112,7 +112,7 @@ export default function PaymentStatusModal({ isOpen, onClose, entityType, entity
             </p>
           ) : (
             <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
-              {history.map((payment, i) => (
+              {[...history].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).map((payment, i) => (
                 <div key={payment.id} className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/30 flex justify-between items-center group">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

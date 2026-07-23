@@ -891,24 +891,31 @@ export default function OrdersPage() {
     }
   }
 
-  // Filtrar pedidos
+  // Filtrar y ordenar pedidos (más recientes primero)
   const filteredOrders = useMemo(() => {
-    return orders.filter(o => {
-      const clientName = o.terceros?.name || 'Cliente general'
-      const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
-      const firstItemName = o.order_items?.[0]?.name || ''
+    return orders
+      .filter(o => {
+        const clientName = o.terceros?.name || 'Cliente general'
+        const orderNum = `#${o.order_number?.toString().padStart(4, '0')}`
+        const firstItemName = o.order_items?.[0]?.name || ''
 
-      const matchesSearch =
-        clientName.toLowerCase().includes(search.toLowerCase()) ||
-        orderNum.toLowerCase().includes(search.toLowerCase()) ||
-        firstItemName.toLowerCase().includes(search.toLowerCase())
+        const matchesSearch =
+          clientName.toLowerCase().includes(search.toLowerCase()) ||
+          orderNum.toLowerCase().includes(search.toLowerCase()) ||
+          firstItemName.toLowerCase().includes(search.toLowerCase())
 
-      const matchesType = typeFilter === 'todos' || o.order_type === typeFilter
-      const matchesPayment = paymentFilter === 'todos' || o.payment_status === paymentFilter
-      const matchesStatus = statusFilter === 'todos' || o.status === statusFilter
+        const matchesType = typeFilter === 'todos' || o.order_type === typeFilter
+        const matchesPayment = paymentFilter === 'todos' || o.payment_status === paymentFilter
+        const matchesStatus = statusFilter === 'todos' || o.status === statusFilter
 
-      return matchesSearch && matchesType && matchesPayment && matchesStatus
-    })
+        return matchesSearch && matchesType && matchesPayment && matchesStatus
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.created_at || 0).getTime()
+        const timeB = new Date(b.created_at || 0).getTime()
+        if (timeA !== timeB) return timeB - timeA
+        return (b.order_number || 0) - (a.order_number || 0)
+      })
   }, [orders, search, typeFilter, paymentFilter, statusFilter])
 
   // Estadísticas del día
@@ -3598,10 +3605,12 @@ export default function OrdersPage() {
 
               const consolidatedLabor = Object.values(laborMap);
 
-              // Filtrar gastos generales (que no son materiales ni mano de obra)
-              const generalExpenses = orderExpenses.filter(exp => {
-                return !exp.material_id && exp.category_key?.toUpperCase() !== 'INSUMOS' && exp.terceros?.role !== 'dependiente';
-              });
+              // Filtrar gastos generales (que no son materiales ni mano de obra) y ordenar por fecha descendente
+              const generalExpenses = orderExpenses
+                .filter(exp => {
+                  return !exp.material_id && exp.category_key?.toUpperCase() !== 'INSUMOS' && exp.terceros?.role !== 'dependiente';
+                })
+                .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
               return (
                 <div className="space-y-6 animate-fade-in text-left">
