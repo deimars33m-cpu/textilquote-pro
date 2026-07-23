@@ -6,7 +6,7 @@ import { Card, SearchInput, Button, StatusBadge,
   LoadingSpinner, EmptyState, Select, AlertBanner, Modal,
   Input, Textarea, PaymentStatusModal
 } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, formatQuoteNumber } from '@/lib/formatters'
+import { formatCurrency, formatDate, formatQuoteNumber, getTodayStr } from '@/lib/formatters'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 
 const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -520,7 +520,7 @@ const getDefaultDeliveryDate = (category) => {
   const days = (category === 'servicios_sublimacion' || (category || '').toLowerCase().includes('sublimacion')) ? 2 : 15;
   const date = new Date();
   date.setDate(date.getDate() + days);
-  return date.toISOString().split('T')[0];
+  return getTodayStr(date);
 }
 
 export default function OrdersPage() {
@@ -577,8 +577,8 @@ export default function OrdersPage() {
     advanceAmount: 0,
     paymentNotes: '',
     particularDetails: '',
-    orderDate: new Date().toISOString().split('T')[0],
-    deliveryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    orderDate: getTodayStr(),
+    deliveryDate: getTodayStr(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)),
     basePanelPrice: 10,
     panelSizes: initialPanelSizes,
     panelSizePrices: getInitialPanelSizePrices(10),
@@ -920,7 +920,7 @@ export default function OrdersPage() {
 
   // Estadísticas del día
   const stats = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = getTodayStr()
     let dailySales = 0
     let pendingProduction = 0
     let pendingCobro = 0
@@ -990,8 +990,8 @@ export default function OrdersPage() {
       advanceAmount: 0,
       paymentNotes: '',
       particularDetails: '',
-      orderDate: new Date().toISOString().split('T')[0],
-      deliveryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      orderDate: getTodayStr(),
+      deliveryDate: getTodayStr(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)),
       basePanelPrice: 10,
       panelSizes: initialPanelSizes,
       panelSizePrices: getInitialPanelSizePrices(10)
@@ -1618,7 +1618,7 @@ export default function OrdersPage() {
           total_amount: total,
           paid_amount: advance,
           payment_history: initialPaymentHistory,
-          delivery_date: orderForm.deliveryDate ? new Date(orderForm.deliveryDate).toISOString().split('T')[0] : null,
+          delivery_date: orderForm.deliveryDate ? getTodayStr(orderForm.deliveryDate) : null,
           created_at: orderForm.orderDate ? new Date(orderForm.orderDate + 'T12:00:00Z').toISOString() : new Date().toISOString(),
           notes: orderForm.paymentNotes
         })
@@ -2842,7 +2842,7 @@ export default function OrdersPage() {
                             <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
                             {/* Delivery Date and Alert */}
                             {(() => {
-                              const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < new Date().toISOString().split('T')[0]);
+                              const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
                               if (isDelayed) {
                                 return (
                                   <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md mt-1 animate-pulse">

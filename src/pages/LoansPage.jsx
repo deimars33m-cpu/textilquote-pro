@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Card, Input, Button, AlertBanner, Modal, Select } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -44,7 +44,7 @@ export default function LoansPage() {
     interest_rate: '',
     interest_period: 'mensual',
     term_months: '',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: getTodayStr(),
     monthly_payment: '',
     notes: ''
   })
@@ -53,7 +53,7 @@ export default function LoansPage() {
     amount: '',
     principal_component: '',
     interest_component: '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: getTodayStr(),
     payment_method: 'transferencia',
     notes: ''
   })
@@ -242,7 +242,7 @@ export default function LoansPage() {
         interest_rate: '',
         interest_period: 'mensual',
         term_months: '',
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: getTodayStr(),
         monthly_payment: '',
         notes: ''
       })
@@ -362,7 +362,7 @@ export default function LoansPage() {
         amount: '',
         principal_component: '',
         interest_component: '',
-        payment_date: new Date().toISOString().split('T')[0],
+        payment_date: getTodayStr(),
         payment_method: 'transferencia',
         notes: ''
       })

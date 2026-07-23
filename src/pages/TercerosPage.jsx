@@ -4,7 +4,7 @@ import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
   Card, SearchInput, LoadingSpinner, EmptyState, StatusBadge
 } from '@/components/ui/index.jsx'
-import { clientTypes, terceroTypes, formatCurrency, formatDate } from '@/lib/formatters'
+import { clientTypes, terceroTypes, formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -376,7 +376,7 @@ function EstadoCuentaModal({ client, onClose }) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [amount, setAmount] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('efectivo')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getTodayStr())
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)

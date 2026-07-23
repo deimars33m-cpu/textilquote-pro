@@ -4,12 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { Card, Skeleton, StatusBadge } from '@/components/ui/index.jsx'
 
 // --- Helpers de Fechas ---
 function getToday() {
-  return new Date().toISOString().split('T')[0]
+  return getTodayStr()
 }
 
 function getStartOfWeek() {
@@ -17,13 +17,12 @@ function getStartOfWeek() {
   const day = d.getDay()
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Lunes
   d.setDate(diff)
-  d.setHours(0, 0, 0, 0)
-  return d.toISOString().split('T')[0]
+  return getTodayStr(d)
 }
 
 function getStartOfMonth() {
   const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
+  return getTodayStr(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
 // --- Progress Ring Component (SVG with CSS Variables & Gradients) ---

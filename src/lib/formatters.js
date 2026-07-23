@@ -22,11 +22,42 @@ export function formatPercent(value, decimals = 1) {
 }
 
 /**
- * Formatea una fecha en formato corto español
+ * Retorna la fecha local en formato YYYY-MM-DD sin desfasamiento de zona horaria UTC
+ */
+export function getTodayStr(dateInput = new Date()) {
+  const d = new Date(dateInput)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Parsea un string de fecha asegurando hora local sin desfasamiento
+ */
+export function parseLocalDate(dateStr) {
+  if (!dateStr) return null
+  if (dateStr instanceof Date) return dateStr
+  const s = String(dateStr).trim()
+  if (!s) return null
+
+  // Coincide con YYYY-MM-DD
+  const ymdMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymdMatch) {
+    const [, y, m, d] = ymdMatch.map(Number)
+    return new Date(y, m - 1, d)
+  }
+  return new Date(s)
+}
+
+/**
+ * Formatea una fecha en formato corto español sin desfasamiento
  */
 export function formatDate(dateStr) {
   if (!dateStr) return '—'
-  const date = new Date(dateStr)
+  const date = parseLocalDate(dateStr)
+  if (!date || isNaN(date.getTime())) return '—'
   return date.toLocaleDateString('es-BO', {
     day: '2-digit',
     month: 'short',
@@ -39,7 +70,8 @@ export function formatDate(dateStr) {
  */
 export function formatDateTime(dateStr) {
   if (!dateStr) return '—'
-  const date = new Date(dateStr)
+  const date = parseLocalDate(dateStr)
+  if (!date || isNaN(date.getTime())) return '—'
   return date.toLocaleDateString('es-BO', {
     day: '2-digit',
     month: 'short',
@@ -54,7 +86,8 @@ export function formatDateTime(dateStr) {
  */
 export function daysSince(dateStr) {
   if (!dateStr) return Infinity
-  const date = new Date(dateStr)
+  const date = parseLocalDate(dateStr)
+  if (!date || isNaN(date.getTime())) return Infinity
   const now = new Date()
   const diff = now - date
   return Math.floor(diff / (1000 * 60 * 60 * 24))

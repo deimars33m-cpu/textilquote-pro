@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, expenseStructure as defaultExpenseStructure } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { supabase } from '@/lib/supabase'
@@ -549,7 +549,7 @@ export default function ExpensesAndBudgetsPage() {
     categoryKey: '',
     subcategory: '',
     specificItem: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayStr(),
     description: '',
     quantity: 1,
     unitPrice: '',
@@ -730,7 +730,7 @@ export default function ExpensesAndBudgetsPage() {
         categoryKey: '',
         subcategory: '',
         specificItem: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getTodayStr(),
         description: '',
         quantity: 1,
         unitPrice: '',
@@ -884,7 +884,7 @@ export default function ExpensesAndBudgetsPage() {
     for (let i = 14; i >= 0; i--) {
       const d = new Date()
       d.setDate(now.getDate() - i)
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = getTodayStr(d)
       const label = d.getDate().toString()
       const amount = expenses
         .filter(e => e.date === dateStr)
@@ -953,7 +953,7 @@ export default function ExpensesAndBudgetsPage() {
 
   const sublimationStats = useMemo(() => {
     const now = new Date()
-    const todayStr = now.toISOString().split('T')[0]
+    const todayStr = getTodayStr(now)
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth()
 
