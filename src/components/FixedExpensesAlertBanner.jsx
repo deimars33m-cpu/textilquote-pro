@@ -6,7 +6,7 @@ import { formatCurrency } from '@/lib/formatters'
 export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
   const navigate = useNavigate()
   const { settings } = useGlobalSettings()
-  const fixedExpenses = settings.fixedExpenses || []
+  const fixedExpenses = settings?.fixedExpenses || []
 
   const alertAnalysis = useMemo(() => {
     const today = new Date()
@@ -15,7 +15,7 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
     const currentMonth = today.getMonth() + 1
     const monthStr = `${currentYear}-${currentMonth.toString().padStart(2, '0')}`
 
-    const activeItems = fixedExpenses.filter(item => item.active !== false)
+    const activeItems = fixedExpenses.filter(item => item && item.active !== false)
 
     const overdue = []
     const dueSoon = []
@@ -23,7 +23,8 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
 
     activeItems.forEach(item => {
       // Verificar si ya fue pagado este mes en la tabla de gastos
-      const isPaid = expenses.some(exp => {
+      const isPaid = (expenses || []).some(exp => {
+        if (!exp) return false
         const expDate = exp.date || exp.created_at || ''
         const matchesMonth = expDate.startsWith(monthStr)
         const matchesConcept = (exp.specific_item || exp.specificItem || exp.description || '')
@@ -95,7 +96,7 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
           </div>
 
           <button
-            onClick={() => navigate('/configuracion')}
+            onClick={() => navigate('/settings/global')}
             className="self-start md:self-center px-3.5 py-2 text-xs font-bold rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
             <span className="material-symbols-outlined text-[16px]">settings</span>
@@ -131,7 +132,7 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
                 </button>
               ) : (
                 <button
-                  onClick={() => navigate('/gastos')}
+                  onClick={() => navigate('/expenses')}
                   className="px-2.5 py-1.5 rounded-lg bg-error text-white font-bold text-[10px] hover:brightness-110 transition-all shrink-0 cursor-pointer shadow-sm"
                 >
                   Registrar
@@ -166,7 +167,7 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
                 </button>
               ) : (
                 <button
-                  onClick={() => navigate('/gastos')}
+                  onClick={() => navigate('/expenses')}
                   className="px-2.5 py-1.5 rounded-lg bg-amber-500 text-black font-bold text-[10px] hover:brightness-110 transition-all shrink-0 cursor-pointer shadow-sm"
                 >
                   Registrar

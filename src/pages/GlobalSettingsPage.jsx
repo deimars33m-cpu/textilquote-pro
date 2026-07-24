@@ -1474,7 +1474,7 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
 
 function FixedExpensesEditor() {
   const { settings, addFixedExpense, updateFixedExpense, deleteFixedExpense } = useGlobalSettings()
-  const fixedExpenses = settings.fixedExpenses || []
+  const fixedExpenses = settings?.fixedExpenses || []
 
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
