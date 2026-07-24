@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { supabase } from '@/lib/supabase'
 import { useCRUD } from '@/hooks/useCRUD'
+import { FixedExpensesAlertBanner } from '@/components/FixedExpensesAlertBanner.jsx'
 
 const PAYMENT_METHODS = [
   { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
@@ -598,6 +599,31 @@ export default function ExpensesAndBudgetsPage() {
     })
     setError(null)
     setSuccess(null)
+  }
+
+  const handleQuickPayFixedExpense = (fixedItem) => {
+    setForm({
+      providerName: '',
+      providerNit: '',
+      providerPhone: '',
+      providerEmail: '',
+      categoryKey: 'GASTOS_FIJOS',
+      subcategory: fixedItem.category || 'Alquileres',
+      specificItem: fixedItem.concept,
+      date: getTodayStr(),
+      description: `Pago mensual de gasto fijo: ${fixedItem.concept}`,
+      quantity: 1,
+      unitPrice: fixedItem.amount,
+      amount: fixedItem.amount,
+      advanceAmount: fixedItem.amount,
+      paymentMethod: 'transferencia',
+      orderId: '',
+      materialId: ''
+    })
+    setCurrentStep(3)
+    if (window.innerWidth < 1024) {
+      setShowMobileForm(true)
+    }
   }
 
   const validateStep = (step) => {
@@ -1976,6 +2002,9 @@ export default function ExpensesAndBudgetsPage() {
 
         {/* CONTENIDO SCROLLABLE */}
         <div className="flex-1 overflow-y-auto min-h-0 p-4">
+
+          {/* Alerta de Vencimiento de Gastos Fijos Mensuales */}
+          <FixedExpensesAlertBanner expenses={expenses} onQuickPay={handleQuickPayFixedExpense} />
 
           {/* PESTAÑA 1: TRANSACCIONES + FORMULARIO SIDEBAR WIZARD */}
           {activeTab === 'registro' && (

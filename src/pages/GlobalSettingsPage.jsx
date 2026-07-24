@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
-import { Card, Button, Input, Select, Textarea } from '@/components/ui/index.jsx'
+import { Card, Button, Input, Select, Textarea, Modal } from '@/components/ui/index.jsx'
 import { formatCurrency } from '@/lib/formatters'
 
 const MULTIPLIERS = {
@@ -138,7 +138,8 @@ export default function GlobalSettingsPage() {
           { id: 'orders_structure', label: 'Estructura de Pedidos', icon: 'category' },
           { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
           { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' },
-          { id: 'budgets_goals', label: 'Metas y Presupuestos', icon: 'savings' }
+          { id: 'budgets_goals', label: 'Metas y Presupuestos', icon: 'savings' },
+          { id: 'fixed_expenses', label: 'Gastos Fijos Mensuales', icon: 'account_balance' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -301,6 +302,11 @@ export default function GlobalSettingsPage() {
             showSavedIndicator={showSavedIndicator}
             savedStatus={savedStatus}
           />
+        )}
+
+        {/* --- TAB: GASTOS FIJOS MENSUALES --- */}
+        {activeTab === 'fixed_expenses' && (
+          <FixedExpensesEditor />
         )}
       </Card>
     </div>
@@ -1462,6 +1468,350 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
           Guardar y Aplicar Cambios
         </Button>
       </div>
+    </div>
+  )
+}
+
+function FixedExpensesEditor() {
+  const { settings, addFixedExpense, updateFixedExpense, deleteFixedExpense } = useGlobalSettings()
+  const fixedExpenses = settings.fixedExpenses || []
+
+  const [showModal, setShowModal] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
+  const [form, setForm] = useState({
+    concept: '',
+    category: 'Alquileres',
+    amount: '',
+    dueDay: 5,
+    active: true,
+    notes: ''
+  })
+
+  // Sugerencias prestablecidas para agregados en 1 clic
+  const SUGGESTIONS = [
+    { concept: 'Alquiler de Taller / Local', category: 'Alquileres', defaultAmount: 1500, dueDay: 5 },
+    { concept: 'Servicio de Luz (DELAPAZ/CRE/ENDE)', category: 'Servicios Básicos', defaultAmount: 350, dueDay: 10 },
+    { concept: 'Servicio de Agua Potable', category: 'Servicios Básicos', defaultAmount: 80, dueDay: 12 },
+    { concept: 'Internet Fibra Óptica', category: 'Servicios Básicos', defaultAmount: 220, dueDay: 15 },
+    { concept: 'Planilla Sueldos Personal', category: 'Sueldos y Salarios', defaultAmount: 4500, dueDay: 30 },
+    { concept: 'Mantenimiento Preventivo Máquinas', category: 'Mantenimiento', defaultAmount: 300, dueDay: 20 },
+    { concept: 'Licencias Software y Sistemas', category: 'Software y Sistemas', defaultAmount: 150, dueDay: 1 },
+    { concept: 'Patente Municipal / Impuestos', category: 'Impuestos y Patentes', defaultAmount: 200, dueDay: 15 },
+    { concept: 'Seguridad y Vigilancia Taller', category: 'Seguridad y Custodia', defaultAmount: 250, dueDay: 10 }
+  ]
+
+  const totalMonthly = fixedExpenses
+    .filter(item => item.active !== false)
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+
+  const handleOpenAdd = (preset = null) => {
+    if (preset) {
+      setForm({
+        concept: preset.concept,
+        category: preset.category,
+        amount: preset.defaultAmount,
+        dueDay: preset.dueDay,
+        active: true,
+        notes: ''
+      })
+    } else {
+      setForm({
+        concept: '',
+        category: 'Alquileres',
+        amount: '',
+        dueDay: 5,
+        active: true,
+        notes: ''
+      })
+    }
+    setEditingItem(null)
+    setShowModal(true)
+  }
+
+  const handleOpenEdit = (item) => {
+    setEditingItem(item)
+    setForm({
+      concept: item.concept || '',
+      category: item.category || 'Alquileres',
+      amount: item.amount || '',
+      dueDay: item.dueDay || 5,
+      active: item.active !== false,
+      notes: item.notes || ''
+    })
+    setShowModal(true)
+  }
+
+  const handleSave = (e) => {
+    e.preventDefault()
+    if (!form.concept.trim() || !form.amount || Number(form.amount) <= 0) {
+      alert('Ingrese un concepto y un monto mensual válido.')
+      return
+    }
+
+    const payload = {
+      concept: form.concept.trim(),
+      category: form.category,
+      amount: Number(form.amount),
+      dueDay: Number(form.dueDay) || 1,
+      active: form.active,
+      notes: form.notes.trim()
+    }
+
+    if (editingItem) {
+      updateFixedExpense(editingItem.id, payload)
+    } else {
+      addFixedExpense(payload)
+    }
+    setShowModal(false)
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Total KPI Card */}
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-surface-container-high to-surface-container-low border border-primary/30 relative overflow-hidden shadow-lg">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
+              <span className="material-symbols-outlined text-[20px]">account_balance</span>
+              Total Gastos Fijos Mensuales Presupuestados
+            </div>
+            <div className="text-3xl font-extrabold text-white font-mono mt-1">
+              {formatCurrency(totalMonthly)}
+              <span className="text-xs font-normal text-on-surface-variant ml-2 font-sans">/ mes</span>
+            </div>
+            <p className="text-xs text-on-surface-variant mt-1">
+              Presupuesto recurrente mensual para alquileres, servicios básicos, sueldos y obligaciones fijas del taller.
+            </p>
+          </div>
+          <Button
+            onClick={() => handleOpenAdd()}
+            className="bg-primary text-on-primary font-bold shadow-md hover:brightness-110 flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            Añadir Gasto Fijo
+          </Button>
+        </div>
+      </div>
+
+      {/* Sugerencias Rápidas */}
+      <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px] text-amber-400">lightbulb</span>
+          Sugerencias Frecuentes de Gastos Fijos (Haz clic para agregar rápido)
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {SUGGESTIONS.map((sug, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleOpenAdd(sug)}
+              className="px-3 py-1.5 rounded-xl bg-surface-container-high/60 hover:bg-primary/20 hover:border-primary/40 border border-outline-variant/30 text-xs text-on-surface flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[14px] text-primary">add_circle</span>
+              {sug.concept} ({formatCurrency(sug.defaultAmount)})
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Listado de Gastos Fijos */}
+      <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-primary">list_alt</span>
+            Listado de Gastos Fijos ({fixedExpenses.length})
+          </h3>
+        </div>
+
+        {fixedExpenses.length === 0 ? (
+          <p className="text-xs text-on-surface-variant italic py-8 text-center bg-surface-container rounded-xl">
+            No tienes gastos fijos configurados. Haz clic en el botón superior o en las sugerencias para agregar.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {fixedExpenses.map((item) => (
+              <div
+                key={item.id}
+                className={`p-4 rounded-xl border transition-all flex flex-col justify-between space-y-3 ${
+                  item.active !== false
+                    ? 'bg-surface border-outline-variant/40 hover:border-primary/40'
+                    : 'bg-surface/30 border-white/5 opacity-60'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-1">
+                      {item.category || 'Gastos Fijos'}
+                    </span>
+                    <h4 className="font-bold text-white text-sm">{item.concept}</h4>
+                    {item.notes && (
+                      <p className="text-[11px] text-on-surface-variant italic mt-0.5">{item.notes}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEdit(item)}
+                      className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
+                      title="Editar"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`¿Eliminar gasto fijo "${item.concept}"?`)) {
+                          deleteFixedExpense(item.id)
+                        }
+                      }}
+                      className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer"
+                      title="Eliminar"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
+                  <div>
+                    <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Monto Mensual</span>
+                    <span className="font-bold text-emerald-400 text-sm">{formatCurrency(item.amount)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Vencimiento Mensual</span>
+                    <span className="font-bold text-amber-400">Día {item.dueDay} de cada mes</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                  <span className="text-[10px] text-on-surface-variant font-mono">
+                    Seguimiento: {item.active !== false ? '✅ Activo' : '⚪ Inactivo'}
+                  </span>
+                  <button
+                    onClick={() => updateFixedExpense(item.id, { active: item.active === false })}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
+                      item.active !== false
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-white/5 text-on-surface-variant border border-white/10'
+                    }`}
+                  >
+                    {item.active !== false ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal Agregar / Editar */}
+      {showModal && (
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={editingItem ? 'Editar Gasto Fijo' : 'Nuevo Gasto Fijo Mensual'}
+          size="md"
+        >
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                Concepto / Nombre del Gasto Fijo *
+              </label>
+              <Input
+                value={form.concept}
+                onChange={e => setForm({ ...form, concept: e.target.value })}
+                placeholder="Ej: Alquiler Taller, Servicio de Luz, Sueldo Encargado"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Categoría del Gasto *
+                </label>
+                <Select
+                  value={form.category}
+                  onChange={e => setForm({ ...form, category: e.target.value })}
+                  options={[
+                    { value: 'Alquileres', label: 'Alquileres' },
+                    { value: 'Servicios Básicos', label: 'Servicios Básicos' },
+                    { value: 'Sueldos y Salarios', label: 'Sueldos y Salarios' },
+                    { value: 'Mantenimiento', label: 'Mantenimiento de Máquinas' },
+                    { value: 'Software y Sistemas', label: 'Software y Sistemas' },
+                    { value: 'Impuestos y Patentes', label: 'Impuestos y Patentes' },
+                    { value: 'Seguridad y Custodia', label: 'Seguridad y Custodia' },
+                    { value: 'Otros Gastos Fijos', label: 'Otros Gastos Fijos' }
+                  ]}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Monto Mensual (Bs) *
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={form.amount}
+                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Día de Vencimiento Mensual (1 - 31) *
+                </label>
+                <Select
+                  value={form.dueDay}
+                  onChange={e => setForm({ ...form, dueDay: e.target.value })}
+                  options={Array.from({ length: 31 }, (_, i) => ({
+                    value: i + 1,
+                    label: `Día ${i + 1} de cada mes`
+                  }))}
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  id="activeCheck"
+                  checked={form.active}
+                  onChange={e => setForm({ ...form, active: e.target.checked })}
+                  className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
+                />
+                <label htmlFor="activeCheck" className="text-xs font-bold text-on-surface cursor-pointer select-none">
+                  Activar seguimiento de vencimiento
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                Notas / Detalles adicionales
+              </label>
+              <Textarea
+                rows={2}
+                value={form.notes}
+                onChange={e => setForm({ ...form, notes: e.target.value })}
+                placeholder="Observaciones, número de contrato o proveedor..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
+              <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-primary text-on-primary font-bold">
+                {editingItem ? 'Guardar Cambios' : 'Añadir Gasto Fijo'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }

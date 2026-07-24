@@ -130,7 +130,17 @@ const INITIAL_CATALOG = {
   // Presupuestos de gastos: [{id, categoryKey, limitAmount, period}]
   budgets: [],
   // Metas de ventas: [{id, categoryId, period, targetAmount}]
-  salesGoals: []
+  salesGoals: [],
+  // Gastos Fijos Mensuales configurables
+  fixedExpenses: [
+    { id: 'fe_1', concept: 'Alquiler de Taller / Local', category: 'Alquileres', amount: 1500, dueDay: 5, active: true, notes: 'Pago mensual alquiler' },
+    { id: 'fe_2', concept: 'Servicio de Luz (DELAPAZ/CRE/ENDE)', category: 'Servicios Básicos', amount: 350, dueDay: 10, active: true, notes: 'Consumo eléctrico de taller' },
+    { id: 'fe_3', concept: 'Servicio de Agua Potable', category: 'Servicios Básicos', amount: 80, dueDay: 12, active: true, notes: 'Factura mensual de agua' },
+    { id: 'fe_4', concept: 'Internet Fibra Óptica', category: 'Servicios Básicos', amount: 220, dueDay: 15, active: true, notes: 'Conexión para taller y diseño' },
+    { id: 'fe_5', concept: 'Sueldos y Salarios Personal Fijo', category: 'Sueldos y Salarios', amount: 4500, dueDay: 30, active: true, notes: 'Planilla mensual operarios/admin' },
+    { id: 'fe_6', concept: 'Mantenimiento Preventivo Maquinaria', category: 'Mantenimiento', amount: 300, dueDay: 20, active: true, notes: 'Lubricación y revisión de máquinas' },
+    { id: 'fe_7', concept: 'Licencias de Software y Sistemas', category: 'Software y Sistemas', amount: 150, dueDay: 1, active: true, notes: 'Suscripciones y herramientas digital' }
+  ]
 }
 
 export function GlobalSettingsProvider({ children }) {
@@ -152,7 +162,8 @@ export function GlobalSettingsProvider({ children }) {
           panels: { ...INITIAL_CATALOG.panels, ...(parsed.panels || {}) },
           expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure,
           budgets: Array.isArray(parsed.budgets) ? parsed.budgets : [],
-          salesGoals: Array.isArray(parsed.salesGoals) ? parsed.salesGoals : []
+          salesGoals: Array.isArray(parsed.salesGoals) ? parsed.salesGoals : [],
+          fixedExpenses: Array.isArray(parsed.fixedExpenses) && parsed.fixedExpenses.length > 0 ? parsed.fixedExpenses : INITIAL_CATALOG.fixedExpenses
         })
       } catch (e) {
         console.error('Error parsing settings from LocalStorage', e)
@@ -176,7 +187,8 @@ export function GlobalSettingsProvider({ children }) {
             ...data.settings,
             expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure,
             budgets: Array.isArray(data.settings.budgets) ? data.settings.budgets : [],
-            salesGoals: Array.isArray(data.settings.salesGoals) ? data.settings.salesGoals : []
+            salesGoals: Array.isArray(data.settings.salesGoals) ? data.settings.salesGoals : [],
+            fixedExpenses: Array.isArray(data.settings.fixedExpenses) && data.settings.fixedExpenses.length > 0 ? data.settings.fixedExpenses : INITIAL_CATALOG.fixedExpenses
           }))
         }
       } catch (e) {
@@ -466,12 +478,32 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
-  // --- Guardar Presupuestos y Metas de Ventas Transaccional ---
-  const saveBudgetsAndGoals = (newBudgets, newSalesGoals) => {
+  // --- Métodos de Gastos Fijos Mensuales ---
+  const addFixedExpense = (item) => {
     setSettings(prev => ({
       ...prev,
-      budgets: newBudgets,
-      salesGoals: newSalesGoals
+      fixedExpenses: [...(prev.fixedExpenses || []), { ...item, id: Date.now().toString() }]
+    }))
+  }
+
+  const updateFixedExpense = (id, updates) => {
+    setSettings(prev => ({
+      ...prev,
+      fixedExpenses: (prev.fixedExpenses || []).map(item => item.id === id ? { ...item, ...updates } : item)
+    }))
+  }
+
+  const deleteFixedExpense = (id) => {
+    setSettings(prev => ({
+      ...prev,
+      fixedExpenses: (prev.fixedExpenses || []).filter(item => item.id !== id)
+    }))
+  }
+
+  const saveFixedExpenses = (newFixedExpenses) => {
+    setSettings(prev => ({
+      ...prev,
+      fixedExpenses: newFixedExpenses
     }))
   }
 
@@ -498,6 +530,10 @@ export function GlobalSettingsProvider({ children }) {
       addExpenseSpecificItem,
       deleteExpenseSpecificItem,
       saveBudgetsAndGoals,
+      addFixedExpense,
+      updateFixedExpense,
+      deleteFixedExpense,
+      saveFixedExpenses,
       isLoaded
     }}>
       {children}

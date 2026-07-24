@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { Card, Skeleton, StatusBadge } from '@/components/ui/index.jsx'
+import { FixedExpensesAlertBanner } from '@/components/FixedExpensesAlertBanner.jsx'
 
 // --- Helpers de Fechas ---
 function getToday() {
@@ -780,6 +781,9 @@ export default function DashboardPage() {
           Resumen financiero del mes en curso
         </p>
       </div>
+
+      {/* Alerta de Vencimiento de Gastos Fijos Mensuales */}
+      <FixedExpensesAlertBanner expenses={monthExpenses} />
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
