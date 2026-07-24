@@ -539,8 +539,9 @@ export default function ExpensesAndBudgetsPage() {
     fetchOrders()
   }, [user])
 
-  // --- FORMULARIO WIZARD ---
+  // --- FORMULARIO WIZARD Y REGISTROS ---
   const [currentStep, setCurrentStep] = useState(1)
+  const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const [form, setForm] = useState({
     providerName: '',
     providerNit: '',
@@ -1982,10 +1983,9 @@ export default function ExpensesAndBudgetsPage() {
 
               {/* IZQUIERDA: LISTA DE TRANSACCIONES */}
               <div className="flex-1 flex flex-col gap-2.5 sm:gap-4 h-full w-full">
-                
                 {/* CUADRO APARTADO DE FILTROS */}
                 <Card className="p-2.5 sm:p-4 shrink-0">
-                  <div className="flex flex-col md:flex-row gap-2 sm:gap-3">
+                  <div className="flex flex-col md:flex-row gap-2 sm:gap-3 items-stretch md:items-center">
                     <div className="flex-1">
                       <SearchInput
                         value={itemSearch}
@@ -1993,8 +1993,8 @@ export default function ExpensesAndBudgetsPage() {
                         placeholder="Buscar por ítem específico..."
                       />
                     </div>
-                    <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
-                      <div className="w-[120px] sm:w-[150px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-[110px] sm:w-[140px]">
                         <Select
                           options={[
                             { value: '', label: 'Categoría (Todas)' },
@@ -2010,7 +2010,7 @@ export default function ExpensesAndBudgetsPage() {
                           }}
                         />
                       </div>
-                      <div className="w-[120px] sm:w-[150px]">
+                      <div className="w-[110px] sm:w-[140px]">
                         <Select
                           options={[
                             { value: '', label: 'Subcategoría (Todas)' },
@@ -2023,190 +2023,378 @@ export default function ExpensesAndBudgetsPage() {
                           onChange={(e) => setSelectedSubcategoryFilter(e.target.value)}
                         />
                       </div>
-                      <div className="w-[120px] sm:w-[150px]">
+                      <button
+                        onClick={() => {
+                          setSelectedCategoryFilter('')
+                          setSelectedSubcategoryFilter('')
+                          setItemSearch('')
+                        }}
+                        className="h-10 px-3 rounded-xl neu-raised-sm text-xs font-semibold text-on-surface-variant hover:text-white transition-colors cursor-pointer"
+                      >
+                        TODOS
+                      </button>
+
+                      {/* Selector de Vista (Fichas / Tabla) */}
+                      <div className="flex bg-surface-container-high/40 p-0.5 rounded-xl border border-outline-variant/30 select-none shrink-0">
                         <button
-                          onClick={() => {
-                            setSelectedCategoryFilter('')
-                            setSelectedSubcategoryFilter('')
-                            setItemSearch('')
-                          }}
-                          className="w-full h-10 px-3 rounded-xl neu-raised-sm text-xs font-semibold text-on-surface-variant hover:text-white transition-colors cursor-pointer"
+                          type="button"
+                          onClick={() => setViewMode('cards')}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                            viewMode === 'cards'
+                              ? 'bg-primary text-on-primary shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                          title="Vista en Fichas / Tarjetas"
                         >
-                          TODOS
+                          <span className="material-symbols-outlined text-[16px]">grid_view</span>
+                          <span className="hidden sm:inline">Fichas</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewMode('table')}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                            viewMode === 'table'
+                              ? 'bg-primary text-on-primary shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                          title="Vista en Tabla"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">table_rows</span>
+                          <span className="hidden sm:inline">Tabla</span>
                         </button>
                       </div>
                     </div>
                   </div>
                 </Card>
 
-                {/* LISTA DE TRANSACCIONES */}
-                <Card className="flex-1 overflow-hidden flex flex-col w-full h-full min-h-[300px]">
-                  <div className="flex-1 overflow-auto p-0">
-                    <table className="w-full text-left border-collapse whitespace-nowrap">
-                      <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
-                        <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider font-mono">
-                          <th className="py-3 px-4 font-medium min-w-[120px]">Fecha / Categoría</th>
-                          <th className="py-3 px-4 font-medium min-w-[160px]">Proveedor / Detalle</th>
-                          <th className="py-3 px-4 font-medium text-right min-w-[140px]">Montos (Total / Adelanto)</th>
-                          <th className="py-3 px-4 text-center min-w-[170px]">Pago / Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5 text-sm animate-fade-in text-on-surface">
-                        {loadingExpenses ? (
-                          <tr>
-                            <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
-                              <div className="flex flex-col items-center gap-2 justify-center">
-                                <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-                                Cargando transacciones...
-                              </div>
-                            </td>
-                          </tr>
-                        ) : filteredExpenses.length === 0 ? (
-                          <tr>
-                            <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
-                              <div className="flex flex-col items-center gap-2 justify-center">
-                                <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
-                                Aún no hay gastos registrados con estos filtros.
-                              </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredExpenses.map((e) => {
-                            const catLabel = e.category_label || e.categoryLabel
-                            const sub = e.subcategory
-                            const item = e.specific_item || e.specificItem
-                            const price = e.unit_price || e.unitPrice
-                            const adv = e.advance_amount || e.advanceAmount
-                            const method = e.payment_method || e.paymentMethod
+                {/* LISTA DE TRANSACCIONES: FICHAS COMPACTAS O TABLA */}
+                {viewMode === 'cards' ? (
+                  loadingExpenses ? (
+                    <div className="text-center py-12 bg-surface-container-low/30 rounded-2xl border border-white/5">
+                      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-2" />
+                      <span className="text-xs text-on-surface-variant">Cargando transacciones...</span>
+                    </div>
+                  ) : filteredExpenses.length === 0 ? (
+                    <Card className="p-8 text-center">
+                      <span className="material-symbols-outlined text-4xl opacity-50 block mb-2">inbox</span>
+                      <p className="text-sm text-on-surface-variant">Aún no hay gastos registrados con estos filtros.</p>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredExpenses.map((e) => {
+                        const catLabel = e.category_label || e.categoryLabel
+                        const sub = e.subcategory
+                        const item = e.specific_item || e.specificItem
+                        const price = e.unit_price || e.unitPrice
+                        const adv = e.advance_amount || e.advanceAmount
+                        const method = e.payment_method || e.paymentMethod
 
-                            // Calcular estado de pago
-                            const paymentStatus = adv >= e.amount ? 'pagado' : (adv > 0 ? 'adelanto' : 'pendiente')
-                            const paymentLabels = {
-                              pendiente: 'Pendiente',
-                              adelanto: 'Acuenta',
-                              pagado: 'Pagado'
-                            }
-                            const paymentBadges = {
-                              pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                              adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                              pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
-                            }
+                        const paymentStatus = adv >= e.amount ? 'pagado' : (adv > 0 ? 'adelanto' : 'pendiente')
+                        const paymentLabels = {
+                          pendiente: 'Pendiente',
+                          adelanto: 'Acuenta',
+                          pagado: 'Pagado'
+                        }
+                        const paymentBadges = {
+                          pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                        }
 
-                            return (
-                              <tr key={e.id} className="hover:bg-white/[0.02] transition-colors group">
-                                {/* COL 1: Fecha y Categoría */}
-                                <td className="py-2.5 px-4 text-sm min-w-[120px]">
-                                  <span className="text-on-surface-variant font-mono block">{formatDate(e.date)}</span>
-                                  <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1.5 ${getExpenseCategoryStyle(e.category_key || e.categoryKey)}`}>
+                        return (
+                          <Card
+                            key={e.id}
+                            className="p-4 relative overflow-hidden backdrop-blur-md border border-outline-variant/30 hover:border-primary/40 transition-all duration-300 flex flex-col justify-between space-y-3 bg-surface-container-low/40 group shadow-md"
+                          >
+                            {/* Cabecera de Ficha Gasto */}
+                            <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-2.5">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getExpenseCategoryStyle(e.category_key || e.categoryKey)}`}>
                                     {catLabel}
                                   </span>
-                                  <span className="text-[10px] text-primary/80 font-mono block uppercase mt-1">{sub}</span>
-                                </td>
+                                  <span className="text-[10px] text-primary/90 font-mono font-bold uppercase">{sub}</span>
+                                </div>
+                                <span className="text-[11px] text-on-surface-variant font-mono block mt-1">
+                                  {formatDate(e.date)}
+                                </span>
+                              </div>
 
-                                {/* COL 2: Proveedor / Detalle */}
-                                <td className="py-2.5 px-4 text-sm min-w-[160px]">
-                                  <span className="font-bold text-white block">{e.provider || 'Proveedor general'}</span>
-                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]" title={item}>
-                                    {item}
-                                  </span>
-                                  {e.description && (
-                                    <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={e.description}>
-                                      Detalle: {e.description}
+                              {/* Tres puntos Acciones Menu */}
+                              <div className="relative inline-block text-left">
+                                <button
+                                  onClick={() => setActiveActionMenu(activeActionMenu === e.id ? null : e.id)}
+                                  className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                  title="Más acciones"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                                </button>
+                                
+                                {activeActionMenu === e.id && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-20" 
+                                      onClick={() => setActiveActionMenu(null)}
+                                    />
+                                    <div className="absolute right-0 mt-1 w-32 rounded-xl neu-surface py-1.5 z-30 animate-fade-in text-left">
+                                      <button
+                                        onClick={() => {
+                                          setSelectedExpense(e)
+                                          setActiveActionMenu(null)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                                        Ver Detalle
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDelete(e.id)
+                                          setActiveActionMenu(null)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                                        Eliminar
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Cuerpo: Proveedor e Ítem */}
+                            <div className="space-y-1">
+                              <p className="font-bold text-white text-sm truncate" title={e.provider || 'Proveedor general'}>
+                                {e.provider || 'Proveedor general'}
+                              </p>
+                              <p className="text-xs text-on-surface-variant font-medium truncate" title={item}>
+                                {item}
+                              </p>
+                              {e.description && (
+                                <p className="text-[10px] text-primary/80 italic truncate" title={e.description}>
+                                  {e.description}
+                                </p>
+                              )}
+                              {(e.orders || e.materials) && (
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {e.orders && (
+                                    <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                                      Ped #{e.orders.order_number?.toString().padStart(4, '0')}
                                     </span>
                                   )}
-                                  {(e.orders || e.materials) && (
-                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                      {e.orders && (
-                                        <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-mono font-bold">
-                                          Ped #{e.orders.order_number?.toString().padStart(4, '0')}
-                                        </span>
-                                      )}
-                                      {e.materials && (
-                                        <span className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-bold">
-                                          Mat: {e.materials.name}
-                                        </span>
-                                      )}
-                                    </div>
+                                  {e.materials && (
+                                    <span className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-bold">
+                                      Mat: {e.materials.name}
+                                    </span>
                                   )}
-                                </td>
+                                </div>
+                              )}
+                            </div>
 
-                                {/* COL 3: Montos */}
-                                <td className="py-2.5 px-4 text-sm text-right font-mono min-w-[140px]">
-                                  <span className="font-bold text-white block text-sm">{formatCurrency(e.amount)}</span>
-                                  <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                            {/* Montos en Caja Compacta */}
+                            <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
+                              <div>
+                                <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Monto Total</span>
+                                <span className="font-bold text-white text-sm">{formatCurrency(e.amount)}</span>
+                                {e.quantity > 1 && (
+                                  <span className="text-[9px] text-on-surface-variant/70 block">
                                     {e.quantity} uds × {formatCurrency(price, 0)}
                                   </span>
-                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
-                                    Adelanto: {formatCurrency(adv || 0)}
-                                  </span>
-                                </td>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Adelanto</span>
+                                <span className="font-bold text-emerald-400 text-sm">{formatCurrency(adv || 0)}</span>
+                              </div>
+                            </div>
 
-                                {/* COL 4: Pago / Acciones */}
-                                <td className="py-2.5 px-4 text-center min-w-[170px]">
-                                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
-                                    {/* Método de pago */}
-                                    <span className="text-[10px] font-semibold text-on-surface-variant/80 uppercase font-mono">{method}</span>
+                            {/* Footer: Método y Estado de Pago */}
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                              <span className="text-[10px] font-semibold text-on-surface-variant/80 uppercase font-mono">{method}</span>
+                              <button
+                                onClick={() => handleUpdateExpensePaymentStatus(e)}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
+                                title="Click para administrar pagos"
+                              >
+                                {paymentLabels[paymentStatus]}
+                              </button>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )
+                ) : (
+                  /* LISTA EN TABLA */
+                  <Card className="flex-1 overflow-hidden flex flex-col w-full h-full min-h-[300px]">
+                    <div className="flex-1 overflow-auto p-0">
+                      <table className="w-full text-left border-collapse whitespace-nowrap">
+                        <thead className="sticky top-0 bg-surface-container/95 backdrop-blur z-10">
+                          <tr className="border-b border-outline-variant text-on-surface-variant text-xs uppercase tracking-wider font-mono">
+                            <th className="py-3 px-4 font-medium min-w-[120px]">Fecha / Categoría</th>
+                            <th className="py-3 px-4 font-medium min-w-[160px]">Proveedor / Detalle</th>
+                            <th className="py-3 px-4 font-medium text-right min-w-[140px]">Montos (Total / Adelanto)</th>
+                            <th className="py-3 px-4 text-center min-w-[170px]">Pago / Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-sm animate-fade-in text-on-surface">
+                          {loadingExpenses ? (
+                            <tr>
+                              <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
+                                <div className="flex flex-col items-center gap-2 justify-center">
+                                  <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                                  Cargando transacciones...
+                                </div>
+                              </td>
+                            </tr>
+                          ) : filteredExpenses.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" className="text-center py-20 text-on-surface-variant text-sm">
+                                <div className="flex flex-col items-center gap-2 justify-center">
+                                  <span className="material-symbols-outlined text-4xl opacity-50">inbox</span>
+                                  Aún no hay gastos registrados con estos filtros.
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredExpenses.map((e) => {
+                              const catLabel = e.category_label || e.categoryLabel
+                              const sub = e.subcategory
+                              const item = e.specific_item || e.specificItem
+                              const price = e.unit_price || e.unitPrice
+                              const adv = e.advance_amount || e.advanceAmount
+                              const method = e.payment_method || e.paymentMethod
 
-                                    {/* Estado del pago (BOTON) */}
-                                    <button
-                                      onClick={() => handleUpdateExpensePaymentStatus(e)}
-                                      className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
-                                      title="Click para administrar pagos"
-                                    >
-                                      {paymentLabels[paymentStatus]}
-                                    </button>
+                              // Calcular estado de pago
+                              const paymentStatus = adv >= e.amount ? 'pagado' : (adv > 0 ? 'adelanto' : 'pendiente')
+                              const paymentLabels = {
+                                pendiente: 'Pendiente',
+                                adelanto: 'Acuenta',
+                                pagado: 'Pagado'
+                              }
+                              const paymentBadges = {
+                                pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                                adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                                pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                              }
 
-                                    {/* Tres puntos Acciones Menu */}
-                                    <div className="relative inline-block text-left ml-1">
+                              return (
+                                <tr key={e.id} className="hover:bg-white/[0.02] transition-colors group">
+                                  {/* COL 1: Fecha y Categoría */}
+                                  <td className="py-2.5 px-4 text-sm min-w-[120px]">
+                                    <span className="text-on-surface-variant font-mono block">{formatDate(e.date)}</span>
+                                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1.5 ${getExpenseCategoryStyle(e.category_key || e.categoryKey)}`}>
+                                      {catLabel}
+                                    </span>
+                                    <span className="text-[10px] text-primary/80 font-mono block uppercase mt-1">{sub}</span>
+                                  </td>
+
+                                  {/* COL 2: Proveedor / Detalle */}
+                                  <td className="py-2.5 px-4 text-sm min-w-[160px]">
+                                    <span className="font-bold text-white block">{e.provider || 'Proveedor general'}</span>
+                                    <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]" title={item}>
+                                      {item}
+                                    </span>
+                                    {e.description && (
+                                      <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={e.description}>
+                                        Detalle: {e.description}
+                                      </span>
+                                    )}
+                                    {(e.orders || e.materials) && (
+                                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                        {e.orders && (
+                                          <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                                            Ped #{e.orders.order_number?.toString().padStart(4, '0')}
+                                          </span>
+                                        )}
+                                        {e.materials && (
+                                          <span className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-bold">
+                                            Mat: {e.materials.name}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* COL 3: Montos */}
+                                  <td className="py-2.5 px-4 text-sm text-right font-mono min-w-[140px]">
+                                    <span className="font-bold text-white block text-sm">{formatCurrency(e.amount)}</span>
+                                    <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                                      {e.quantity} uds × {formatCurrency(price, 0)}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
+                                      Adelanto: {formatCurrency(adv || 0)}
+                                    </span>
+                                  </td>
+
+                                  {/* COL 4: Pago / Acciones */}
+                                  <td className="py-2.5 px-4 text-center min-w-[170px]">
+                                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                                      {/* Método de pago */}
+                                      <span className="text-[10px] font-semibold text-on-surface-variant/80 uppercase font-mono">{method}</span>
+
+                                      {/* Estado del pago (BOTON) */}
                                       <button
-                                        onClick={() => setActiveActionMenu(activeActionMenu === e.id ? null : e.id)}
-                                        className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
-                                        title="Más acciones"
+                                        onClick={() => handleUpdateExpensePaymentStatus(e)}
+                                        className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[paymentStatus]}`}
+                                        title="Click para administrar pagos"
                                       >
-                                        <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                                        {paymentLabels[paymentStatus]}
                                       </button>
-                                      
-                                      {activeActionMenu === e.id && (
-                                        <>
-                                          <div 
-                                            className="fixed inset-0 z-20" 
-                                            onClick={() => setActiveActionMenu(null)}
-                                          />
-                                          <div className="absolute right-0 mt-1 w-32 rounded-xl neu-surface py-1.5 z-30 animate-fade-in text-left">
-                                            <button
-                                              onClick={() => {
-                                                setSelectedExpense(e)
-                                                setActiveActionMenu(null)
-                                              }}
-                                              className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer bg-transparent border-none"
-                                            >
-                                              <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
-                                              Ver Detalle
-                                            </button>
-                                            <button
-                                              onClick={() => {
-                                                handleDelete(e.id)
-                                                setActiveActionMenu(null)
-                                              }}
-                                              className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
-                                            >
-                                              <span className="material-symbols-outlined text-[16px]">delete</span>
-                                              Eliminar
-                                            </button>
-                                          </div>
-                                        </>
-                                      )}
+
+                                      {/* Tres puntos Acciones Menu */}
+                                      <div className="relative inline-block text-left ml-1">
+                                        <button
+                                          onClick={() => setActiveActionMenu(activeActionMenu === e.id ? null : e.id)}
+                                          className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                          title="Más acciones"
+                                        >
+                                          <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                                        </button>
+                                        
+                                        {activeActionMenu === e.id && (
+                                          <>
+                                            <div 
+                                              className="fixed inset-0 z-20" 
+                                              onClick={() => setActiveActionMenu(null)}
+                                            />
+                                            <div className="absolute right-0 mt-1 w-32 rounded-xl neu-surface py-1.5 z-30 animate-fade-in text-left">
+                                              <button
+                                                onClick={() => {
+                                                  setSelectedExpense(e)
+                                                  setActiveActionMenu(null)
+                                                }}
+                                                className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                              >
+                                                <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                                                Ver Detalle
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  handleDelete(e.id)
+                                                  setActiveActionMenu(null)
+                                                }}
+                                                className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                              >
+                                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                                Eliminar
+                                              </button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
+                                  </td>
+                                </tr>
+                              )
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
               </div>
 
               {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}

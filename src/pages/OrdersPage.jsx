@@ -541,6 +541,7 @@ export default function OrdersPage() {
   const [typeFilter, setTypeFilter] = useState('todos')
   const [paymentFilter, setPaymentFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
+  const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
 
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
@@ -2730,7 +2731,7 @@ export default function OrdersPage() {
 
           {/* Filtros */}
           <Card className="py-2.5 px-4">
-            <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
               <div className="flex-1">
                 <SearchInput
                   value={search}
@@ -2738,324 +2739,401 @@ export default function OrdersPage() {
                   placeholder="Buscar por cliente, pedido o ítem..."
                 />
               </div>
-              <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
-                <div className="w-[120px] sm:w-[150px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-[110px] sm:w-[140px]">
                   <Select
                     options={typeOptions}
                     value={typeFilter}
                     onChange={e => setTypeFilter(e.target.value)}
                   />
                 </div>
-                <div className="w-[120px] sm:w-[150px]">
+                <div className="w-[110px] sm:w-[140px]">
                   <Select
                     options={paymentOptions}
                     value={paymentFilter}
                     onChange={e => setPaymentFilter(e.target.value)}
                   />
                 </div>
-                <div className="w-[120px] sm:w-[150px]">
+                <div className="w-[110px] sm:w-[140px]">
                   <Select
                     options={statusOptions}
                     value={statusFilter}
                     onChange={e => setStatusFilter(e.target.value)}
                   />
                 </div>
+
+                {/* Selector de Vista (Fichas / Tabla) */}
+                <div className="flex bg-surface-container-high/40 p-0.5 rounded-xl border border-outline-variant/30 select-none shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('cards')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      viewMode === 'cards'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                    title="Vista en Fichas / Tarjetas"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">grid_view</span>
+                    <span className="hidden sm:inline">Fichas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      viewMode === 'table'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                    title="Vista en Tabla"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">table_rows</span>
+                    <span className="hidden sm:inline">Tabla</span>
+                  </button>
+                </div>
               </div>
             </div>
           </Card>
 
-          {/* Tabla de Resultados */}
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full zebra-table whitespace-nowrap">
-                <thead>
-                  <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
-                    <th className="text-left px-4 py-3 min-w-[120px]">Pedido y Fecha</th>
-                    <th className="text-left px-4 py-3 min-w-[160px]">Cliente / Detalle</th>
-                    <th className="text-right px-4 py-3 min-w-[140px]">Montos (Total / Adelanto)</th>
-                    <th className="text-center px-4 py-3 min-w-[170px]">Estados / Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {loading ? (
-                    <tr>
-                      <td colSpan="4" className="text-center py-12">
-                        <LoadingSpinner />
-                      </td>
-                    </tr>
-                  ) : filteredOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan="4" className="text-center py-12">
-                        <EmptyState
-                          icon="shopping_bag"
-                          title="Sin pedidos registrados"
-                          message={
-                            dbError === 'orders_table_missing'
-                              ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                              : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
-                              ? 'No se encontraron pedidos con los filtros seleccionados.'
-                              : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredOrders.map(order => {
-                      const firstItem = order.order_items?.[0]
-                      const orderNum = `#${order.order_number?.toString().padStart(4, '0')}`
+          {/* Resultados: Vista de Fichas Compactas o Tabla */}
+          {viewMode === 'cards' ? (
+            loading ? (
+              <div className="text-center py-12 bg-surface-container-low/30 rounded-2xl border border-white/5">
+                <LoadingSpinner />
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <Card className="p-8 text-center">
+                <EmptyState
+                  icon="shopping_bag"
+                  title="Sin pedidos registrados"
+                  message={
+                    dbError === 'orders_table_missing'
+                      ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
+                      : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
+                      ? 'No se encontraron pedidos con los filtros seleccionados.'
+                      : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
+                  }
+                />
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredOrders.map(order => {
+                  const firstItem = order.order_items?.[0]
+                  const orderNum = `#${order.order_number?.toString().padStart(4, '0')}`
+                  const paymentBadges = {
+                    pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                  }
+                  const paymentLabels = {
+                    pendiente: 'Pendiente',
+                    adelanto: 'Adelanto',
+                    pagado: 'Pagado'
+                  }
+                  const statusBadges = {
+                    pendiente: 'bg-gradient-to-b from-[#64748b] to-[#475569] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(71,85,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    en_proceso: 'bg-gradient-to-b from-[#ffb03a] to-[#d97706] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(217,119,6,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    listo: 'bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(29,78,216,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    entregado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                    cancelado: 'bg-gradient-to-b from-[#ef4444] to-[#dc2626] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(220,38,38,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                  }
+                  const statusLabels = {
+                    pendiente: 'Pendiente',
+                    en_proceso: 'En Proceso',
+                    listo: 'Listo',
+                    entregado: 'Entregado',
+                    cancelado: 'Cancelado'
+                  }
+                  const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
 
-                      // Mapeos visuales de estados de pago (estilo 3D con luces/sombras sin bordes)
-                      const paymentBadges = {
-                        pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
-                      }
+                  return (
+                    <Card
+                      key={order.id}
+                      className="p-4 relative overflow-hidden backdrop-blur-md border border-outline-variant/30 hover:border-primary/40 transition-all duration-300 flex flex-col justify-between space-y-3 bg-surface-container-low/40 group shadow-md"
+                    >
+                      {/* Cabecera de Ficha */}
+                      <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-2.5">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-primary font-bold text-sm">{orderNum}</span>
+                            <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
+                              {firstItem?.category || '—'}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-on-surface-variant font-mono block mt-1">
+                            {formatDate(order.created_at)}
+                          </span>
+                        </div>
 
-                      const paymentLabels = {
-                        pendiente: 'Pendiente',
-                        adelanto: 'Adelanto',
-                        pagado: 'Pagado'
-                      }
+                        <div className="flex items-center gap-1">
+                          {isDelayed && (
+                            <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md animate-pulse">
+                              <span className="material-symbols-outlined text-[10px]">alarm</span>
+                              RETRASADO
+                            </span>
+                          )}
 
-                      // Mapeo visual de producción (estilo 3D con luces/sombras sin bordes)
-                      const statusBadges = {
-                        pendiente: 'bg-gradient-to-b from-[#64748b] to-[#475569] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(71,85,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        en_proceso: 'bg-gradient-to-b from-[#ffb03a] to-[#d97706] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(217,119,6,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        listo: 'bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(29,78,216,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        entregado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
-                        cancelado: 'bg-gradient-to-b from-[#ef4444] to-[#dc2626] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(220,38,38,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
-                      }
-
-                      const statusLabels = {
-                        pendiente: 'Pendiente',
-                        en_proceso: 'En Proceso',
-                        listo: 'Listo',
-                        entregado: 'Entregado',
-                        cancelado: 'Cancelado'
-                      }
-
-                      return (
-                        <tr key={order.id} className="hover:bg-white/[0.01] transition-colors">
-                          {/* COLUMNA 1: Fecha y categoría */}
-                          <td className="px-4 py-3 text-sm">
-                            <span className="font-mono text-primary font-bold block">{orderNum}</span>
-                            <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
-                            {/* Delivery Date and Alert */}
-                            {(() => {
-                              const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
-                              if (isDelayed) {
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md mt-1 animate-pulse">
-                                    <span className="material-symbols-outlined text-[10px]">alarm</span>
-                                    RETRASADO ({formatDate(order.delivery_date)})
-                                  </span>
-                                )
-                              }
-                              if (order.delivery_date) {
-                                return (
-                                  <span className="text-[9px] text-[#ff7a00] font-bold block mt-1 font-mono">
-                                    Entrega: {formatDate(order.delivery_date)}
-                                  </span>
-                                )
-                              }
-                              return null;
-                            })()}
-                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                              <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
-                                {firstItem?.category || '—'}
-                              </span>
-                              {order.order_items?.length > 1 && (
-                                <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-mono font-bold">
-                                  +{order.order_items.length - 1}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* COLUMNA 2: Descripcion/Cliente */}
-                          <td className="px-4 py-3 text-sm">
-                            <span className="font-bold text-white block">{order.terceros?.name || 'Cliente general'}</span>
-                            {(() => {
-                              const isProduccionTextil = firstItem?.category === 'Producción Textil';
-                              const isSublimacionPaneles = firstItem?.category === 'Servicios de Sublimación' && firstItem?.product_category === 'SUBLIMACION POR PANELES';
-                              if (isProduccionTextil) {
-                                const activeSizes = SIZES_LIST.filter(size => (firstItem?.size_distribution?.[size] || 0) > 0)
-                                  .map(size => `T${size}: ${firstItem.size_distribution[size]}`);
-                                const sizesStr = activeSizes.join(', ');
-                                return (
-                                  <>
-                                    <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
-                                      {firstItem?.name || 'Prendas'}
-                                    </span>
-                                    {sizesStr && (
-                                      <span className="text-[11px] text-cyan-400 font-mono block mt-0.5">
-                                        {sizesStr}
-                                      </span>
-                                    )}
-                                  </>
-                                );
-                              } else if (isSublimacionPaneles) {
-                                const activePanels = PANELS_LIST.filter(panel => {
-                                  const pData = firstItem?.size_distribution?.[panel];
-                                  const totalPanelQty = pData?.tallas ? Object.values(pData.tallas).reduce((sum, v) => sum + (Number(v) || 0), 0) : 0;
-                                  return pData && (pData.cantidad > 0 || totalPanelQty > 0);
-                                }).map(panel => {
-                                  const pData = firstItem.size_distribution[panel];
-                                  const num = panel.match(/^(\d+)/)?.[0] || '1';
-                                  const type = pData.tipo || 'Otros';
-                                  const tallasStr = SUBLIMATION_SIZES.filter(size => (pData.tallas?.[size] || 0) > 0)
-                                    .map(size => `T${size}: ${pData.tallas[size]}`)
-                                    .join(', ');
-                                  return (
-                                    <div key={panel} className="mt-0.5">
-                                      <span className="text-xs text-on-surface-variant block font-medium">
-                                        {num}P ({type.toLowerCase()})
-                                      </span>
-                                      {tallasStr && (
-                                        <span className="text-[11px] text-cyan-400 font-mono block mt-0.5">
-                                          {tallasStr}
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                });
-                                return activePanels.length > 0 ? (
-                                  <div className="space-y-1 mt-0.5">{activePanels}</div>
-                                ) : (
-                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
-                                    1P (deportivos fantasma)
-                                  </span>
-                                );
-                              } else {
-                                return (
-                                  <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]">
-                                    {firstItem?.name || '—'}
-                                  </span>
-                                );
-                              }
-                            })()}
-                            {firstItem?.description && (
-                              <span className="text-[10px] text-primary/80 italic block mt-1 max-w-[220px] truncate" title={firstItem.description}>
-                                Detalle: {firstItem.description}
-                              </span>
+                          {/* Menú de Acciones */}
+                          <div className="relative inline-block text-left">
+                            <button
+                              onClick={() => setActiveActionMenu(activeActionMenu === order.id ? null : order.id)}
+                              className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title="Más acciones"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">more_vert</span>
+                            </button>
+                            
+                            {activeActionMenu === order.id && (
+                              <>
+                                <div 
+                                  className="fixed inset-0 z-20" 
+                                  onClick={() => setActiveActionMenu(null)}
+                                />
+                                <div className="absolute right-0 mt-1 w-32 rounded-xl bg-surface-container-high border border-outline-variant/60 shadow-lg py-1.5 z-30 animate-fade-in text-left">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedOrder(order)
+                                      setActiveActionMenu(null)
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                                    Ver Detalle
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      loadOrderToEdit(order)
+                                      setActiveActionMenu(null)
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px] text-primary">edit</span>
+                                    Editar Pedido
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleDeleteOrder(order.id)
+                                      setActiveActionMenu(null)
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </>
                             )}
-                          </td>
+                          </div>
+                        </div>
+                      </div>
 
-                          {/* COLUMNA 3: Montos */}
-                          <td className="px-4 py-3 text-sm text-right font-mono min-w-[140px]">
-                            <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
-                            <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                      {/* Cuerpo: Cliente y Detalle */}
+                      <div className="space-y-1">
+                        <p className="font-bold text-white text-sm truncate" title={order.terceros?.name}>
+                          {order.terceros?.name || 'Cliente general'}
+                        </p>
+                        <p className="text-xs text-on-surface-variant font-medium truncate">
+                          {firstItem?.name || 'Prendas'} {order.order_items?.length > 1 ? `(+${order.order_items.length - 1} más)` : ''}
+                        </p>
+                        {order.delivery_date && (
+                          <p className="text-[10px] text-[#ff7a00] font-bold font-mono mt-0.5">
+                            Entrega: {formatDate(order.delivery_date)}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Montos Financieros en Caja Compacta */}
+                      <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
+                        <div>
+                          <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Total</span>
+                          <span className="font-bold text-white text-sm">{formatCurrency(order.total_amount)}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Cobrado / Adelanto</span>
+                          <span className="font-bold text-emerald-400 text-sm">{formatCurrency(order.paid_amount)}</span>
+                        </div>
+                      </div>
+
+                      {/* Botones de Estados */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                        <button
+                          onClick={() => handleUpdateStatus(order.id, order.status)}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
+                          title="Click para cambiar estado de producción"
+                        >
+                          {statusLabels[order.status]}
+                        </button>
+                        <button
+                          onClick={() => handleUpdatePaymentStatus(order)}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
+                          title="Click para administrar pagos"
+                        >
+                          {paymentLabels[order.payment_status]}
+                        </button>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            )
+          ) : (
+            /* Tabla de Resultados */
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full zebra-table whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
+                      <th className="text-left px-4 py-3 min-w-[120px]">Pedido y Fecha</th>
+                      <th className="text-left px-4 py-3 min-w-[160px]">Cliente / Detalle</th>
+                      <th className="text-right px-4 py-3 min-w-[140px]">Montos (Total / Adelanto)</th>
+                      <th className="text-center px-4 py-3 min-w-[170px]">Estados / Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {loading ? (
+                      <tr>
+                        <td colSpan="4" className="text-center py-12">
+                          <LoadingSpinner />
+                        </td>
+                      </tr>
+                    ) : filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="text-center py-12">
+                          <EmptyState
+                            icon="shopping_bag"
+                            title="Sin pedidos registrados"
+                            message={
+                              dbError === 'orders_table_missing'
+                                ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
+                                : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
+                                ? 'No se encontraron pedidos con los filtros seleccionados.'
+                                : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOrders.map(order => {
+                        const firstItem = order.order_items?.[0]
+                        const orderNum = `#${order.order_number?.toString().padStart(4, '0')}`
+
+                        // Mapeos visuales de estados de pago (estilo 3D con luces/sombras sin bordes)
+                        const paymentBadges = {
+                          pendiente: 'bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(255,92,0,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          adelanto: 'bg-gradient-to-b from-[#5c72ff] to-[#3a50e0] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(58,80,224,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          pagado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                        }
+
+                        const paymentLabels = {
+                          pendiente: 'Pendiente',
+                          adelanto: 'Adelanto',
+                          pagado: 'Pagado'
+                        }
+
+                        // Mapeo visual de producción (estilo 3D con luces/sombras sin bordes)
+                        const statusBadges = {
+                          pendiente: 'bg-gradient-to-b from-[#64748b] to-[#475569] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(71,85,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          en_proceso: 'bg-gradient-to-b from-[#ffb03a] to-[#d97706] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(217,119,6,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          listo: 'bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(29,78,216,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          entregado: 'bg-gradient-to-b from-[#10b981] to-[#059669] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(5,150,105,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]',
+                          cancelado: 'bg-gradient-to-b from-[#ef4444] to-[#dc2626] text-white font-bold shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3),_0_4px_10px_rgba(220,38,38,0.4)] hover:brightness-110 active:scale-[0.96] active:translate-y-[0.5px]'
+                        }
+
+                        const statusLabels = {
+                          pendiente: 'Pendiente',
+                          en_proceso: 'En Proceso',
+                          listo: 'Listo',
+                          entregado: 'Entregado',
+                          cancelado: 'Cancelado'
+                        }
+
+                        return (
+                          <tr key={order.id} className="hover:bg-white/[0.01] transition-colors">
+                            {/* COLUMNA 1: Fecha y categoría */}
+                            <td className="px-4 py-3 text-sm">
+                              <span className="font-mono text-primary font-bold block">{orderNum}</span>
+                              <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
+                              {/* Delivery Date and Alert */}
                               {(() => {
-                                const firstItem = order.order_items?.[0];
-                                const isSublimacionPaneles = 
-                                  (firstItem?.category || '').toLowerCase().includes('sublimaci') && 
-                                  (firstItem?.product_category || '').toLowerCase().includes('panel');
-                                if (isSublimacionPaneles) {
-                                  const itemMetrics = calculateItemMetrics(firstItem.size_distribution);
-                                  if (itemMetrics && itemMetrics.totalNominalPanels > 0) {
-                                    const avgNominalPrice = order.total_amount / itemMetrics.totalNominalPanels;
-                                    return (
-                                      <>
-                                        <span className="block font-semibold text-white">{itemMetrics.totalNominalPanels} paneles × {formatCurrency(avgNominalPrice, 1)}</span>
-                                        <span className="block text-[9px] text-[#ff7a00] font-bold">{itemMetrics.totalM2.toFixed(2)} m²</span>
-                                      </>
-                                    );
-                                  }
+                                const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
+                                if (isDelayed) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md mt-1 animate-pulse">
+                                      <span className="material-symbols-outlined text-[10px]">alarm</span>
+                                      RETRASADO ({formatDate(order.delivery_date)})
+                                    </span>
+                                  )
                                 }
-                                const totalQty = order.order_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
-                                const avgPrice = totalQty > 0 ? (order.total_amount / totalQty) : 0
-                                return `${totalQty} uds × ${formatCurrency(avgPrice, 0)}`
+                                if (order.delivery_date) {
+                                  return (
+                                    <span className="text-[9px] text-[#ff7a00] font-bold block mt-1 font-mono">
+                                      Entrega: {formatDate(order.delivery_date)}
+                                    </span>
+                                  )
+                                }
+                                return null;
                               })()}
-                            </span>
-                            <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
-                              Adelanto: {formatCurrency(order.paid_amount || 0)}
-                            </span>
-                          </td>
-
-                          {/* COLUMNA 4: Estados / Acciones */}
-                          <td className="px-4 py-3 text-center min-w-[170px]">
-                            <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
-                              {/* Estado de produccion button */}
-                              <button
-                                onClick={() => handleUpdateStatus(order.id, order.status)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
-                                title="Click para cambiar estado de producción"
-                              >
-                                {statusLabels[order.status]}
-                              </button>
-
-                              {/* Estado de pago button */}
-                              <button
-                                onClick={() => handleUpdatePaymentStatus(order)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
-                                title="Click para administrar pagos"
-                              >
-                                {paymentLabels[order.payment_status]}
-                              </button>
-
-                              {/* Tres puntos Acciones Menu */}
-                              <div className="relative inline-block text-left ml-1">
-                                <button
-                                  onClick={() => setActiveActionMenu(activeActionMenu === order.id ? null : order.id)}
-                                  className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
-                                  title="Más acciones"
-                                >
-                                  <span className="material-symbols-outlined text-[18px]">more_vert</span>
-                                </button>
-                                
-                                {activeActionMenu === order.id && (
-                                  <>
-                                    <div 
-                                      className="fixed inset-0 z-20" 
-                                      onClick={() => setActiveActionMenu(null)}
-                                    />
-                                    <div className="absolute right-0 mt-1 w-32 rounded-xl bg-surface-container-high border border-outline-variant/60 shadow-lg py-1.5 z-30 animate-fade-in text-left">
-                                      <button
-                                        onClick={() => {
-                                          setSelectedOrder(order)
-                                          setActiveActionMenu(null)
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
-                                      >
-                                        <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
-                                        Ver Detalle
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          loadOrderToEdit(order)
-                                          setActiveActionMenu(null)
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-white/5 hover:text-white flex items-center gap-2 cursor-pointer"
-                                      >
-                                        <span className="material-symbols-outlined text-[16px] text-primary">edit</span>
-                                        Editar Pedido
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleDeleteOrder(order.id)
-                                          setActiveActionMenu(null)
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 flex items-center gap-2 cursor-pointer"
-                                      >
-                                        <span className="material-symbols-outlined text-[16px]">delete</span>
-                                        Eliminar
-                                      </button>
-                                    </div>
-                                  </>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
+                                  {firstItem?.category || '—'}
+                                </span>
+                                {order.order_items?.length > 1 && (
+                                  <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-mono font-bold">
+                                    +{order.order_items.length - 1}
+                                  </span>
                                 )}
                               </div>
+                            </td>
 
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                            {/* COLUMNA 2: Descripcion/Cliente */}
+                            <td className="px-4 py-3 text-sm">
+                              <span className="font-bold text-white block">{order.terceros?.name || 'Cliente general'}</span>
+                              <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
+                                {firstItem?.name || 'Prendas'}
+                              </span>
+                            </td>
 
+                            {/* COLUMNA 3: Montos */}
+                            <td className="px-4 py-3 text-sm text-right font-mono min-w-[140px]">
+                              <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
+                              <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
+                                Abono: {formatCurrency(order.paid_amount || 0)}
+                              </span>
+                            </td>
+
+                            {/* COLUMNA 4: Estados y Acciones */}
+                            <td className="px-4 py-3 text-center min-w-[170px]">
+                              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                <button
+                                  onClick={() => handleUpdateStatus(order.id, order.status)}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${statusBadges[order.status]}`}
+                                >
+                                  {statusLabels[order.status]}
+                                </button>
+                                <button
+                                  onClick={() => handleUpdatePaymentStatus(order)}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap ${paymentBadges[order.payment_status]}`}
+                                >
+                                  {paymentLabels[order.payment_status]}
+                                </button>
+                                <button
+                                  onClick={() => setSelectedOrder(order)}
+                                  className="p-1.5 text-on-surface-variant hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
+                                  title="Ver detalle"
+                                >
+                                  <span className="material-symbols-outlined text-[18px] text-primary">visibility</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* COLUMNA DERECHA: Formulario Fijo en PC (Toma 3 de 12 en PC, oculta en móvil) */}
