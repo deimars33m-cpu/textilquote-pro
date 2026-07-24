@@ -478,6 +478,14 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
+  const saveBudgetsAndGoals = (newBudgets, newGoals) => {
+    setSettings(prev => ({
+      ...prev,
+      budgets: newBudgets,
+      salesGoals: newGoals
+    }))
+  }
+
   // --- Métodos de Gastos Fijos Mensuales ---
   const addFixedExpense = (item) => {
     setSettings(prev => ({
