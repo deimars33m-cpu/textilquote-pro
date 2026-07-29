@@ -419,14 +419,13 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  // Pedidos (para metas de ventas) — del mes con items para categorización
+  // Pedidos (para metas de ventas y KPIs)
   const { data: monthOrders = [], isLoading: loadingOrders } = useQuery({
-    queryKey: ['dashboard_orders', user?.id, startOfMonth],
+    queryKey: ['dashboard_orders', user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, total_amount, paid_amount, status, created_at, terceros(name), order_items(name, category, product_category, total_price)')
-        .gte('created_at', `${startOfMonth}T00:00:00`)
+        .select('id, total_amount, paid_amount, status, created_at, order_type, terceros(name), order_items(name, category, product_category, total_price)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -441,7 +440,6 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('quotes')
         .select('id, quote_number, status, created_at, total_price, terceros(name)')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5)
       if (error) throw error
@@ -538,18 +536,33 @@ export default function DashboardPage() {
   const budgetMetrics = useMemo(() => {
     return budgets.map(budget => {
       let spent = 0
-
       const periodStart = budget.period === 'semanal' ? startOfWeek : startOfMonth
 
       monthExpenses.forEach(exp => {
-        // En los presupuestos deben tomarse en cuenta los gastos respectivos de cada sub categoría
-        const subcategoriesOfBudgetCategory = expenseStructure[budget.categoryKey]?.subcategories 
-          ? Object.keys(expenseStructure[budget.categoryKey].subcategories)
-          : []
-        const matchesSubcategory = subcategoriesOfBudgetCategory.includes(exp.subcategory)
+        if (exp.date < periodStart) return
 
-        if (exp.category_key === budget.categoryKey || matchesSubcategory) {
-          if (exp.date >= periodStart) {
+        const rawCat = String(exp.category_key || exp.categoryKey || exp.category || '').toUpperCase().trim()
+
+        // Comprobación de categoría principal
+        const matchesCategory = budget.categoryKey && (
+          rawCat === budget.categoryKey ||
+          (rawCat.includes('PRODUC') && budget.categoryKey === 'PRODUCCION') ||
+          (rawCat.includes('INSUMO') && budget.categoryKey === 'INSUMOS') ||
+          ((rawCat.includes('FIJO') || rawCat.includes('FIJOS')) && budget.categoryKey === 'GASTOS_FIJOS') ||
+          (rawCat.includes('INDIRECT') && budget.categoryKey === 'INDIRECTOS') ||
+          (rawCat.includes('PERSONA') && budget.categoryKey === 'PERSONAL') ||
+          ((rawCat.includes('CASA') || rawCat.includes('FAMILIA')) && budget.categoryKey === 'CASA_FAMILIA')
+        )
+
+        if (matchesCategory) {
+          // Si el presupuesto es por subcategoría específica
+          if (budget.subcategory || budget.targetType === 'subcategory') {
+            const expSub = String(exp.subcategory || '').toLowerCase().trim()
+            const targetSub = String(budget.subcategory || '').toLowerCase().trim()
+            if (expSub === targetSub) {
+              spent += parseFloat(exp.amount) || 0
+            }
+          } else {
             spent += parseFloat(exp.amount) || 0
           }
         }
@@ -557,7 +570,7 @@ export default function DashboardPage() {
 
       return { ...budget, spent }
     })
-  }, [budgets, monthExpenses, startOfWeek, startOfMonth, expenseStructure])
+  }, [budgets, monthExpenses, startOfWeek, startOfMonth])
 
   // --- Cálculos de Gastos Personales y de Casa ---
   const personalData = useMemo(() => {
@@ -1067,27 +1080,37 @@ export default function DashboardPage() {
               <div className="p-5">
                 {budgetViewMode === 'rings' ? (
                   <div className="grid grid-cols-2 gap-4">
-                    {budgetMetrics.map(bm => (
-                      <BudgetRingCard
-                        key={bm.id}
-                        label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
-                        categoryLabel={bm.period === 'semanal' ? 'Semanal' : 'Mensual'}
-                        spent={bm.spent}
-                        limit={bm.limitAmount}
-                      />
-                    ))}
+                    {budgetMetrics.map(bm => {
+                      const isSub = bm.subcategory || bm.targetType === 'subcategory'
+                      const catLabel = expenseStructure[bm.categoryKey]?.label || bm.categoryKey
+                      const label = isSub ? `${catLabel} → ${bm.subcategory}` : catLabel
+                      return (
+                        <BudgetRingCard
+                          key={bm.id}
+                          label={label}
+                          categoryLabel={bm.period === 'semanal' ? 'Semanal' : 'Mensual'}
+                          spent={bm.spent}
+                          limit={bm.limitAmount}
+                        />
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {budgetMetrics.map(bm => (
-                      <BudgetBar
-                        key={bm.id}
-                        label={expenseStructure[bm.categoryKey]?.label || bm.categoryKey}
-                        categoryLabel={bm.period === 'semanal' ? 'Presupuesto Semanal' : 'Presupuesto Mensual'}
-                        spent={bm.spent}
-                        limit={bm.limitAmount}
-                      />
-                    ))}
+                    {budgetMetrics.map(bm => {
+                      const isSub = bm.subcategory || bm.targetType === 'subcategory'
+                      const catLabel = expenseStructure[bm.categoryKey]?.label || bm.categoryKey
+                      const label = isSub ? `${catLabel} → ${bm.subcategory}` : catLabel
+                      return (
+                        <BudgetBar
+                          key={bm.id}
+                          label={label}
+                          categoryLabel={bm.period === 'semanal' ? 'Presupuesto Semanal' : 'Presupuesto Mensual'}
+                          spent={bm.spent}
+                          limit={bm.limitAmount}
+                        />
+                      )
+                    })}
                   </div>
                 )}
               </div>
