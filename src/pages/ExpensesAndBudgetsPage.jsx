@@ -1171,6 +1171,36 @@ export default function ExpensesAndBudgetsPage() {
     const totalCostPerM2 = avgCostPerM2 + overheadPerM2
     const costToRevenueRatio = periodRevenues.servicios_sublimacion > 0 ? (subTotalExp / periodRevenues.servicios_sublimacion) * 100 : 0
 
+    // --- Calcular métricas por servicio ---
+
+    // BORDADO
+    const bordadoExp = serviceExpenses.servicios_bordado.threadCost
+    const bordadoRev = periodRevenues.servicios_bordado
+    const bordadoOverhead = proratedOverhead.servicios_bordado || 0
+    const directCostPer1kStitches = totalStitches1k > 0 ? bordadoExp / totalStitches1k : 0
+    const overheadPer1kStitches = totalStitches1k > 0 ? bordadoOverhead / totalStitches1k : 0
+
+    // CORTE VINIL
+    const corteExp = serviceExpenses.servicios_corte.vinylCost
+    const corteRev = periodRevenues.servicios_corte
+    const corteOverhead = proratedOverhead.servicios_corte || 0
+    const directCostPerVinylMeter = totalVinylMeters > 0 ? corteExp / totalVinylMeters : 0
+    const overheadPerVinylMeter = totalVinylMeters > 0 ? corteOverhead / totalVinylMeters : 0
+
+    // DTF
+    const dtfExp = serviceExpenses.servicios_dtf.dtfCost
+    const dtfRev = periodRevenues.servicios_dtf
+    const dtfOverhead = proratedOverhead.servicios_dtf || 0
+    const directCostPerDtfMeter = totalDtfMeters > 0 ? dtfExp / totalDtfMeters : 0
+    const overheadPerDtfMeter = totalDtfMeters > 0 ? dtfOverhead / totalDtfMeters : 0
+
+    // UV-DTF
+    const uvExp = serviceExpenses.servicios_uv_dtf.uvCost
+    const uvRev = periodRevenues.servicios_uv_dtf
+    const uvOverhead = proratedOverhead.servicios_uv_dtf || 0
+    const directCostPerLogo = totalUvLogos > 0 ? uvExp / totalUvLogos : 0
+    const overheadPerLogo = totalUvLogos > 0 ? uvOverhead / totalUvLogos : 0
+
     return {
       currentYear,
       periodOverheadCosts,
@@ -1179,30 +1209,60 @@ export default function ExpensesAndBudgetsPage() {
       proratedOverhead,
       filteredOrders,
       serviceExpenses,
-      // Sublimation
-      totalNominalPanels,
-      totalEquivalentPanels,
-      totalM2Sublimacion,
-      avgCostPerM2,
-      avgCombinedCostPerPanel,
-      avgCostPerEquivalentPanel,
-      overheadPerM2,
-      overheadPerNominalPanel,
-      overheadPerEquivalentPanel,
-      totalCostPerM2,
-      totalCostPerNominalPanel,
-      totalCostPerEquivalentPanel,
-      costToRevenueRatio,
-      // Bordado
-      totalStitches1k,
-      // Corte Vinil
-      totalVinylMeters,
-      // DTF
-      totalDtfMeters,
-      // UV-DTF
-      totalUvLogos,
-      // Produccion textil
       totalTextilGarments,
+      // Sub-objects for each service tab
+      sublimacion: {
+        totalNominalPanels,
+        totalEquivalentPanels,
+        totalM2: totalM2Sublimacion,
+        inkQuantity: serviceExpenses.servicios_sublimacion.inkQuantity,
+        inkCost: serviceExpenses.servicios_sublimacion.inkCost,
+        paperQuantity: serviceExpenses.servicios_sublimacion.paperQuantity,
+        paperCost: serviceExpenses.servicios_sublimacion.paperCost,
+        totalSubRevenue: periodRevenues.servicios_sublimacion,
+        directCostPerM2: avgCostPerM2,
+        overheadPerM2,
+        totalCostPerM2,
+        avgCombinedCostPerPanel,
+        overheadPerNominalPanel,
+        totalCostPerNominalPanel,
+        avgCostPerEquivalentPanel,
+        overheadPerEquivalentPanel,
+        totalCostPerEquivalentPanel,
+        costToRevenueRatio,
+      },
+      bordado: {
+        totalStitches1k,
+        expenses: bordadoExp,
+        revenue: bordadoRev,
+        directCostPer1kStitches,
+        overheadPer1kStitches,
+        costPer1kStitches: directCostPer1kStitches + overheadPer1kStitches,
+      },
+      corte: {
+        totalVinylMeters,
+        expenses: corteExp,
+        revenue: corteRev,
+        directCostPerMeter: directCostPerVinylMeter,
+        overheadPerMeter: overheadPerVinylMeter,
+        costPerMeter: directCostPerVinylMeter + overheadPerVinylMeter,
+      },
+      dtf: {
+        totalDtfMeters,
+        expenses: dtfExp,
+        revenue: dtfRev,
+        directCostPerMeter: directCostPerDtfMeter,
+        overheadPerMeter: overheadPerDtfMeter,
+        costPerMeter: directCostPerDtfMeter + overheadPerDtfMeter,
+      },
+      uvDtf: {
+        totalUvLogos,
+        expenses: uvExp,
+        revenue: uvRev,
+        directCostPerLogo,
+        overheadPerLogo,
+        costPerLogo: directCostPerLogo + overheadPerLogo,
+      },
     }
   }, [expenses, orders, sublimationPeriod, expenseStructure])
 
@@ -2853,7 +2913,6 @@ export default function ExpensesAndBudgetsPage() {
                                 options={[
                                   { value: '', label: '-- Ver Resumen Global de Contratos --' },
                                   ...analysisStats.filteredOrders
-                                    .filter(o => o.order_items?.some(i => (i.category || '').toLowerCase().includes('produc')))
                                     .map(o => ({
                                       value: o.id,
                                       label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
@@ -2869,7 +2928,7 @@ export default function ExpensesAndBudgetsPage() {
                             if (!selectedOrder && selectedContractId) return null
 
                             // Datos si hay uno seleccionado o resumen general
-                            const activeOrders = selectedOrder ? [selectedOrder] : analysisStats.filteredOrders.filter(o => o.order_items?.some(i => (i.category || '').toLowerCase().includes('produc')))
+                            const activeOrders = selectedOrder ? [selectedOrder] : analysisStats.filteredOrders
 
                             const totalRevenue = activeOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
                             const totalGarments = activeOrders.reduce((sum, o) => {
