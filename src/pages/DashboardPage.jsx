@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -242,7 +242,17 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
     '#a855f7'  // Purple
   ]
 
-  let accumulatedPercent = 0
+  // Pre-calculamos offsets fuera del render para evitar mutación durante JSX
+  const sliceOffsets = data.reduce((acc, item) => {
+    const percent = item.value / total
+    acc.items.push({
+      percent,
+      dashArray: `${percent * circumference} ${circumference}`,
+      dashOffset: -(acc.accumulated * circumference)
+    })
+    acc.accumulated += percent
+    return acc
+  }, { accumulated: 0, items: [] }).items
 
   return (
     <Card className="p-5 flex flex-col justify-between h-full bg-surface-container-low/30 backdrop-blur-sm border border-outline-variant/40 hover:border-primary/10 transition-all duration-300">
@@ -283,11 +293,7 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
               />
               {/* Slices */}
               {data.map((item, idx) => {
-                const percent = item.value / total
-                const dashArray = `${percent * circumference} ${circumference}`
-                const dashOffset = -(accumulatedPercent * circumference)
-                accumulatedPercent += percent
-
+                const { dashArray, dashOffset } = sliceOffsets[idx]
                 const isHovered = hoveredIndex === idx
                 const color = colors[idx % colors.length]
 

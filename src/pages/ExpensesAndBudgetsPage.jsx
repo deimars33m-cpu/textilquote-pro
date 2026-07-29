@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure, parseLocalDate } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { supabase } from '@/lib/supabase'
@@ -234,7 +234,16 @@ function NeuralDonut({ data, total }) {
     return fallbackColors[idx % fallbackColors.length]
   }
 
-  let currentAngle = -Math.PI / 2
+  // Pre-calculamos las geometrías fuera del render para evitar mutación durante JSX
+  const slices = data.reduce((acc, item) => {
+    const percent = item.value / total
+    const angleSpan = percent * 2 * Math.PI
+    const startAngle = acc.angle
+    const endAngle = acc.angle + angleSpan
+    acc.angle = endAngle
+    acc.items.push({ startAngle, endAngle, percent, angleSpan })
+    return acc
+  }, { angle: -Math.PI / 2, items: [] }).items
 
   return (
     <div className="neu-surface p-5 transition-all duration-300 flex flex-col justify-between h-auto lg:h-full relative overflow-hidden">
@@ -257,12 +266,7 @@ function NeuralDonut({ data, total }) {
           <div className="relative flex items-center justify-center shrink-0 select-none">
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="overflow-visible">
               {data.map((item, idx) => {
-                const percent = item.value / total
-                const angleSpan = percent * 2 * Math.PI
-                const startAngle = currentAngle
-                const endAngle = currentAngle + angleSpan
-                currentAngle = endAngle
-
+                const { startAngle, endAngle, percent, angleSpan } = slices[idx]
                 const isHovered = hoveredIndex === idx
                 const color = getItemColor(item, idx)
 
@@ -440,7 +444,7 @@ export default function ExpensesAndBudgetsPage() {
     select: '*, orders(order_number, total_amount), materials(name, category)'
   })
 
-  const [productionAvg, setProductionAvg] = useState(1000)
+  const [productionAvg] = useState(1000)
   const [providers, setProviders] = useState([])
   const [dependientes, setDependientes] = useState([])
   const [terceroType, setTerceroType] = useState('proveedor') // 'proveedor' o 'dependiente' o 'pedido'
@@ -479,18 +483,15 @@ export default function ExpensesAndBudgetsPage() {
     }
   };
 
-  const resetForm = () => {
-    setFormOpen(false)
-  }
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
-  const [calculatorPacks, setCalculatorPacks] = useState('')
-  const [calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
+  const [_calculatorPacks, setCalculatorPacks] = useState('')
+  const [_calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [materials, setMaterials] = useState([])
-  const [loadingMaterials, setLoadingMaterials] = useState(false)
+  const [, setLoadingMaterials] = useState(false)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('')
   const [selectedSubcategoryFilter, setSelectedSubcategoryFilter] = useState('')
   const [selectedExpense, setSelectedExpense] = useState(null)
@@ -646,7 +647,7 @@ export default function ExpensesAndBudgetsPage() {
     })
     setCurrentStep(3)
     if (window.innerWidth < 1024) {
-      setShowMobileForm(true)
+      setFormOpen(true)
     }
   }
 
@@ -866,7 +867,7 @@ export default function ExpensesAndBudgetsPage() {
   }, [currentMonthExpenses, expenseStructure])
 
   const overheadCosts = (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
-  const unitOverhead = productionAvg > 0 ? overheadCosts / productionAvg : 0
+  // unitOverhead disponible para uso futuro en UI
 
   const budgets = useMemo(() => {
     return settings?.budgets || []
@@ -1151,8 +1152,7 @@ export default function ExpensesAndBudgetsPage() {
     // Sublimation breakdown metrics
     const subTotalExp = serviceExpenses.servicios_sublimacion.total
     const subOverhead = proratedOverhead.servicios_sublimacion
-    const avgInkCostPerPanel = totalNominalPanels > 0 ? serviceExpenses.servicios_sublimacion.inkCost / totalNominalPanels : 0
-    const avgPaperCostPerPanel = totalNominalPanels > 0 ? serviceExpenses.servicios_sublimacion.paperCost / totalNominalPanels : 0
+    // avgInkCostPerPanel y avgPaperCostPerPanel disponibles para uso futuro
     const avgCombinedCostPerPanel = totalNominalPanels > 0 ? subTotalExp / totalNominalPanels : 0
     const avgCostPerEquivalentPanel = totalEquivalentPanels > 0 ? subTotalExp / totalEquivalentPanels : 0
     const avgCostPerM2 = totalM2Sublimacion > 0 ? subTotalExp / totalM2Sublimacion : 0
@@ -2914,7 +2914,7 @@ export default function ExpensesAndBudgetsPage() {
                             const selectedOrder = textileOrders.find(o => o.id === selectedContractId)
 
                             // Datos si hay uno seleccionado o resumen de todos los de producción textil
-                            const activeOrders = selectedOrder ? [selectedOrder] : textileOrders
+                            const _activeOrders = selectedOrder ? [selectedOrder] : textileOrders
 
                             return (
                               <>
