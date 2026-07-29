@@ -30,7 +30,29 @@ const CATEGORY_COLORS = {
   INDIRECTOS: '#a855f7',    // Púrpura Eléctrico
   PERSONAL: '#ec4899',      // Magenta / Rosa Vivo
   CASA_FAMILIA: '#06b6d4',  // Cian / Turquesa
-  TERCEROS: '#10b981'       // Esmeralda
+}
+
+function getNormalizedCategoryKey(e, expenseStructure) {
+  if (!e) return 'PRODUCCION'
+  const rawCat = String(e.category_key || e.categoryKey || e.category || '').toUpperCase().trim()
+
+  if (rawCat.includes('PRODUC')) return 'PRODUCCION'
+  if (rawCat.includes('INSUMO')) return 'INSUMOS'
+  if (rawCat.includes('FIJO') || rawCat.includes('FIJOS')) return 'GASTOS_FIJOS'
+  if (rawCat.includes('INDIRECT')) return 'INDIRECTOS'
+  if (rawCat.includes('PERSONA')) return 'PERSONAL'
+  if (rawCat.includes('CASA') || rawCat.includes('FAMILIA')) return 'CASA_FAMILIA'
+
+  const subLower = String(e.subcategory || '').toLowerCase().trim()
+  if (subLower && expenseStructure) {
+    const matchedKey = Object.keys(expenseStructure).find(catKey => 
+      expenseStructure[catKey]?.subcategories &&
+      Object.keys(expenseStructure[catKey].subcategories).some(s => s.toLowerCase() === subLower)
+    )
+    if (matchedKey) return matchedKey
+  }
+
+  return rawCat || 'PRODUCCION'
 }
 
 // --- Neural line chart component for futuristic trend ---
@@ -835,22 +857,9 @@ export default function ExpensesAndBudgetsPage() {
     })
 
     currentMonthExpenses.forEach(e => {
-      let foundKey = e.category_key || e.categoryKey
-      
-      // Si la key no está en la estructura, buscar por subcategoría
-      if (!expenseStructure[foundKey]) {
-        const matchedKey = Object.keys(expenseStructure).find(catKey => 
-          expenseStructure[catKey]?.subcategories &&
-          Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
-        )
-        if (matchedKey) {
-          foundKey = matchedKey
-        }
-      }
-
+      const foundKey = getNormalizedCategoryKey(e, expenseStructure)
       if (foundKey) {
-        if (!totals[foundKey]) totals[foundKey] = 0
-        totals[foundKey] += Number(e.amount) || 0
+        totals[foundKey] = (totals[foundKey] || 0) + (Number(e.amount) || 0)
       }
     })
     return totals
@@ -867,22 +876,13 @@ export default function ExpensesAndBudgetsPage() {
     return budgets.map(budget => {
       const spent = expenses
         .filter(e => {
-          const d = new Date(e.date)
+          const d = parseLocalDate(e.date)
+          if (!d) return false
           const now = new Date()
           const isCurrentMonth = d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
           if (!isCurrentMonth) return false
           
-          let eCat = e.category_key || e.categoryKey
-          if (!eCat) {
-            const matchedKey = Object.keys(expenseStructure).find(catKey => 
-              expenseStructure[catKey]?.subcategories &&
-              Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
-            )
-            if (matchedKey) {
-              eCat = matchedKey
-            }
-          }
-
+          const eCat = getNormalizedCategoryKey(e, expenseStructure)
           return budget.categoryKey && eCat === budget.categoryKey
         })
         .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
@@ -1011,14 +1011,7 @@ export default function ExpensesAndBudgetsPage() {
     }
 
     periodExpenses.forEach(e => {
-      let eCat = e.category_key || e.categoryKey
-      if (!eCat) {
-        const matchedKey = Object.keys(expenseStructure).find(catKey => 
-          expenseStructure[catKey]?.subcategories &&
-          Object.keys(expenseStructure[catKey].subcategories).includes(e.subcategory)
-        )
-        if (matchedKey) eCat = matchedKey
-      }
+      const eCat = getNormalizedCategoryKey(e, expenseStructure)
       
       const subcatLower = (e.subcategory || '').toLowerCase()
       const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
@@ -2970,21 +2963,30 @@ export default function ExpensesAndBudgetsPage() {
                             const orderIds = activeOrders.map(o => o.id)
                             const linkedExpenses = expenses.filter(e => orderIds.includes(e.order_id))
 
-                            let mpCost = 0
-                            let modCost = 0
-                            let otherDirectCost = 0
+                            let mpCost = 0         // 1. Materia Prima
+                            let embCost = 0        // 2. Embellecimientos
+                            let destajoCost = 0    // 3. Pagos a destajo
+                            let comisionCost = 0   // 4. Comisiones
+                            let otrosDirectCost = 0
 
                             linkedExpenses.forEach(e => {
-                              const subcatLower = (e.subcategory || '').toLowerCase()
-                              const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
+                              const catKey = getNormalizedCategoryKey(e, expenseStructure)
+                              const subcatLower = (e.subcategory || '').toLowerCase().trim()
+                              const itemLower = (e.specific_item || e.specificItem || e.description || '').toLowerCase().trim()
                               const amt = Number(e.amount) || 0
 
-                              if (subcatLower.includes('materia prima') || itemLower.includes('tela') || itemLower.includes('accesorios') || itemLower.includes('cierre')) {
+                              if (subcatLower.includes('materia prima') || itemLower.includes('tela') || itemLower.includes('accesorios') || itemLower.includes('cierre') || itemLower.includes('hilo')) {
                                 mpCost += amt
-                              } else if (subcatLower.includes('embellecimiento') || subcatLower.includes('destajo') || itemLower.includes('mano de obra') || itemLower.includes('confección') || itemLower.includes('confeccion')) {
-                                modCost += amt
+                              } else if (subcatLower.includes('embellecimiento') || itemLower.includes('embellecimiento') || itemLower.includes('pago bordado') || itemLower.includes('pago sublimaci')) {
+                                embCost += amt
+                              } else if (subcatLower.includes('destajo') || itemLower.includes('destajo') || itemLower.includes('mano de obra') || itemLower.includes('confecci') || itemLower.includes('costura') || itemLower.includes('taller')) {
+                                destajoCost += amt
+                              } else if (subcatLower.includes('comision') || itemLower.includes('comision')) {
+                                comisionCost += amt
+                              } else if (catKey === 'PRODUCCION') {
+                                mpCost += amt
                               } else {
-                                otherDirectCost += amt
+                                otrosDirectCost += amt
                               }
                             })
 
@@ -2992,7 +2994,8 @@ export default function ExpensesAndBudgetsPage() {
                             const contractRevenueShare = analysisStats.totalPeriodRevenue > 0 ? (totalRevenue / analysisStats.totalPeriodRevenue) : 0
                             const gifCost = contractRevenueShare * analysisStats.periodOverheadCosts
 
-                            const totalContractCost = mpCost + modCost + otherDirectCost + gifCost
+                            const totalDirectCost = mpCost + embCost + destajoCost + comisionCost + otrosDirectCost
+                            const totalContractCost = totalDirectCost + gifCost
                             const costPerUnit = totalGarments > 0 ? totalContractCost / totalGarments : 0
                             const pricePerUnit = totalGarments > 0 ? totalRevenue / totalGarments : 0
                             const netProfit = totalRevenue - totalContractCost
@@ -3010,7 +3013,7 @@ export default function ExpensesAndBudgetsPage() {
                                   <div className="neu-pressed p-4 rounded-xl text-left">
                                     <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Total Producción</span>
                                     <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(totalContractCost)}</span>
-                                    <span className="text-[10px] font-mono text-on-surface-variant">MP + MOD + GIF Prorrateados</span>
+                                    <span className="text-[10px] font-mono text-on-surface-variant">Costos Directos + GIF Prorrateados</span>
                                   </div>
                                   <div className="neu-pressed p-4 rounded-xl text-left">
                                     <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Unitario por Prenda</span>
@@ -3026,17 +3029,17 @@ export default function ExpensesAndBudgetsPage() {
                                   </div>
                                 </div>
 
-                                {/* Tabla de Segregación del Estado de Costos */}
+                                {/* Tabla de Segregación del Estado de Costos de Confección */}
                                 <div className="neu-surface p-4 rounded-xl space-y-3">
                                   <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
                                     <span className="material-symbols-outlined text-primary text-base">receipt_long</span>
-                                    Segregación del Estado de Costos de Confección Textil
+                                    Estado de Costos de Confección Textil por Cuentas
                                   </h4>
                                   <div className="overflow-x-auto rounded-xl neu-pressed">
                                     <table className="w-full text-left text-xs border-collapse font-mono">
                                       <thead>
                                         <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
-                                          <th className="py-2.5 px-3">Elemento del Costo</th>
+                                          <th className="py-2.5 px-3">Cuenta / Cuentas de PRODUCCIÓN</th>
                                           <th className="py-2.5 px-3 text-right">Monto Total (Bs)</th>
                                           <th className="py-2.5 px-3 text-right">Costo / Prenda</th>
                                           <th className="py-2.5 px-3 text-center">% del Costo</th>
@@ -3044,19 +3047,31 @@ export default function ExpensesAndBudgetsPage() {
                                       </thead>
                                       <tbody className="divide-y divide-white/5 text-on-surface">
                                         <tr>
-                                          <td className="py-2 px-3 text-white font-sans">🧵 Materia Prima Directa (Telas e Insumos)</td>
+                                          <td className="py-2 px-3 text-white font-sans">🧵 Materia Prima (Telas, Accesorios, Cierres, Hilos)</td>
                                           <td className="py-2 px-3 text-right">{formatCurrency(mpCost)}</td>
                                           <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(mpCost / totalGarments) : '—'}</td>
                                           <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((mpCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
                                         </tr>
                                         <tr>
-                                          <td className="py-2 px-3 text-white font-sans">✂️ Mano de Obra Directa (Confección y Destajo)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(modCost + otherDirectCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency((modCost + otherDirectCost) / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? (((modCost + otherDirectCost) / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                          <td className="py-2 px-3 text-white font-sans">🎨 Embellecimientos (Pagos Bordados, Sublimación)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(embCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(embCost / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((embCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
                                         </tr>
                                         <tr>
-                                          <td className="py-2 px-3 text-white font-sans">🏛️ Gastos Indirectos y Fijos (Prorrateados)</td>
+                                          <td className="py-2 px-3 text-white font-sans">✂️ Pagos a destajo (Mano de obra externa / Confección)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(destajoCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(destajoCost / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((destajoCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                        </tr>
+                                        <tr>
+                                          <td className="py-2 px-3 text-white font-sans">💼 Comisiones (Comisiones por Ventas / Otros)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(comisionCost + otrosDirectCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency((comisionCost + otrosDirectCost) / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? (((comisionCost + otrosDirectCost) / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                        </tr>
+                                        <tr>
+                                          <td className="py-2 px-3 text-white font-sans">🏛️ Gastos Fijos e Indirectos (Prorrateados)</td>
                                           <td className="py-2 px-3 text-right">{formatCurrency(gifCost)}</td>
                                           <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(gifCost / totalGarments) : '—'}</td>
                                           <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((gifCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
