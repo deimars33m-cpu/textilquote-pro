@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  /* ── Colors: Stitch 3D Silver Lead Theme (Light) ── */
-  --color-background: #edf2f7;
+  /* ── Colors: Steel Blue Light Theme ── */
+  --color-background: #B0C4DE;
   --color-surface: #ffffff;
   --color-surface-dim: #f1f5f9;
   --color-surface-bright: #ffffff;
@@ -201,8 +201,8 @@ html {
 }
 
 body {
-  background-color: #5d7072;
-  background-image: radial-gradient(circle at 50% 0%, #a2b5b7 0%, #5d7072 100%);
+  background-color: #B0C4DE;
+  background-image: radial-gradient(circle at 50% 0%, #D0E0F0 0%, #B0C4DE 100%);
   background-attachment: fixed;
   color: var(--color-on-surface);
   font-family: var(--font-sans);
