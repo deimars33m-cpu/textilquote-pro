@@ -603,15 +603,15 @@ export default function ExpensesAndBudgetsPage() {
 
   const handleQuickPayFixedExpense = (fixedItem) => {
     setForm({
-      providerName: '',
+      providerName: fixedItem.provider_name || '',
       providerNit: '',
       providerPhone: '',
       providerEmail: '',
       categoryKey: 'GASTOS_FIJOS',
-      subcategory: fixedItem.category || 'Alquileres',
-      specificItem: fixedItem.concept,
+      subcategory: fixedItem.subcategory || fixedItem.category || 'Alquileres',
+      specificItem: fixedItem.specificItem || fixedItem.concept,
       date: getTodayStr(),
-      description: `Pago mensual de gasto fijo: ${fixedItem.concept}`,
+      description: `Pago mensual de gasto fijo: ${fixedItem.concept || fixedItem.specificItem}`,
       quantity: 1,
       unitPrice: fixedItem.amount,
       amount: fixedItem.amount,

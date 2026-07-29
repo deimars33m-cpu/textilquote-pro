@@ -27,11 +27,20 @@ export function FixedExpensesAlertBanner({ expenses = [], onQuickPay = null }) {
         if (!exp) return false
         const expDate = exp.date || exp.created_at || ''
         const matchesMonth = expDate.startsWith(monthStr)
-        const matchesConcept = (exp.specific_item || exp.specificItem || exp.description || '')
-          .toLowerCase()
-          .includes((item.concept || '').toLowerCase()) ||
-          (exp.category_key || exp.categoryKey || '').toLowerCase() === (item.category || '').toLowerCase()
-        return matchesMonth && matchesConcept
+        
+        const expCategory = (exp.category_key || exp.categoryKey || '')
+        const matchesCat = expCategory === 'GASTOS_FIJOS' || expCategory.toLowerCase() === (item.subcategory || item.category || '').toLowerCase()
+        
+        const itemSubcat = (item.subcategory || item.category || '').toLowerCase()
+        const itemSpecific = (item.specificItem || item.concept || '').toLowerCase()
+        
+        const matchesSubcat = (exp.subcategory || '').toLowerCase() === itemSubcat
+        const matchesSpecific = (exp.specific_item || exp.specificItem || '').toLowerCase() === itemSpecific
+
+        // Fallback for older configs or manually entered descriptions
+        const fallbackMatch = itemSpecific && (exp.description || '').toLowerCase().includes(itemSpecific)
+
+        return matchesMonth && matchesCat && ((matchesSubcat && matchesSpecific) || fallbackMatch)
       })
 
       if (!isPaid) {

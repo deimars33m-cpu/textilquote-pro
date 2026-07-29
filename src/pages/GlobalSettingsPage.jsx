@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { Card, Button, Input, Select, Textarea, Modal } from '@/components/ui/index.jsx'
 import { formatCurrency } from '@/lib/formatters'
+import { useAuth } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 const MULTIPLIERS = {
   light: {
@@ -1475,12 +1477,38 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
 function FixedExpensesEditor() {
   const { settings, addFixedExpense, updateFixedExpense, deleteFixedExpense } = useGlobalSettings()
   const fixedExpenses = settings?.fixedExpenses || []
+  
+  const { user } = useAuth()
+  const [terceros, setTerceros] = useState([])
+  
+  useEffect(() => {
+    async function loadTerceros() {
+      if (!user) return
+      const { data, error } = await supabase
+        .from('terceros')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('role', ['proveedor', 'dependiente'])
+        .order('name')
+      if (!error && data) {
+        setTerceros(data)
+      }
+    }
+    loadTerceros()
+  }, [user])
+
+  const expenseStructure = settings?.expenseStructure || {}
+  const fixedExpensesCats = expenseStructure['GASTOS_FIJOS']?.subcategories || {}
 
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  
   const [form, setForm] = useState({
+    subcategory: '',
+    specificItem: '',
+    provider_id: '',
+    provider_name: '',
     concept: '',
-    category: 'Alquileres',
     amount: '',
     dueDay: 5,
     active: true,
@@ -1489,15 +1517,12 @@ function FixedExpensesEditor() {
 
   // Sugerencias prestablecidas para agregados en 1 clic
   const SUGGESTIONS = [
-    { concept: 'Alquiler de Taller / Local', category: 'Alquileres', defaultAmount: 1500, dueDay: 5 },
-    { concept: 'Servicio de Luz (DELAPAZ/CRE/ENDE)', category: 'Servicios Básicos', defaultAmount: 350, dueDay: 10 },
-    { concept: 'Servicio de Agua Potable', category: 'Servicios Básicos', defaultAmount: 80, dueDay: 12 },
-    { concept: 'Internet Fibra Óptica', category: 'Servicios Básicos', defaultAmount: 220, dueDay: 15 },
-    { concept: 'Planilla Sueldos Personal', category: 'Sueldos y Salarios', defaultAmount: 4500, dueDay: 30 },
-    { concept: 'Mantenimiento Preventivo Máquinas', category: 'Mantenimiento', defaultAmount: 300, dueDay: 20 },
-    { concept: 'Licencias Software y Sistemas', category: 'Software y Sistemas', defaultAmount: 150, dueDay: 1 },
-    { concept: 'Patente Municipal / Impuestos', category: 'Impuestos y Patentes', defaultAmount: 200, dueDay: 15 },
-    { concept: 'Seguridad y Vigilancia Taller', category: 'Seguridad y Custodia', defaultAmount: 250, dueDay: 10 }
+    { subcategory: 'Alquileres', specificItem: 'Alquiler Taller', defaultAmount: 1500, dueDay: 5 },
+    { subcategory: 'Alquileres', specificItem: 'Alquiler Tienda', defaultAmount: 1200, dueDay: 5 },
+    { subcategory: 'Servicios Básicos', specificItem: 'Luz', defaultAmount: 350, dueDay: 10 },
+    { subcategory: 'Servicios Básicos', specificItem: 'Agua', defaultAmount: 80, dueDay: 12 },
+    { subcategory: 'Telecomunicaciones', specificItem: 'Internet', defaultAmount: 220, dueDay: 15 },
+    { subcategory: 'Dependientes', specificItem: 'Sueldos', defaultAmount: 4500, dueDay: 30 }
   ]
 
   const totalMonthly = fixedExpenses
@@ -1507,8 +1532,11 @@ function FixedExpensesEditor() {
   const handleOpenAdd = (preset = null) => {
     if (preset) {
       setForm({
-        concept: preset.concept,
-        category: preset.category,
+        subcategory: preset.subcategory,
+        specificItem: preset.specificItem,
+        provider_id: '',
+        provider_name: '',
+        concept: preset.specificItem,
         amount: preset.defaultAmount,
         dueDay: preset.dueDay,
         active: true,
@@ -1516,8 +1544,11 @@ function FixedExpensesEditor() {
       })
     } else {
       setForm({
+        subcategory: Object.keys(fixedExpensesCats)[0] || '',
+        specificItem: '',
+        provider_id: '',
+        provider_name: '',
         concept: '',
-        category: 'Alquileres',
         amount: '',
         dueDay: 5,
         active: true,
@@ -1531,8 +1562,11 @@ function FixedExpensesEditor() {
   const handleOpenEdit = (item) => {
     setEditingItem(item)
     setForm({
-      concept: item.concept || '',
-      category: item.category || 'Alquileres',
+      subcategory: item.subcategory || item.category || Object.keys(fixedExpensesCats)[0] || '',
+      specificItem: item.specificItem || item.concept || '',
+      provider_id: item.provider_id || '',
+      provider_name: item.provider_name || '',
+      concept: item.concept || item.specificItem || '',
       amount: item.amount || '',
       dueDay: item.dueDay || 5,
       active: item.active !== false,
@@ -1543,14 +1577,28 @@ function FixedExpensesEditor() {
 
   const handleSave = (e) => {
     e.preventDefault()
-    if (!form.concept.trim() || !form.amount || Number(form.amount) <= 0) {
-      alert('Ingrese un concepto y un monto mensual válido.')
+    if (!form.subcategory || !form.specificItem) {
+      alert('Debe seleccionar una subcategoría y una subcuenta (ítem específico).')
       return
+    }
+    if (!form.amount || Number(form.amount) <= 0) {
+      alert('Ingrese un monto mensual válido.')
+      return
+    }
+    
+    let selectedProviderName = form.provider_name
+    if (form.provider_id) {
+      const found = terceros.find(t => t.id === form.provider_id)
+      if (found) selectedProviderName = found.name
     }
 
     const payload = {
-      concept: form.concept.trim(),
-      category: form.category,
+      subcategory: form.subcategory,
+      specificItem: form.specificItem,
+      provider_id: form.provider_id || null,
+      provider_name: selectedProviderName || null,
+      concept: form.concept.trim() || form.specificItem,
+      category: form.subcategory, // backward compatibility
       amount: Number(form.amount),
       dueDay: Number(form.dueDay) || 1,
       active: form.active,
@@ -1597,7 +1645,7 @@ function FixedExpensesEditor() {
       <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px] text-amber-400">lightbulb</span>
-          Sugerencias Frecuentes de Gastos Fijos (Haz clic para agregar rápido)
+          Sugerencias Frecuentes de Gastos Fijos
         </h3>
         <div className="flex flex-wrap gap-2">
           {SUGGESTIONS.map((sug, idx) => (
@@ -1608,7 +1656,7 @@ function FixedExpensesEditor() {
               className="px-3 py-1.5 rounded-xl bg-surface-container-high/60 hover:bg-primary/20 hover:border-primary/40 border border-outline-variant/30 text-xs text-on-surface flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-[14px] text-primary">add_circle</span>
-              {sug.concept} ({formatCurrency(sug.defaultAmount)})
+              {sug.specificItem} ({formatCurrency(sug.defaultAmount)})
             </button>
           ))}
         </div>
@@ -1641,9 +1689,15 @@ function FixedExpensesEditor() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-1">
-                      {item.category || 'Gastos Fijos'}
+                      {item.subcategory || item.category || 'Gastos Fijos'}
                     </span>
-                    <h4 className="font-bold text-white text-sm">{item.concept}</h4>
+                    <h4 className="font-bold text-white text-sm">{item.specificItem || item.concept}</h4>
+                    {item.provider_name && (
+                      <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+                        <span className="material-symbols-outlined text-[12px] align-middle mr-1">person</span>
+                        {item.provider_name}
+                      </p>
+                    )}
                     {item.notes && (
                       <p className="text-[11px] text-on-surface-variant italic mt-0.5">{item.notes}</p>
                     )}
@@ -1658,7 +1712,7 @@ function FixedExpensesEditor() {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm(`¿Eliminar gasto fijo "${item.concept}"?`)) {
+                        if (confirm(`¿Eliminar gasto fijo "${item.specificItem || item.concept}"?`)) {
                           deleteFixedExpense(item.id)
                         }
                       }}
@@ -1711,39 +1765,72 @@ function FixedExpensesEditor() {
           size="md"
         >
           <form onSubmit={handleSave} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Subcategoría *
+                </label>
+                <Select
+                  value={form.subcategory}
+                  onChange={e => {
+                    const newSub = e.target.value
+                    setForm({ 
+                      ...form, 
+                      subcategory: newSub, 
+                      specificItem: fixedExpensesCats[newSub]?.[0] || '' 
+                    })
+                  }}
+                  options={Object.keys(fixedExpensesCats).map(cat => ({ value: cat, label: cat }))}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Subcuenta (Ítem) *
+                </label>
+                <Select
+                  value={form.specificItem}
+                  onChange={e => setForm({ ...form, specificItem: e.target.value })}
+                  options={(fixedExpensesCats[form.subcategory] || []).map(item => ({ value: item, label: item }))}
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
-                Concepto / Nombre del Gasto Fijo *
+                Proveedor / Tercero
+              </label>
+              <Select
+                value={form.provider_id}
+                onChange={e => setForm({ ...form, provider_id: e.target.value, provider_name: '' })}
+                options={[
+                  { value: '', label: '-- Seleccione un proveedor o empleado --' },
+                  ...terceros.map(t => ({ value: t.id, label: `${t.name} (${t.role})` }))
+                ]}
+              />
+              {!form.provider_id && (
+                <div className="mt-2">
+                  <Input
+                    value={form.provider_name}
+                    onChange={e => setForm({ ...form, provider_name: e.target.value })}
+                    placeholder="O escriba un nombre libremente si no está en la lista..."
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                Concepto Opcional (Alias)
               </label>
               <Input
                 value={form.concept}
                 onChange={e => setForm({ ...form, concept: e.target.value })}
-                placeholder="Ej: Alquiler Taller, Servicio de Luz, Sueldo Encargado"
-                required
+                placeholder="Ej: Luz Taller Principal"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
-                  Categoría del Gasto *
-                </label>
-                <Select
-                  value={form.category}
-                  onChange={e => setForm({ ...form, category: e.target.value })}
-                  options={[
-                    { value: 'Alquileres', label: 'Alquileres' },
-                    { value: 'Servicios Básicos', label: 'Servicios Básicos' },
-                    { value: 'Sueldos y Salarios', label: 'Sueldos y Salarios' },
-                    { value: 'Mantenimiento', label: 'Mantenimiento de Máquinas' },
-                    { value: 'Software y Sistemas', label: 'Software y Sistemas' },
-                    { value: 'Impuestos y Patentes', label: 'Impuestos y Patentes' },
-                    { value: 'Seguridad y Custodia', label: 'Seguridad y Custodia' },
-                    { value: 'Otros Gastos Fijos', label: 'Otros Gastos Fijos' }
-                  ]}
-                />
-              </div>
-
               <div>
                 <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
                   Monto Mensual (Bs) *
@@ -1758,12 +1845,10 @@ function FixedExpensesEditor() {
                   required
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
-                  Día de Vencimiento Mensual (1 - 31) *
+                  Día de Vencimiento *
                 </label>
                 <Select
                   value={form.dueDay}
@@ -1774,19 +1859,19 @@ function FixedExpensesEditor() {
                   }))}
                 />
               </div>
+            </div>
 
-              <div className="flex items-center gap-2 pt-6">
-                <input
-                  type="checkbox"
-                  id="activeCheck"
-                  checked={form.active}
-                  onChange={e => setForm({ ...form, active: e.target.checked })}
-                  className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
-                />
-                <label htmlFor="activeCheck" className="text-xs font-bold text-on-surface cursor-pointer select-none">
-                  Activar seguimiento de vencimiento
-                </label>
-              </div>
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                id="activeCheck"
+                checked={form.active}
+                onChange={e => setForm({ ...form, active: e.target.checked })}
+                className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
+              />
+              <label htmlFor="activeCheck" className="text-xs font-bold text-on-surface cursor-pointer select-none">
+                Activar seguimiento de vencimiento
+              </label>
             </div>
 
             <div>
@@ -1797,7 +1882,7 @@ function FixedExpensesEditor() {
                 rows={2}
                 value={form.notes}
                 onChange={e => setForm({ ...form, notes: e.target.value })}
-                placeholder="Observaciones, número de contrato o proveedor..."
+                placeholder="Observaciones, número de contrato o cuenta..."
               />
             </div>
 
@@ -1815,3 +1900,4 @@ function FixedExpensesEditor() {
     </div>
   )
 }
+
