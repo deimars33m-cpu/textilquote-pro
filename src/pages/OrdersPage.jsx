@@ -2857,7 +2857,7 @@ export default function OrdersPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-primary font-bold text-sm">{orderNum}</span>
                             <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
-                              {firstItem?.category || '—'}
+                              {(firstItem?.category || '—').replace(/sublimaci[oó]n por (metro|paneles)/gi, 'Sublimación')}
                             </span>
                           </div>
                           <span className="text-[11px] text-on-surface-variant font-mono block mt-1">
@@ -2927,20 +2927,46 @@ export default function OrdersPage() {
                         </div>
                       </div>
 
-                      {/* Cuerpo: Cliente y Detalle */}
-                      <div className="space-y-1">
-                        <p className="font-bold text-white text-sm truncate" title={order.terceros?.name}>
-                          {order.terceros?.name || 'Cliente general'}
-                        </p>
-                        <p className="text-xs text-on-surface-variant font-medium truncate">
-                          {firstItem?.name || 'Prendas'} {order.order_items?.length > 1 ? `(+${order.order_items.length - 1} más)` : ''}
-                        </p>
-                        {order.delivery_date && (
-                          <p className="text-[10px] text-[#ff7a00] font-bold font-mono mt-0.5">
-                            Entrega: {formatDate(order.delivery_date)}
-                          </p>
-                        )}
-                      </div>
+                      {/* Cuerpo: Cliente y Detalle del Pedido */}
+                      {(() => {
+                        const getOrderDetailText = () => {
+                          if (firstItem?.description && firstItem.description.trim()) {
+                            return firstItem.description.trim()
+                          }
+                          if (order.notes && order.notes.trim()) {
+                            return order.notes.trim()
+                          }
+                          if (firstItem?.name) {
+                            const cleanName = firstItem.name
+                              .replace(/sublimaci[oó]n (localizada|por metro|por paneles)/gi, 'Sublimación')
+                              .replace(/servicios de sublimaci[oó]n/gi, 'Sublimación')
+                              .replace(/\(servicios de sublimaci[oó]n\)/gi, '')
+                              .trim()
+                            return cleanName || 'Servicio registrado'
+                          }
+                          return 'Sin detalle especificado'
+                        }
+                        const detailText = getOrderDetailText()
+
+                        return (
+                          <div className="space-y-1 text-left">
+                            <p className="font-bold text-white text-sm truncate" title={order.terceros?.name}>
+                              {order.terceros?.name || 'Cliente general'}
+                            </p>
+                            <div className="text-xs text-on-surface-variant font-medium">
+                              <span className="text-primary font-semibold">Detalle: </span>
+                              <span className="text-on-surface font-normal line-clamp-2" title={detailText}>
+                                {detailText} {order.order_items?.length > 1 ? `(+${order.order_items.length - 1} más)` : ''}
+                              </span>
+                            </div>
+                            {order.delivery_date && (
+                              <p className="text-[10px] text-[#ff7a00] font-bold font-mono mt-0.5">
+                                Entrega: {formatDate(order.delivery_date)}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {/* Montos Financieros en Caja Compacta */}
                       <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
@@ -3075,7 +3101,7 @@ export default function OrdersPage() {
                               })()}
                               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                                 <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getOrderCategoryStyle(firstItem?.category)}`}>
-                                  {firstItem?.category || '—'}
+                                  {(firstItem?.category || '—').replace(/sublimaci[oó]n por (metro|paneles)/gi, 'Sublimación')}
                                 </span>
                                 {order.order_items?.length > 1 && (
                                   <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-mono font-bold">
@@ -3086,11 +3112,17 @@ export default function OrdersPage() {
                             </td>
 
                             {/* COLUMNA 2: Descripcion/Cliente */}
-                            <td className="px-4 py-3 text-sm">
+                            <td className="px-4 py-3 text-sm text-left">
                               <span className="font-bold text-white block">{order.terceros?.name || 'Cliente general'}</span>
-                              <span className="text-xs text-on-surface-variant block mt-0.5 font-medium">
-                                {firstItem?.name || 'Prendas'}
-                              </span>
+                              {(() => {
+                                const detailText = firstItem?.description?.trim() || order.notes?.trim() || (firstItem?.name ? firstItem.name.replace(/sublimaci[oó]n (localizada|por metro|por paneles)/gi, 'Sublimación').replace(/servicios de sublimaci[oó]n/gi, 'Sublimación').replace(/\(servicios de sublimaci[oó]n\)/gi, '').trim() : 'Servicio registrado')
+                                return (
+                                  <div className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-xs" title={detailText}>
+                                    <span className="text-primary font-semibold">Detalle: </span>
+                                    <span className="text-on-surface">{detailText}</span>
+                                  </div>
+                                )
+                              })()}
                             </td>
 
                             {/* COLUMNA 3: Montos */}

@@ -2906,29 +2906,60 @@ export default function ExpensesAndBudgetsPage() {
                                 Selecciona un contrato para evaluar su Estado de Costos segregado (Materia Prima, Mano de Obra y Gastos Indirectos).
                               </p>
                             </div>
-                            <div className="w-full sm:w-64">
-                              <Select
-                                value={selectedContractId}
-                                onChange={e => setSelectedContractId(e.target.value)}
-                                options={[
-                                  { value: '', label: '-- Ver Resumen Global de Contratos --' },
-                                  ...analysisStats.filteredOrders
-                                    .map(o => ({
-                                      value: o.id,
-                                      label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
-                                    }))
-                                ]}
-                              />
-                            </div>
+                          {/* Filtrar únicamente los contratos de producción textil / confección */}
+                          {(() => {
+                            const textileOrders = analysisStats.filteredOrders.filter(o => {
+                              if (o.order_type === 'pedido_cotizado') return true
+                              return o.order_items?.some(i => {
+                                const cat = (i.category || '').toLowerCase()
+                                const prodCat = (i.product_category || '').toLowerCase()
+                                return cat.includes('produc') || cat.includes('textil') || cat.includes('confecc') ||
+                                       prodCat.includes('produc') || prodCat.includes('textil') || prodCat.includes('confecc')
+                              })
+                            })
+
+                            const selectedOrder = textileOrders.find(o => o.id === selectedContractId)
+
+                            // Datos si hay uno seleccionado o resumen de todos los de producción textil
+                            const activeOrders = selectedOrder ? [selectedOrder] : textileOrders
+
+                            return (
+                              <>
+                                <div className="w-full sm:w-72">
+                                  <Select
+                                    value={selectedContractId}
+                                    onChange={e => setSelectedContractId(e.target.value)}
+                                    options={[
+                                      { value: '', label: '-- Ver Resumen Global de Producción Textil --' },
+                                      ...textileOrders.map(o => ({
+                                        value: o.id,
+                                        label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
+                                      }))
+                                    ]}
+                                  />
+                                </div>
+                              </>
+                            )
+                          })()}
                           </div>
 
                           {/* Si hay contrato seleccionado */}
                           {(() => {
-                            const selectedOrder = analysisStats.filteredOrders.find(o => o.id === selectedContractId)
+                            const textileOrders = analysisStats.filteredOrders.filter(o => {
+                              if (o.order_type === 'pedido_cotizado') return true
+                              return o.order_items?.some(i => {
+                                const cat = (i.category || '').toLowerCase()
+                                const prodCat = (i.product_category || '').toLowerCase()
+                                return cat.includes('produc') || cat.includes('textil') || cat.includes('confecc') ||
+                                       prodCat.includes('produc') || prodCat.includes('textil') || prodCat.includes('confecc')
+                              })
+                            })
+
+                            const selectedOrder = textileOrders.find(o => o.id === selectedContractId)
                             if (!selectedOrder && selectedContractId) return null
 
-                            // Datos si hay uno seleccionado o resumen general
-                            const activeOrders = selectedOrder ? [selectedOrder] : analysisStats.filteredOrders
+                            // Datos si hay uno seleccionado o resumen general de contratos de producción textil
+                            const activeOrders = selectedOrder ? [selectedOrder] : textileOrders
 
                             const totalRevenue = activeOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
                             const totalGarments = activeOrders.reduce((sum, o) => {
