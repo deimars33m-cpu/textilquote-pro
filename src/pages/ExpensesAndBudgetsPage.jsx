@@ -962,7 +962,18 @@ export default function ExpensesAndBudgetsPage() {
           if (!isCurrentMonth) return false
           
           const eCat = getNormalizedCategoryKey(e, expenseStructure)
-          return budget.categoryKey && eCat === budget.categoryKey
+          const matchesCategory = budget.categoryKey && eCat === budget.categoryKey
+          
+          if (!matchesCategory) return false
+
+          // Subcategory budget match
+          if (budget.subcategory || budget.targetType === 'subcategory') {
+            const eSub = String(e.subcategory || '').toLowerCase().trim()
+            const targetSub = String(budget.subcategory || '').toLowerCase().trim()
+            return eSub === targetSub
+          }
+
+          return true
         })
         .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
       
@@ -2749,6 +2760,9 @@ export default function ExpensesAndBudgetsPage() {
                         {budgetMetrics.map(b => {
                           const catData = expenseStructure[b.categoryKey]
                           const pct = Math.min(100, b.pct)
+                          const isSub = b.subcategory || b.targetType === 'subcategory'
+                          const catLabel = catData?.label || b.categoryKey
+                          const displayLabel = isSub ? `${catLabel} → ${b.subcategory}` : catLabel
                           
                           // Color matching theme
                           let colorClass = 'bg-[#39ff14] shadow-[0_0_8px_rgba(57,255,20,0.5)]'
@@ -2768,8 +2782,12 @@ export default function ExpensesAndBudgetsPage() {
                             <div key={b.id} className="relative group p-4 rounded-xl neu-raised-sm transition-all duration-300">
                               <div className="flex items-start justify-between mb-2">
                                 <div className="min-w-0 pr-2">
-                                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider block">Categoría</span>
-                                  <span className="text-sm font-bold text-white truncate block">{catData?.label || b.categoryKey}</span>
+                                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider block">
+                                    {isSub ? 'Subcategoría' : 'Categoría Principal'}
+                                  </span>
+                                  <span className="text-sm font-bold text-white truncate block" title={displayLabel}>
+                                    {displayLabel}
+                                  </span>
                                 </div>
                                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-current/25 shrink-0 ${textClass} ${glowBg}`}>
                                   {Math.round(b.pct)}%

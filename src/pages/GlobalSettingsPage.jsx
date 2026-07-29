@@ -1117,7 +1117,9 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
   const [localBudgets, setLocalBudgets] = useState([])
   const [localSalesGoals, setLocalSalesGoals] = useState([])
 
+  const [newBudgetTargetType, setNewBudgetTargetType] = useState('category') // 'category' | 'subcategory'
   const [newBudgetCatKey, setNewBudgetCatKey] = useState('')
+  const [newBudgetSubcategory, setNewBudgetSubcategory] = useState('')
   const [newBudgetLimit, setNewBudgetLimit] = useState('')
   const [newBudgetPeriod, setNewBudgetPeriod] = useState('mensual')
 
@@ -1145,15 +1147,21 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
   }, [settings.budgets, settings.salesGoals])
 
   const handleAddBudget = () => {
-    if (!newBudgetCatKey || !newBudgetLimit) return
+    if (!newBudgetLimit) return
+    if (newBudgetTargetType === 'category' && !newBudgetCatKey) return
+    if (newBudgetTargetType === 'subcategory' && (!newBudgetCatKey || !newBudgetSubcategory)) return
+
     const newBudget = {
       id: Date.now().toString(),
+      targetType: newBudgetTargetType,
       categoryKey: newBudgetCatKey,
+      subcategory: newBudgetTargetType === 'subcategory' ? newBudgetSubcategory : '',
       limitAmount: parseFloat(newBudgetLimit),
       period: newBudgetPeriod
     }
     setLocalBudgets(prev => [...prev, newBudget])
     setNewBudgetCatKey('')
+    setNewBudgetSubcategory('')
     setNewBudgetLimit('')
     setNewBudgetPeriod('mensual')
   }
@@ -1213,6 +1221,11 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
     ...(settings.categories || [])
   ]
 
+  // Available subcategories for selected category
+  const availableSubcategories = newBudgetCatKey && expenseStructure[newBudgetCatKey]?.subcategories
+    ? Object.keys(expenseStructure[newBudgetCatKey].subcategories)
+    : []
+
   return (
     <div className="space-y-8 animate-fade-in text-on-surface">
       {/* Header status */}
@@ -1234,7 +1247,7 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
             </div>
             <div>
               <h4 className="text-base font-bold text-on-surface">Presupuestos de Gastos</h4>
-              <p className="text-xs text-on-surface-variant">Límites de gastos por categoría principal (semanal/mensual).</p>
+              <p className="text-xs text-on-surface-variant">Límites de gastos por categoría principal o subcategoría (semanal/mensual).</p>
             </div>
           </div>
 
@@ -1243,13 +1256,18 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
             {localBudgets.map(budget => {
               const catData = expenseStructure[budget.categoryKey]
               const isEditing = editingBudgetId === budget.id
+              const isSubcategory = budget.subcategory || budget.targetType === 'subcategory'
+
+              const displayTitle = isSubcategory
+                ? `${catData?.label || budget.categoryKey} → ${budget.subcategory}`
+                : (catData?.label || budget.categoryKey)
 
               return (
                 <div key={budget.id} className="bg-surface-container-low rounded-xl border border-outline-variant p-3">
                   {isEditing ? (
                     <div className="space-y-2">
                       <p className="text-xs font-bold text-on-surface">
-                        {catData?.label || budget.categoryKey}
+                        {displayTitle}
                       </p>
                       <div className="flex items-center gap-2">
                         <input
@@ -1274,9 +1292,11 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
                   ) : (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-[18px] text-primary">pie_chart</span>
+                        <span className="material-symbols-outlined text-[18px] text-primary">
+                          {isSubcategory ? 'subdirectory_arrow_right' : 'pie_chart'}
+                        </span>
                         <div>
-                          <p className="text-sm font-medium text-on-surface">{catData?.label || budget.categoryKey}</p>
+                          <p className="text-sm font-medium text-on-surface">{displayTitle}</p>
                           <p className="text-xs text-on-surface-variant">Límite: Bs {budget.limitAmount?.toLocaleString()} / {budget.period}</p>
                         </div>
                       </div>
@@ -1301,10 +1321,43 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
           {/* Add budget form */}
           <div className="bg-surface-container-low rounded-xl border border-primary/20 p-4 space-y-3">
             <p className="text-xs font-bold uppercase text-on-surface-variant tracking-wider">Agregar Presupuesto</p>
+
+            {/* Selector de Nivel: Categoría vs Subcategoría */}
+            <div className="flex items-center gap-4 text-xs font-medium text-on-surface">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="targetType"
+                  value="category"
+                  checked={newBudgetTargetType === 'category'}
+                  onChange={() => {
+                    setNewBudgetTargetType('category')
+                    setNewBudgetSubcategory('')
+                  }}
+                  className="accent-primary"
+                />
+                Categoría Principal
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="targetType"
+                  value="subcategory"
+                  checked={newBudgetTargetType === 'subcategory'}
+                  onChange={() => setNewBudgetTargetType('subcategory')}
+                  className="accent-primary"
+                />
+                Subcategoría Específica
+              </label>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <select
                 value={newBudgetCatKey}
-                onChange={e => setNewBudgetCatKey(e.target.value)}
+                onChange={e => {
+                  setNewBudgetCatKey(e.target.value)
+                  setNewBudgetSubcategory('')
+                }}
                 className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
               >
                 <option value="">Seleccionar categoría...</option>
@@ -1312,33 +1365,85 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
                   <option key={key} value={key}>{val.label}</option>
                 ))}
               </select>
-              <select
-                value={newBudgetPeriod}
-                onChange={e => setNewBudgetPeriod(e.target.value)}
-                className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
-              >
-                <option value="mensual">Mensual</option>
-                <option value="semanal">Semanal</option>
-              </select>
+
+              {newBudgetTargetType === 'subcategory' ? (
+                <select
+                  value={newBudgetSubcategory}
+                  onChange={e => setNewBudgetSubcategory(e.target.value)}
+                  disabled={!newBudgetCatKey}
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface disabled:opacity-40"
+                >
+                  <option value="">Seleccionar subcategoría...</option>
+                  {availableSubcategories.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={newBudgetPeriod}
+                  onChange={e => setNewBudgetPeriod(e.target.value)}
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                >
+                  <option value="mensual">Mensual</option>
+                  <option value="semanal">Semanal</option>
+                </select>
+              )}
             </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                value={newBudgetLimit}
-                onChange={e => setNewBudgetLimit(e.target.value)}
-                placeholder="Límite (Bs)"
-                className="flex-1 bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
-                min="0"
-              />
-              <button
-                onClick={handleAddBudget}
-                disabled={!newBudgetCatKey || !newBudgetLimit}
-                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-[16px]">add</span>
-                Añadir Presupuesto
-              </button>
-            </div>
+
+            {newBudgetTargetType === 'subcategory' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <select
+                  value={newBudgetPeriod}
+                  onChange={e => setNewBudgetPeriod(e.target.value)}
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                >
+                  <option value="mensual">Mensual</option>
+                  <option value="semanal">Semanal</option>
+                </select>
+                <input
+                  type="number"
+                  value={newBudgetLimit}
+                  onChange={e => setNewBudgetLimit(e.target.value)}
+                  placeholder="Límite (Bs)"
+                  className="w-full bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                  min="0"
+                />
+              </div>
+            )}
+
+            {newBudgetTargetType === 'category' && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  value={newBudgetLimit}
+                  onChange={e => setNewBudgetLimit(e.target.value)}
+                  placeholder="Límite (Bs)"
+                  className="flex-1 bg-surface border border-outline rounded px-2.5 py-2 text-xs text-on-surface"
+                  min="0"
+                />
+                <button
+                  onClick={handleAddBudget}
+                  disabled={!newBudgetCatKey || !newBudgetLimit}
+                  className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Añadir Presupuesto
+                </button>
+              </div>
+            )}
+
+            {newBudgetTargetType === 'subcategory' && (
+              <div className="flex justify-end">
+                <button
+                  onClick={handleAddBudget}
+                  disabled={!newBudgetCatKey || !newBudgetSubcategory || !newBudgetLimit}
+                  className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Añadir Presupuesto
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
