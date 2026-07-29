@@ -1159,7 +1159,11 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
       limitAmount: parseFloat(newBudgetLimit),
       period: newBudgetPeriod
     }
-    setLocalBudgets(prev => [...prev, newBudget])
+    const updatedBudgets = [...localBudgets, newBudget]
+    setLocalBudgets(updatedBudgets)
+    saveBudgetsAndGoals(updatedBudgets, localSalesGoals)
+    showSavedIndicator('budgets_goals_save')
+
     setNewBudgetCatKey('')
     setNewBudgetSubcategory('')
     setNewBudgetLimit('')
@@ -1173,12 +1177,18 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
   }
 
   const handleSaveEditBudget = (id) => {
-    setLocalBudgets(prev => prev.map(b => b.id === id ? { ...b, limitAmount: parseFloat(editBudgetLimit), period: editBudgetPeriod } : b))
+    const updatedBudgets = localBudgets.map(b => b.id === id ? { ...b, limitAmount: parseFloat(editBudgetLimit), period: editBudgetPeriod } : b)
+    setLocalBudgets(updatedBudgets)
+    saveBudgetsAndGoals(updatedBudgets, localSalesGoals)
+    showSavedIndicator('budgets_goals_save')
     setEditingBudgetId(null)
   }
 
   const handleDeleteBudget = (id) => {
-    setLocalBudgets(prev => prev.filter(b => b.id !== id))
+    const updatedBudgets = localBudgets.filter(b => b.id !== id)
+    setLocalBudgets(updatedBudgets)
+    saveBudgetsAndGoals(updatedBudgets, localSalesGoals)
+    showSavedIndicator('budgets_goals_save')
   }
 
   const handleAddSalesGoal = () => {
@@ -1189,7 +1199,11 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
       period: newGoalPeriod,
       targetAmount: parseFloat(newGoalTarget)
     }
-    setLocalSalesGoals(prev => [...prev, newGoal])
+    const updatedGoals = [...localSalesGoals, newGoal]
+    setLocalSalesGoals(updatedGoals)
+    saveBudgetsAndGoals(localBudgets, updatedGoals)
+    showSavedIndicator('budgets_goals_save')
+
     setNewGoalCatId('global')
     setNewGoalTarget('')
     setNewGoalPeriod('diario')
@@ -1202,12 +1216,18 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
   }
 
   const handleSaveEditGoal = (id) => {
-    setLocalSalesGoals(prev => prev.map(g => g.id === id ? { ...g, targetAmount: parseFloat(editGoalTarget), period: editGoalPeriod } : g))
+    const updatedGoals = localSalesGoals.map(g => g.id === id ? { ...g, targetAmount: parseFloat(editGoalTarget), period: editGoalPeriod } : g)
+    setLocalSalesGoals(updatedGoals)
+    saveBudgetsAndGoals(localBudgets, updatedGoals)
+    showSavedIndicator('budgets_goals_save')
     setEditingGoalId(null)
   }
 
   const handleDeleteGoal = (id) => {
-    setLocalSalesGoals(prev => prev.filter(g => g.id !== id))
+    const updatedGoals = localSalesGoals.filter(g => g.id !== id)
+    setLocalSalesGoals(updatedGoals)
+    saveBudgetsAndGoals(localBudgets, updatedGoals)
+    showSavedIndicator('budgets_goals_save')
   }
 
   const handleSaveAll = () => {
