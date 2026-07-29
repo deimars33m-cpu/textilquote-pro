@@ -1,5 +1,5 @@
 // Service Worker con estrategia Network-First para evitar pantallas en blanco tras despliegues
-const CACHE_NAME = 'nyx-pro-v2';
+const CACHE_NAME = 'nyx-pro-v3';
 const ASSETS = [
   '/',
   '/index.html',
