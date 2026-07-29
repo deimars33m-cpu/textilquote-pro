@@ -500,6 +500,24 @@ export default function ExpensesAndBudgetsPage() {
   const [activeActionMenu, setActiveActionMenu] = useState(null)
   const [itemSearch, setItemSearch] = useState('')
 
+  // --- ESTADO PARA EDICIÓN DE TRANSACCIÓN DE GASTO ---
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [editForm, setEditForm] = useState({
+    categoryKey: 'PRODUCCION',
+    subcategory: '',
+    specificItem: '',
+    provider: '',
+    date: '',
+    amount: '',
+    quantity: 1,
+    unitPrice: '',
+    paymentMethod: 'efectivo',
+    description: '',
+    orderId: '',
+    materialId: ''
+  })
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const expenseStructure = settings?.expenseStructure || defaultExpenseStructure
 
   useEffect(() => {
@@ -839,6 +857,65 @@ export default function ExpensesAndBudgetsPage() {
     } catch (err) {
       console.error('Error updating expense payments:', err)
       alert('Error al actualizar los pagos del gasto: ' + err.message)
+    }
+  }
+
+  const handleOpenEdit = (expense) => {
+    setEditingExpense(expense)
+    const catKey = getNormalizedCategoryKey(expense, expenseStructure) || 'PRODUCCION'
+    setEditForm({
+      categoryKey: catKey,
+      subcategory: expense.subcategory || '',
+      specificItem: expense.specific_item || expense.specificItem || '',
+      provider: expense.provider || '',
+      date: expense.date || getTodayStr(),
+      amount: expense.amount || 0,
+      quantity: expense.quantity || 1,
+      unitPrice: expense.unit_price || expense.unitPrice || expense.amount || 0,
+      paymentMethod: expense.payment_method || expense.paymentMethod || 'efectivo',
+      description: expense.description || '',
+      orderId: expense.order_id || expense.orderId || '',
+      materialId: expense.material_id || expense.materialId || ''
+    })
+  }
+
+  const handleSaveEditedExpense = async () => {
+    if (!editingExpense || savingEdit) return
+    if (!editForm.categoryKey) {
+      alert('Selecciona una categoría principal')
+      return
+    }
+    if (!editForm.amount || Number(editForm.amount) <= 0) {
+      alert('Ingresa un monto total válido')
+      return
+    }
+    setSavingEdit(true)
+    try {
+      const payload = {
+        category_key: editForm.categoryKey,
+        category_label: expenseStructure[editForm.categoryKey]?.label || editForm.categoryKey,
+        subcategory: editForm.subcategory,
+        specific_item: editForm.specificItem,
+        provider: editForm.provider.trim() || 'Proveedor Genérico',
+        date: editForm.date,
+        amount: Number(editForm.amount),
+        quantity: Number(editForm.quantity) || 1,
+        unit_price: Number(editForm.unitPrice) || Number(editForm.amount),
+        payment_method: editForm.paymentMethod,
+        description: editForm.description.trim() || null,
+        order_id: editForm.orderId || null,
+        material_id: editForm.materialId || null
+      }
+
+      await updateExpense(editingExpense.id, payload)
+      setEditingExpense(null)
+      setSuccess('Transacción de gasto actualizada con éxito')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      console.error('Error al actualizar el gasto:', err)
+      alert('Error al guardar cambios del gasto: ' + (err.message || err))
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -1575,9 +1652,18 @@ export default function ExpensesAndBudgetsPage() {
                             key={`mat-${idx}`}
                             type="button"
                             onClick={() => {
-                              const categoryKey = Object.keys(expenseStructure).find(k => expenseStructure[k].label?.toLowerCase().includes('materia prima') || expenseStructure[k].label?.toLowerCase().includes('insumos')) || Object.keys(expenseStructure)[0];
+                              const catKeyLower = mat.materials?.category?.toLowerCase() || '';
+                              let categoryKey = 'PRODUCCION';
+                              if (catKeyLower.includes('insumo') || catKeyLower.includes('consumible') || catKeyLower.includes('quimico') || catKeyLower.includes('tinta') || catKeyLower.includes('papel') || catKeyLower.includes('repuesto')) {
+                                categoryKey = 'INSUMOS';
+                              }
                               const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
-                              const subcategory = subcats.find(s => s.toLowerCase().includes('insumo') || s.toLowerCase().includes('tela')) || subcats[0] || 'Insumos';
+                              let subcategory = subcats[0] || 'Materia Prima (Telas y Accesorios)';
+                              if (categoryKey === 'PRODUCCION') {
+                                subcategory = subcats.find(s => s.toLowerCase().includes('materia prima') || s.toLowerCase().includes('tela')) || subcats[0];
+                              } else {
+                                subcategory = subcats.find(s => s.toLowerCase().includes('sublimaci') || s.toLowerCase().includes('otros')) || subcats[0];
+                              }
                               
                               updateForm('categoryKey', categoryKey);
                               updateForm('subcategory', subcategory);
@@ -1622,9 +1708,15 @@ export default function ExpensesAndBudgetsPage() {
                             key={`proc-${idx}`}
                             type="button"
                             onClick={() => {
-                              const categoryKey = Object.keys(expenseStructure).find(k => expenseStructure[k].label?.toLowerCase().includes('mano de obra')) || Object.keys(expenseStructure)[0];
+                              const procNameLower = (proc.process_name || proc.name || '').toLowerCase();
+                              const categoryKey = 'PRODUCCION';
                               const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
-                              const subcategory = subcats.find(s => s.toLowerCase().includes('destajo') || s.toLowerCase().includes(proc.process_name?.toLowerCase())) || subcats[0] || 'Destajo';
+                              let subcategory = subcats[0] || 'Mano de Obra (Confección y Destajo)';
+                              if (procNameLower.includes('sublimac') || procNameLower.includes('borda') || procNameLower.includes('estampa') || procNameLower.includes('corte') || procNameLower.includes('dtf')) {
+                                subcategory = subcats.find(s => s.toLowerCase().includes('embellecimiento')) || subcats[0];
+                              } else {
+                                subcategory = subcats.find(s => s.toLowerCase().includes('mano de obra') || s.toLowerCase().includes('confección')) || subcats[0];
+                              }
                               
                               updateForm('categoryKey', categoryKey);
                               updateForm('subcategory', subcategory);
@@ -2475,6 +2567,16 @@ export default function ExpensesAndBudgetsPage() {
                                               >
                                                 <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
                                                 Ver Detalle
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  handleOpenEdit(e)
+                                                  setActiveActionMenu(null)
+                                                }}
+                                                className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                              >
+                                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                                                Editar
                                               </button>
                                               <button
                                                 onClick={() => {
@@ -3503,6 +3605,187 @@ export default function ExpensesAndBudgetsPage() {
                 className="btn-3d-raised px-5 py-2.5 rounded-xl font-bold text-sm text-on-surface cursor-pointer"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL EDICIÓN RÁPIDA DE GASTO */}
+      <Modal
+        isOpen={!!editingExpense}
+        onClose={() => setEditingExpense(null)}
+        title="Editar Transacción de Gasto"
+        size="lg"
+      >
+        {editingExpense && (
+          <div className="space-y-4 text-on-surface">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Categoría Principal *</label>
+                <select
+                  value={editForm.categoryKey}
+                  onChange={(e) => {
+                    const catK = e.target.value
+                    const subcats = Object.keys(expenseStructure[catK]?.subcategories || {})
+                    setEditForm(prev => ({
+                      ...prev,
+                      categoryKey: catK,
+                      subcategory: subcats[0] || ''
+                    }))
+                  }}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                >
+                  {Object.entries(expenseStructure).map(([k, cat]) => (
+                    <option key={k} value={k}>{cat.label || k}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Subcategoría *</label>
+                <select
+                  value={editForm.subcategory}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, subcategory: e.target.value }))}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                >
+                  {Object.keys(expenseStructure[editForm.categoryKey]?.subcategories || {}).map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Concepto / Ítem Específico *</label>
+                <input
+                  type="text"
+                  value={editForm.specificItem}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, specificItem: e.target.value }))}
+                  placeholder="Ej. Tinta Cyan, Pago Costurero, etc."
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Proveedor / Beneficiario</label>
+                <input
+                  type="text"
+                  value={editForm.provider}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, provider: e.target.value }))}
+                  placeholder="Nombre de proveedor"
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Fecha</label>
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Método de Pago</label>
+                <select
+                  value={editForm.paymentMethod}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia Bancaria</option>
+                  <option value="qr">Pago QR</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Cantidad</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.quantity}
+                  onChange={(e) => {
+                    const q = parseFloat(e.target.value) || 0
+                    setEditForm(prev => ({
+                      ...prev,
+                      quantity: e.target.value,
+                      amount: (q * (parseFloat(prev.unitPrice) || 0)).toFixed(2)
+                    }))
+                  }}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Precio Unitario (Bs)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.unitPrice}
+                  onChange={(e) => {
+                    const p = parseFloat(e.target.value) || 0
+                    setEditForm(prev => ({
+                      ...prev,
+                      unitPrice: e.target.value,
+                      amount: ((parseFloat(prev.quantity) || 1) * p).toFixed(2)
+                    }))
+                  }}
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-semibold text-amber-400 block mb-1">Monto Total (Bs) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.amount}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full neu-input px-3 py-2 text-base font-bold text-amber-400 rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-semibold text-on-surface-variant block mb-1">Observaciones / Detalles</label>
+                <textarea
+                  rows="2"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Detalles adicionales..."
+                  className="w-full neu-input px-3 py-2 text-sm rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant">
+              <button
+                type="button"
+                onClick={() => setEditingExpense(null)}
+                disabled={savingEdit}
+                className="px-4 py-2 text-sm font-semibold text-on-surface-variant hover:text-white rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditedExpense}
+                disabled={savingEdit}
+                className="px-5 py-2 text-sm font-bold text-on-primary bg-primary hover:bg-primary/90 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
+              >
+                {savingEdit ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                    Guardar Cambios
+                  </>
+                )}
               </button>
             </div>
           </div>
