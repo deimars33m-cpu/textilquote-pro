@@ -2345,6 +2345,16 @@ export default function ExpensesAndBudgetsPage() {
                                         <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
                                         Ver Detalle
                                       </button>
+                                       <button
+                                         onClick={() => {
+                                           handleOpenEdit(e)
+                                           setActiveActionMenu(null)
+                                         }}
+                                         className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 cursor-pointer bg-transparent border-none"
+                                       >
+                                         <span className="material-symbols-outlined text-[16px]">edit</span>
+                                         Editar
+                                       </button>
                                       <button
                                         onClick={() => {
                                           handleDelete(e.id)
