@@ -1175,8 +1175,34 @@ export default function ExpensesAndBudgetsPage() {
       currentYear,
       periodOverheadCosts,
       totalPeriodRevenue,
-      subProratedOverhead,
-      subRevenueRatio
+      periodRevenues,
+      proratedOverhead,
+      filteredOrders,
+      serviceExpenses,
+      // Sublimation
+      totalNominalPanels,
+      totalEquivalentPanels,
+      totalM2Sublimacion,
+      avgCostPerM2,
+      avgCombinedCostPerPanel,
+      avgCostPerEquivalentPanel,
+      overheadPerM2,
+      overheadPerNominalPanel,
+      overheadPerEquivalentPanel,
+      totalCostPerM2,
+      totalCostPerNominalPanel,
+      totalCostPerEquivalentPanel,
+      costToRevenueRatio,
+      // Bordado
+      totalStitches1k,
+      // Corte Vinil
+      totalVinylMeters,
+      // DTF
+      totalDtfMeters,
+      // UV-DTF
+      totalUvLogos,
+      // Produccion textil
+      totalTextilGarments,
     }
   }, [expenses, orders, sublimationPeriod, expenseStructure])
 
