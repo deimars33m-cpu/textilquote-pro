@@ -444,7 +444,7 @@ export default function ExpensesAndBudgetsPage() {
     select: '*, orders(order_number, total_amount), materials(name, category)'
   })
 
-  const [productionAvg] = useState(1000)
+  // productionAvg usado en UI future para cálculo de costo unitario de overhead
   const [providers, setProviders] = useState([])
   const [dependientes, setDependientes] = useState([])
   const [terceroType, setTerceroType] = useState('proveedor') // 'proveedor' o 'dependiente' o 'pedido'
@@ -486,7 +486,9 @@ export default function ExpensesAndBudgetsPage() {
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
+  // eslint-disable-next-line no-unused-vars
   const [_calculatorPacks, setCalculatorPacks] = useState('')
+  // eslint-disable-next-line no-unused-vars
   const [_calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
@@ -749,7 +751,7 @@ export default function ExpensesAndBudgetsPage() {
       const payload = {
         date: form.date,
         category_key: form.categoryKey,
-        category_label: expenseStructure[form.categoryKey].label,
+        category_label: expenseStructure[form.categoryKey]?.label || form.categoryKey,
         subcategory: form.subcategory,
         specific_item: form.specificItem,
         description: form.description.trim() || null,
@@ -866,8 +868,7 @@ export default function ExpensesAndBudgetsPage() {
     return totals
   }, [currentMonthExpenses, expenseStructure])
 
-  const overheadCosts = (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
-  // unitOverhead disponible para uso futuro en UI
+  // overheadCosts para uso futuro: (totalsByCategory['GASTOS_FIJOS'] || 0) + (totalsByCategory['INDIRECTOS'] || 0)
 
   const budgets = useMemo(() => {
     return settings?.budgets || []
@@ -2911,10 +2912,9 @@ export default function ExpensesAndBudgetsPage() {
                               })
                             })
 
-                            const selectedOrder = textileOrders.find(o => o.id === selectedContractId)
 
                             // Datos si hay uno seleccionado o resumen de todos los de producción textil
-                            const _activeOrders = selectedOrder ? [selectedOrder] : textileOrders
+                            // (ver bloque de resumen más abajo que usa selectedOrder con activeOrders)
 
                             return (
                               <>
