@@ -407,6 +407,8 @@ const calculateItemMetrics = (sizeDistribution) => {
 export default function ExpensesAndBudgetsPage() {
   const [activeTab, setActiveTab] = useState('registro') // 'registro', 'dashboard', 'analisis'
   const [sublimationPeriod, setSublimationPeriod] = useState('mes') // 'hoy', 'mes', 'ano', 'todos'
+  const [analysisSubTab, setAnalysisSubTab] = useState('general') // 'general', 'produccion_textil', 'servicios_sublimacion', 'servicios_bordado', 'servicios_corte', 'servicios_dtf', 'servicios_uv_dtf'
+  const [selectedContractId, setSelectedContractId] = useState('')
 
   const { user } = useAuth()
   const { settings } = useGlobalSettings()
@@ -974,17 +976,16 @@ export default function ExpensesAndBudgetsPage() {
       statusBorder,
       statusText,
       progressPct,
-      lastDayOfMonth
-    }
+      }
   }, [totalSpentMonth, totalBudget])
 
-  const sublimationStats = useMemo(() => {
+  const analysisStats = useMemo(() => {
     const now = new Date()
     const todayStr = getTodayStr(now)
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth()
 
-    // 1. Filtrar gastos fijos e indirectos, e insumos por periodo
+    // 1. Filtrar gastos por periodo
     const periodExpenses = expenses.filter(e => {
       const expDate = new Date(e.date)
       if (sublimationPeriod === 'hoy') {
@@ -998,11 +999,16 @@ export default function ExpensesAndBudgetsPage() {
     })
 
     let periodOverheadCosts = 0
-    let inkQuantity = 0
-    let inkCost = 0
-    let paperQuantity = 0
-    let paperCost = 0
-    let otherSubCost = 0
+
+    const serviceExpenses = {
+      produccion_textil: { mp: 0, mod: 0, otros: 0, total: 0 },
+      servicios_sublimacion: { inkQuantity: 0, inkCost: 0, paperQuantity: 0, paperCost: 0, total: 0 },
+      servicios_bordado: { threadCost: 0, total: 0 },
+      servicios_corte: { vinylCost: 0, total: 0 },
+      servicios_dtf: { dtfCost: 0, total: 0 },
+      servicios_uv_dtf: { uvCost: 0, total: 0 },
+      otros: { total: 0 }
+    }
 
     periodExpenses.forEach(e => {
       let eCat = e.category_key || e.categoryKey
@@ -1014,28 +1020,53 @@ export default function ExpensesAndBudgetsPage() {
         if (matchedKey) eCat = matchedKey
       }
       
+      const subcatLower = (e.subcategory || '').toLowerCase()
+      const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
+      const amount = Number(e.amount) || 0
+
       if (eCat === 'GASTOS_FIJOS' || eCat === 'INDIRECTOS') {
-        periodOverheadCosts += Number(e.amount) || 0
-      } else if (eCat === 'INSUMOS' && e.subcategory === 'Sublimación') {
-        const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
-        if (itemLower.includes('tinta')) {
-          inkQuantity += Number(e.quantity) || 0
-          inkCost += Number(e.amount) || 0
-        } else if (itemLower.includes('papel')) {
-          paperQuantity += Number(e.quantity) || 0
-          paperCost += Number(e.amount) || 0
+        periodOverheadCosts += amount
+      } else if (eCat === 'PRODUCCION') {
+        if (subcatLower.includes('materia prima') || itemLower.includes('tela') || itemLower.includes('accesorios') || itemLower.includes('cierre')) {
+          serviceExpenses.produccion_textil.mp += amount
+        } else if (subcatLower.includes('embellecimiento') || subcatLower.includes('destajo') || subcatLower.includes('comision') || itemLower.includes('mano de obra') || itemLower.includes('bordado') || itemLower.includes('sublimación')) {
+          serviceExpenses.produccion_textil.mod += amount
         } else {
-          otherSubCost += Number(e.amount) || 0
+          serviceExpenses.produccion_textil.otros += amount
+        }
+        serviceExpenses.produccion_textil.total += amount
+      } else if (eCat === 'INSUMOS') {
+        if (subcatLower.includes('sublimación') || subcatLower.includes('sublimacion')) {
+          if (itemLower.includes('tinta')) {
+            serviceExpenses.servicios_sublimacion.inkQuantity += Number(e.quantity) || 0
+            serviceExpenses.servicios_sublimacion.inkCost += amount
+          } else if (itemLower.includes('papel')) {
+            serviceExpenses.servicios_sublimacion.paperQuantity += Number(e.quantity) || 0
+            serviceExpenses.servicios_sublimacion.paperCost += amount
+          }
+          serviceExpenses.servicios_sublimacion.total += amount
+        } else if (subcatLower.includes('bordado')) {
+          serviceExpenses.servicios_bordado.threadCost += amount
+          serviceExpenses.servicios_bordado.total += amount
+        } else if (subcatLower.includes('vinil')) {
+          serviceExpenses.servicios_corte.vinylCost += amount
+          serviceExpenses.servicios_corte.total += amount
+        } else if (subcatLower.includes('dtf') && !subcatLower.includes('uv')) {
+          serviceExpenses.servicios_dtf.dtfCost += amount
+          serviceExpenses.servicios_dtf.total += amount
+        } else if (subcatLower.includes('uv')) {
+          serviceExpenses.servicios_uv_dtf.uvCost += amount
+          serviceExpenses.servicios_uv_dtf.total += amount
+        } else {
+          serviceExpenses.otros.total += amount
         }
       }
     })
-    
-    const totalSubExpenses = inkCost + paperCost
 
     // 2. Filtrar pedidos por periodo
     const filteredOrders = orders.filter(o => {
       const ordDate = new Date(o.created_at)
-      const ordDateStr = o.created_at.split('T')[0]
+      const ordDateStr = o.created_at ? o.created_at.split('T')[0] : ''
       if (sublimationPeriod === 'hoy') {
         return ordDateStr === todayStr
       } else if (sublimationPeriod === 'mes') {
@@ -1046,7 +1077,6 @@ export default function ExpensesAndBudgetsPage() {
       return true // 'todos'
     })
 
-    // Calcular ingresos por departamento
     const periodRevenues = {
       produccion_textil: 0,
       servicios_sublimacion: 0,
@@ -1059,57 +1089,57 @@ export default function ExpensesAndBudgetsPage() {
 
     let totalNominalPanels = 0
     let totalEquivalentPanels = 0
-    let totalM2 = 0
-    let totalSubRevenue = 0
-    let panelRevenue = 0
-    let meterRevenue = 0
-    let totalMeters = 0
+    let totalM2Sublimacion = 0
+    let totalStitches1k = 0
+    let totalVinylMeters = 0
+    let totalDtfMeters = 0
+    let totalUvLogos = 0
+    let totalTextilGarments = 0
 
     filteredOrders.forEach(o => {
       if (o.order_items) {
         o.order_items.forEach(item => {
           const category = item.category || ''
           const price = Number(item.total_price) || 0
+          const qty = Number(item.quantity) || 0
           const catLower = category.toLowerCase()
           const prodCatUpper = (item.product_category || '').toUpperCase()
 
-          // Sum department revenues
           if (catLower.includes('producción') || catLower.includes('produccion')) {
             periodRevenues.produccion_textil += price
+            totalTextilGarments += qty
           } else if (catLower.includes('sublimac') || catLower.includes('sublimación')) {
             periodRevenues.servicios_sublimacion += price
-            totalSubRevenue += price
-
-            // Sublimation breakdown details
             if (prodCatUpper.includes('PANEL') || prodCatUpper.includes('PANELES')) {
-              panelRevenue += price
               if (item.size_distribution) {
                 const metrics = calculateItemMetrics(item.size_distribution)
                 if (metrics) {
                   totalNominalPanels += metrics.totalNominalPanels
                   totalEquivalentPanels += metrics.totalEquivalentPanels
-                  totalM2 += metrics.totalM2
+                  totalM2Sublimacion += metrics.totalM2
                 } else {
-                  totalNominalPanels += Number(item.quantity) || 0
-                  totalEquivalentPanels += Number(item.quantity) || 0
+                  totalNominalPanels += qty
+                  totalEquivalentPanels += qty
                 }
               } else {
-                totalNominalPanels += Number(item.quantity) || 0
-                totalEquivalentPanels += Number(item.quantity) || 0
+                totalNominalPanels += qty
+                totalEquivalentPanels += qty
               }
             } else if (prodCatUpper.includes('METRO') || prodCatUpper.includes('METROS') || prodCatUpper.includes('CALANDRA')) {
-              totalMeters += Number(item.quantity) || 0
-              meterRevenue += price
-              totalM2 += Number(item.quantity) || 0 // Metros impresos directamente
+              totalM2Sublimacion += qty
             }
           } else if (catLower.includes('bordad')) {
             periodRevenues.servicios_bordado += price
+            totalStitches1k += qty
           } else if (catLower.includes('corte') || catLower.includes('vinil')) {
             periodRevenues.servicios_corte += price
+            totalVinylMeters += qty
           } else if (catLower.includes('dtf') && !catLower.includes('uv')) {
             periodRevenues.servicios_dtf += price
+            totalDtfMeters += qty
           } else if (catLower.includes('uv')) {
             periodRevenues.servicios_uv_dtf += price
+            totalUvLogos += qty
           } else {
             periodRevenues.otros += price
           }
@@ -1119,64 +1149,31 @@ export default function ExpensesAndBudgetsPage() {
 
     const totalPeriodRevenue = Object.values(periodRevenues).reduce((a, b) => a + b, 0)
 
-    // Prorratear los gastos fijos e indirectos del periodo
-    const subRevenueRatio = totalPeriodRevenue > 0 ? (periodRevenues.servicios_sublimacion / totalPeriodRevenue) : 0
-    const subProratedOverhead = subRevenueRatio * periodOverheadCosts
+    const proratedOverhead = {}
+    Object.keys(periodRevenues).forEach(key => {
+      const share = totalPeriodRevenue > 0 ? (periodRevenues[key] / totalPeriodRevenue) : 0
+      proratedOverhead[key] = share * periodOverheadCosts
+    })
 
-    // Divisón directa y limpia de insumos y gastos fijos entre el volumen de producción
-    const avgInkCostPerPanel = totalNominalPanels > 0 ? inkCost / totalNominalPanels : 0
-    const avgPaperCostPerPanel = totalNominalPanels > 0 ? paperCost / totalNominalPanels : 0
-    
-    // Costo directo por panel nominal (Suma total de insumos ÷ Paneles nominales)
-    const avgCombinedCostPerPanel = totalNominalPanels > 0 ? totalSubExpenses / totalNominalPanels : 0
-    
-    // Costo directo por panel equivalente (Suma total de insumos ÷ Paneles prorrateados)
-    const avgCostPerEquivalentPanel = totalEquivalentPanels > 0 ? totalSubExpenses / totalEquivalentPanels : 0
-    
-    // Costo directo por metro cuadrado (m²) (Suma total de insumos ÷ Metraje total m²)
-    const avgCostPerM2 = totalM2 > 0 ? totalSubExpenses / totalM2 : 0
-
-    // Overhead asignado a sublimación prorrateado directamente por volumen
-    const overheadPerNominalPanel = totalNominalPanels > 0 ? subProratedOverhead / totalNominalPanels : 0
-    const overheadPerEquivalentPanel = totalEquivalentPanels > 0 ? subProratedOverhead / totalEquivalentPanels : 0
-    const overheadPerM2 = totalM2 > 0 ? subProratedOverhead / totalM2 : 0
-
-    // Costos totales unitarios (Directo + Prorrateo Fijo)
+    // Sublimation breakdown metrics
+    const subTotalExp = serviceExpenses.servicios_sublimacion.total
+    const subOverhead = proratedOverhead.servicios_sublimacion
+    const avgInkCostPerPanel = totalNominalPanels > 0 ? serviceExpenses.servicios_sublimacion.inkCost / totalNominalPanels : 0
+    const avgPaperCostPerPanel = totalNominalPanels > 0 ? serviceExpenses.servicios_sublimacion.paperCost / totalNominalPanels : 0
+    const avgCombinedCostPerPanel = totalNominalPanels > 0 ? subTotalExp / totalNominalPanels : 0
+    const avgCostPerEquivalentPanel = totalEquivalentPanels > 0 ? subTotalExp / totalEquivalentPanels : 0
+    const avgCostPerM2 = totalM2Sublimacion > 0 ? subTotalExp / totalM2Sublimacion : 0
+    const overheadPerNominalPanel = totalNominalPanels > 0 ? subOverhead / totalNominalPanels : 0
+    const overheadPerEquivalentPanel = totalEquivalentPanels > 0 ? subOverhead / totalEquivalentPanels : 0
+    const overheadPerM2 = totalM2Sublimacion > 0 ? subOverhead / totalM2Sublimacion : 0
     const totalCostPerNominalPanel = avgCombinedCostPerPanel + overheadPerNominalPanel
     const totalCostPerEquivalentPanel = avgCostPerEquivalentPanel + overheadPerEquivalentPanel
     const totalCostPerM2 = avgCostPerM2 + overheadPerM2
-
-    const costToRevenueRatio = totalSubRevenue > 0 ? (totalSubExpenses / totalSubRevenue) * 100 : 0
+    const costToRevenueRatio = periodRevenues.servicios_sublimacion > 0 ? (subTotalExp / periodRevenues.servicios_sublimacion) * 100 : 0
 
     return {
-      inkQuantity,
-      inkCost,
-      paperQuantity,
-      paperCost,
-      otherSubCost,
-      totalSubExpenses,
-      totalNominalPanels,
-      totalEquivalentPanels,
-      totalM2,
-      totalMeters,
-      panelRevenue,
-      meterRevenue,
-      totalSubRevenue,
-      avgInkCostPerPanel,
-      avgPaperCostPerPanel,
-      avgCombinedCostPerPanel,
-      avgCostPerEquivalentPanel,
-      avgCostPerM2,
-      overheadPerNominalPanel,
-      overheadPerEquivalentPanel,
-      overheadPerM2,
-      totalCostPerNominalPanel,
-      totalCostPerEquivalentPanel,
-      totalCostPerM2,
-      costToRevenueRatio,
       currentYear,
       periodOverheadCosts,
-      periodRevenues,
       totalPeriodRevenue,
       subProratedOverhead,
       subRevenueRatio
@@ -2665,25 +2662,23 @@ export default function ExpensesAndBudgetsPage() {
                     </div>
                   </div>
                 </div>
-
               </div>
-
             </div>
           )}
 
-          {/* PESTAÑA 3: ANALISIS DE COSTOS (PRORRATEO) */}
+          {/* PESTAÑA 3: ANALISIS DE COSTOS POR SERVICIO */}
           {activeTab === 'analisis' && (
-            <div className="max-w-3xl mx-auto space-y-6">
+            <div className="max-w-4xl mx-auto space-y-6">
               
               {/* Header con Filtro de Periodo Unificado */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 neu-surface rounded-2xl">
                 <div className="text-left">
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-xl">analytics</span>
-                    Análisis de Costos y Prorrateo
+                    Análisis de Costos por Servicio
                   </h2>
                   <p className="text-xs text-on-surface-variant leading-relaxed">
-                    Visualiza y prorratea los gastos fijos e indirectos de la empresa en base al porcentaje de participación en ingresos.
+                    Evaluación de costos unitarios de producción e insumos vs. ventas por departamento y por contrato.
                   </p>
                 </div>
                 <div className="w-full sm:w-auto shrink-0 min-w-[160px]">
@@ -2701,6 +2696,32 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
               </div>
 
+              {/* Navegación por Sub-Pestañas de Servicios */}
+              <div className="flex overflow-x-auto gap-1.5 p-1.5 neu-pressed rounded-2xl max-w-full no-scrollbar">
+                {[
+                  { id: 'general', label: 'Prorrateo General', icon: 'analytics' },
+                  { id: 'produccion_textil', label: 'Producción Textil', icon: 'apparel' },
+                  { id: 'servicios_sublimacion', label: 'Sublimación (m²)', icon: 'texture' },
+                  { id: 'servicios_bordado', label: 'Bordado (1k puntadas)', icon: 'precision_manufacturing' },
+                  { id: 'servicios_corte', label: 'Corte Vinil (m)', icon: 'content_cut' },
+                  { id: 'servicios_dtf', label: 'Impresión DTF (m)', icon: 'print' },
+                  { id: 'servicios_uv_dtf', label: 'Logos UV-DTF (U)', icon: 'layers' }
+                ].map(sub => (
+                  <button
+                    key={sub.id}
+                    onClick={() => setAnalysisSubTab(sub.id)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      analysisSubTab === sub.id
+                        ? 'bg-primary text-on-primary shadow-md'
+                        : 'text-on-surface-variant hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{sub.icon}</span>
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+
               {loadingOrders ? (
                 <div className="flex flex-col items-center justify-center py-20 text-on-surface-variant gap-3 neu-surface rounded-2xl">
                   <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -2708,291 +2729,517 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
               ) : (
                 <>
-                  {/* Card 1: Prorrateo de Gastos Fijos por Departamento */}
-                  <Card className="relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-                    <div className="p-8">
-                      <div className="flex items-start gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-primary text-2xl">functions</span>
+                  {/* SUB-TAB 1: GENERAL Y PRORRATEO */}
+                  {analysisSubTab === 'general' && (
+                    <Card className="relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+                      <div className="p-6 sm:p-8">
+                        <div className="flex items-start gap-4 mb-6">
+                          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-primary text-2xl">functions</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Distribución de Gastos Fijos por Departamento</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Distribución de los Gastos Fijos e Indirectos en función del % de ingresos generados por cada área.
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-left">
-                          <h2 className="text-xl font-bold text-white mb-1">Distribución de Gastos Fijos por Departamento</h2>
-                          <p className="text-sm text-on-surface-variant leading-relaxed">
-                            Distribución de los Gastos Fijos y de Indirectos totales en función de la participación en los ingresos de cada área de la empresa.
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                        <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between text-left">
-                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Gastos Prorrateables Totales</span>
-                          <span className="text-2xl font-mono font-bold text-error mt-1">{formatCurrency(sublimationStats.periodOverheadCosts)}</span>
-                          <p className="text-[9px] text-on-surface-variant mt-1">Gastos fijos + indirectos del periodo seleccionado</p>
-                        </div>
-                        <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between text-left">
-                          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ingresos Totales Registrados</span>
-                          <span className="text-2xl font-mono font-bold text-emerald-400 mt-1">{formatCurrency(sublimationStats.totalPeriodRevenue)}</span>
-                          <p className="text-[9px] text-on-surface-variant mt-1">Suma de todas las ventas del periodo seleccionado</p>
-                        </div>
-                      </div>
-
-                      <div className="overflow-x-auto rounded-xl neu-pressed">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
-                              <th className="py-2.5 px-3">Departamento / Área</th>
-                              <th className="py-2.5 px-3 text-right">Ingresos del Periodo</th>
-                              <th className="py-2.5 px-3 text-center">Participación</th>
-                              <th className="py-2.5 px-3 text-right">Gastos Prorrateados</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/5 font-mono text-on-surface">
-                            {[
-                              { key: 'produccion_textil', label: 'Producción Textil' },
-                              { key: 'servicios_sublimacion', label: 'Servicios de Sublimación' },
-                              { key: 'servicios_bordado', label: 'Servicios de Bordado' },
-                              { key: 'servicios_corte', label: 'Servicios de Corte de vinil' },
-                              { key: 'servicios_dtf', label: 'Servicios de Impresión DTF' },
-                              { key: 'servicios_uv_dtf', label: 'Servicios de Logos en UV-DTF' },
-                              { key: 'otros', label: 'Otros Servicios' }
-                            ].map(dep => {
-                              const revenue = sublimationStats.periodRevenues[dep.key] || 0
-                              const pct = sublimationStats.totalPeriodRevenue > 0 ? (revenue / sublimationStats.totalPeriodRevenue) * 100 : 0
-                              const proratedExpense = sublimationStats.totalPeriodRevenue > 0 ? (revenue / sublimationStats.totalPeriodRevenue) * sublimationStats.periodOverheadCosts : 0
-                              
-                              return (
-                                <tr key={dep.key} className="hover:bg-white/[0.02] transition-colors">
-                                  <td className="py-2 px-3 text-white font-sans text-left">{dep.label}</td>
-                                  <td className="py-2 px-3 text-right">{formatCurrency(revenue)}</td>
-                                  <td className="py-2 px-3 text-center text-primary font-bold">{pct.toFixed(1)}%</td>
-                                  <td className="py-2 px-3 text-right text-emerald-600 dark:text-emerald-400 font-bold">{formatCurrency(proratedExpense)}</td>
-                                </tr>
-                              )
-                            })}
-                            <tr className="bg-surface-container/20 font-semibold font-mono border-t border-outline-variant">
-                              <td className="py-2 px-3 text-white font-sans text-left">TOTALES GENERALES</td>
-                              <td className="py-2 px-3 text-right text-white">{formatCurrency(sublimationStats.totalPeriodRevenue)}</td>
-                              <td className="py-2 px-3 text-center text-primary font-bold">100%</td>
-                              <td className="py-2 px-3 text-right text-error font-bold">{formatCurrency(sublimationStats.periodOverheadCosts)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </Card>
-
-                  {/* Card 2: Sublimation Cost Analysis */}
-                  <Card className="relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-[#a855f7]" />
-                    <div className="p-8">
-                      <div className="flex items-start gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-xl bg-[#a855f7]/10 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-[#a855f7] text-2xl">texture</span>
-                        </div>
-                        <div className="text-left">
-                          <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Sublimación (Gestión {sublimationStats.currentYear})</h2>
-                          <p className="text-sm text-on-surface-variant leading-relaxed">
-                            Evaluación específica del área de <strong>Sublimación</strong>. Asigna los costos fijos prorrateados por ingresos y calcula el costo unitario total (Insumos + Gastos Fijos).
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                           <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between text-left">
-                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Volumen de Sublimación</span>
-                            <div className="space-y-1 mt-1">
-                              <span className="text-sm font-mono font-bold text-white block">
-                                {sublimationStats.totalNominalPanels} <span className="text-[10px] text-on-surface-variant">paneles nominales</span>
-                              </span>
-                              <span className="text-xs font-mono text-primary font-bold block">
-                                {sublimationStats.totalEquivalentPanels.toFixed(1)} <span className="text-[9px] text-on-surface-variant">paneles prorrateados</span>
-                              </span>
-                              <span className="text-xs font-mono text-violet-400 font-bold block">
-                                {sublimationStats.totalM2.toFixed(1)} m² <span className="text-[9px] text-on-surface-variant">área total (incl. metros)</span>
-                              </span>
-                            </div>
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Gastos Prorrateables Totales</span>
+                            <span className="text-2xl font-mono font-bold text-error mt-1">{formatCurrency(analysisStats.periodOverheadCosts)}</span>
+                            <p className="text-[9px] text-on-surface-variant mt-1">Gastos fijos + indirectos del periodo</p>
                           </div>
-
                           <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between text-left">
-                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Insumos Consumidos</span>
-                            <div className="space-y-1">
-                              <span className="text-xs text-white block">🧻 Papel: <strong>{sublimationStats.paperQuantity} u</strong> ({formatCurrency(sublimationStats.paperCost)})</span>
-                              <span className="text-xs text-white block mt-1">🧪 Tinta: <strong>{sublimationStats.inkQuantity} u</strong> ({formatCurrency(sublimationStats.inkCost)})</span>
-                            </div>
-                          </div>
-
-                          <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between text-left">
-                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Ingreso Total Sublimación</span>
-                            <div>
-                              <span className="text-xl font-mono font-bold text-white block">{formatCurrency(sublimationStats.totalSubRevenue)}</span>
-                              <span className="text-[10px] text-on-surface-variant block mt-1">Incluye paneles, metros y calandra</span>
-                            </div>
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ingresos Totales Registrados</span>
+                            <span className="text-2xl font-mono font-bold text-emerald-400 mt-1">{formatCurrency(analysisStats.totalPeriodRevenue)}</span>
+                            <p className="text-[9px] text-on-surface-variant mt-1">Ventas totales del periodo</p>
                           </div>
                         </div>
 
-                        {/* Reformulated unit costs with breakdown */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
-                          {/* Costo por Panel Nominal */}
-                          <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between border border-outline-variant/30">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-[#a855f7]" />
-                            <div className="space-y-3">
-                              <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Costo / Panel Nominal</span>
-                              
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Directo (Insumo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.avgCombinedCostPerPanel) : '—'}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Indirecto (Fijo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.overheadPerNominalPanel) : '—'}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className="border-t border-outline-variant/30 pt-2 flex flex-col">
-                                <span className="text-[9px] uppercase tracking-wider text-[#a855f7] font-semibold">Costo Unitario Total</span>
-                                <span className="font-mono text-xl font-black text-white mt-0.5">
-                                  {sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.totalCostPerNominalPanel) : '—'}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[9px] text-on-surface-variant mt-3">Directo (insumo) + Indirecto prorrateado</p>
-                          </div>
-
-                          {/* Costo por Panel Equivalente */}
-                          <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between border border-outline-variant/30">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-                            <div className="space-y-3">
-                              <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Costo / Panel Equivalente</span>
-                              
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Directo (Insumo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalEquivalentPanels > 0 ? formatCurrency(sublimationStats.avgCostPerEquivalentPanel) : '—'}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Indirecto (Fijo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalEquivalentPanels > 0 ? formatCurrency(sublimationStats.overheadPerEquivalentPanel) : '—'}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className="border-t border-outline-variant/30 pt-2 flex flex-col">
-                                <span className="text-[9px] uppercase tracking-wider text-primary font-semibold">Costo Unitario Total</span>
-                                <span className="font-mono text-xl font-black text-white mt-0.5">
-                                  {sublimationStats.totalEquivalentPanels > 0 ? formatCurrency(sublimationStats.totalCostPerEquivalentPanel) : '—'}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[9px] text-on-surface-variant mt-3">Asignado por factor y cantidad de paneles</p>
-                          </div>
-
-                          {/* Costo por Metro Cuadrado */}
-                          <div className="neu-surface p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between border border-outline-variant/30">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
-                            <div className="space-y-3">
-                              <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Costo / Metro Impreso (m²)</span>
-                              
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Directo (Insumo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalM2 > 0 ? formatCurrency(sublimationStats.avgCostPerM2) : '—'}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-on-surface-variant">C. Indirecto (Fijo):</span>
-                                  <span className="font-mono text-white">
-                                    {sublimationStats.totalM2 > 0 ? formatCurrency(sublimationStats.overheadPerM2) : '—'}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className="border-t border-outline-variant/30 pt-2 flex flex-col">
-                                <span className="text-[9px] uppercase tracking-wider text-emerald-400 font-semibold">Costo Unitario Total</span>
-                                <span className="font-mono text-xl font-black text-white mt-0.5">
-                                  {sublimationStats.totalM2 > 0 ? formatCurrency(sublimationStats.totalCostPerM2) : '—'}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[9px] text-on-surface-variant mt-3">Costo total ÷ Metraje total impreso</p>
-                          </div>
-                        </div>
-
-                        {/* Performance / Profitability */}
-                        <div className="p-4 rounded-xl neu-pressed space-y-3 text-left">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-mono text-on-surface-variant uppercase tracking-wider font-bold">Relación de Costo Insumos / Ingresos</span>
-                            <span className="font-mono font-bold text-white">{sublimationStats.costToRevenueRatio.toFixed(1)}%</span>
-                          </div>
-                          <div className="h-2 w-full bg-white/[0.04] rounded-full overflow-hidden p-[1px] border border-white/[0.02]">
-                            <div 
-                              className="h-full rounded-full bg-[#a855f7] shadow-[0_0_6px_rgba(168,85,247,0.5)] transition-all duration-500" 
-                              style={{ width: `${Math.min(100, sublimationStats.costToRevenueRatio)}%` }} 
-                            />
-                          </div>
-                          <p className="text-[10px] text-on-surface-variant">
-                            Los costos totales de insumos en sublimación ({formatCurrency(sublimationStats.totalSubExpenses)}) representan el {sublimationStats.costToRevenueRatio.toFixed(1)}% del total facturado por servicios de sublimación ({formatCurrency(sublimationStats.totalSubRevenue)}) en el periodo seleccionado.
-                          </p>
-                        </div>
-
-                        {/* Breakdown table */}
                         <div className="overflow-x-auto rounded-xl neu-pressed">
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
                               <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
-                                <th className="py-2.5 px-3">Insumo</th>
-                                <th className="py-2.5 px-3 text-center">Cantidad</th>
-                                <th className="py-2.5 px-3 text-right">Costo Incurrido</th>
-                                <th className="py-2.5 px-3 text-right">Costo Unit. Promedio / Panel Nominal</th>
+                                <th className="py-2.5 px-3">Departamento / Área</th>
+                                <th className="py-2.5 px-3 text-right">Ingresos del Periodo</th>
+                                <th className="py-2.5 px-3 text-center">Participación</th>
+                                <th className="py-2.5 px-3 text-right">Gastos Prorrateados</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5 font-mono text-on-surface">
-                              <tr className="hover:bg-white/[0.02] transition-colors">
-                                <td className="py-2 px-3 text-white font-sans text-left">🧪 Tintas de Sublimación</td>
-                                <td className="py-2 px-3 text-center">{sublimationStats.inkQuantity} u</td>
-                                <td className="py-2 px-3 text-right">{formatCurrency(sublimationStats.inkCost)}</td>
-                                <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.avgInkCostPerPanel) : '—'}</td>
-                              </tr>
-                              <tr className="hover:bg-white/[0.02] transition-colors">
-                                <td className="py-2 px-3 text-white font-sans text-left">🧻 Papel Sublimático</td>
-                                <td className="py-2 px-3 text-center">{sublimationStats.paperQuantity} u</td>
-                                <td className="py-2 px-3 text-right">{formatCurrency(sublimationStats.paperCost)}</td>
-                                <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.avgPaperCostPerPanel) : '—'}</td>
-                              </tr>
-                              <tr className="hover:bg-white/[0.02] transition-colors bg-surface-container/20 font-semibold font-mono">
-                                <td className="py-2 px-3 text-white font-sans text-left">📦 Total Insumos Estimados</td>
-                                <td className="py-2 px-3 text-center text-white">—</td>
-                                <td className="py-2 px-3 text-right text-white">{formatCurrency(sublimationStats.totalSubExpenses)}</td>
-                                <td className="py-2 px-3 text-right text-[#a855f7]">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.avgCombinedCostPerPanel) : '—'}</td>
-                              </tr>
-                              <tr className="hover:bg-white/[0.02] transition-colors">
-                                <td className="py-2 px-3 text-white font-sans text-left">🏛️ Gastos Fijos Prorrateados</td>
-                                <td className="py-2 px-3 text-center text-on-surface-variant">—</td>
-                                <td className="py-2 px-3 text-right text-on-surface-variant">{formatCurrency(sublimationStats.subProratedOverhead)}</td>
-                                <td className="py-2 px-3 text-right text-primary">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.overheadPerNominalPanel) : '—'}</td>
-                              </tr>
-                              <tr className="hover:bg-white/[0.02] transition-colors bg-primary/10 font-bold font-mono border-t border-primary/20">
-                                <td className="py-2.5 px-3 text-primary font-sans text-left">💼 Costo Total Global (Insumos + Fijos)</td>
-                                <td className="py-2.5 px-3 text-center text-primary">—</td>
-                                <td className="py-2.5 px-3 text-right text-primary">{formatCurrency(sublimationStats.totalSubExpenses + sublimationStats.subProratedOverhead)}</td>
-                                <td className="py-2.5 px-3 text-right text-emerald-400">{sublimationStats.totalNominalPanels > 0 ? formatCurrency(sublimationStats.totalCostPerNominalPanel) : '—'}</td>
+                              {[
+                                { key: 'produccion_textil', label: 'Producción Textil' },
+                                { key: 'servicios_sublimacion', label: 'Servicios de Sublimación' },
+                                { key: 'servicios_bordado', label: 'Servicios de Bordado' },
+                                { key: 'servicios_corte', label: 'Servicios de Corte de vinil' },
+                                { key: 'servicios_dtf', label: 'Servicios de Impresión DTF' },
+                                { key: 'servicios_uv_dtf', label: 'Servicios de Logos en UV-DTF' },
+                                { key: 'otros', label: 'Otros Servicios' }
+                              ].map(dep => {
+                                const revenue = analysisStats.periodRevenues[dep.key] || 0
+                                const pct = analysisStats.totalPeriodRevenue > 0 ? (revenue / analysisStats.totalPeriodRevenue) * 100 : 0
+                                const proratedExpense = analysisStats.proratedOverhead[dep.key] || 0
+                                
+                                return (
+                                  <tr key={dep.key} className="hover:bg-white/[0.02] transition-colors">
+                                    <td className="py-2 px-3 text-white font-sans text-left font-medium">{dep.label}</td>
+                                    <td className="py-2 px-3 text-right">{formatCurrency(revenue)}</td>
+                                    <td className="py-2 px-3 text-center text-primary font-bold">{pct.toFixed(1)}%</td>
+                                    <td className="py-2 px-3 text-right text-emerald-400 font-bold">{formatCurrency(proratedExpense)}</td>
+                                  </tr>
+                                )
+                              })}
+                              <tr className="bg-surface-container/20 font-semibold font-mono border-t border-outline-variant">
+                                <td className="py-2 px-3 text-white font-sans text-left">TOTALES GENERALES</td>
+                                <td className="py-2 px-3 text-right text-white">{formatCurrency(analysisStats.totalPeriodRevenue)}</td>
+                                <td className="py-2 px-3 text-center text-primary font-bold">100%</td>
+                                <td className="py-2 px-3 text-right text-error font-bold">{formatCurrency(analysisStats.periodOverheadCosts)}</td>
                               </tr>
                             </tbody>
                           </table>
                         </div>
                       </div>
+                    </Card>
+                  )}
+
+                  {/* SUB-TAB 2: PRODUCCIÓN TEXTIL POR CONTRATO */}
+                  {analysisSubTab === 'produccion_textil' && (
+                    <div className="space-y-6">
+                      <Card className="relative overflow-hidden border-l-4 border-l-primary">
+                        <div className="p-6 space-y-4">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div>
+                              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary">apparel</span>
+                                Análisis de Costos por Contrato / Pedido
+                              </h3>
+                              <p className="text-xs text-on-surface-variant">
+                                Selecciona un contrato para evaluar su Estado de Costos segregado (Materia Prima, Mano de Obra y Gastos Indirectos).
+                              </p>
+                            </div>
+                            <div className="w-full sm:w-64">
+                              <Select
+                                value={selectedContractId}
+                                onChange={e => setSelectedContractId(e.target.value)}
+                                options={[
+                                  { value: '', label: '-- Ver Resumen Global de Contratos --' },
+                                  ...analysisStats.filteredOrders
+                                    .filter(o => o.order_items?.some(i => (i.category || '').toLowerCase().includes('produc')))
+                                    .map(o => ({
+                                      value: o.id,
+                                      label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
+                                    }))
+                                ]}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Si hay contrato seleccionado */}
+                          {(() => {
+                            const selectedOrder = analysisStats.filteredOrders.find(o => o.id === selectedContractId)
+                            if (!selectedOrder && selectedContractId) return null
+
+                            // Datos si hay uno seleccionado o resumen general
+                            const activeOrders = selectedOrder ? [selectedOrder] : analysisStats.filteredOrders.filter(o => o.order_items?.some(i => (i.category || '').toLowerCase().includes('produc')))
+
+                            const totalRevenue = activeOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
+                            const totalGarments = activeOrders.reduce((sum, o) => {
+                              return sum + (o.order_items || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0)
+                            }, 0)
+
+                            // Costos vinculados a las órdenes seleccionadas
+                            const orderIds = activeOrders.map(o => o.id)
+                            const linkedExpenses = expenses.filter(e => orderIds.includes(e.order_id))
+
+                            let mpCost = 0
+                            let modCost = 0
+                            let otherDirectCost = 0
+
+                            linkedExpenses.forEach(e => {
+                              const subcatLower = (e.subcategory || '').toLowerCase()
+                              const itemLower = (e.specific_item || e.specificItem || '').toLowerCase()
+                              const amt = Number(e.amount) || 0
+
+                              if (subcatLower.includes('materia prima') || itemLower.includes('tela') || itemLower.includes('accesorios') || itemLower.includes('cierre')) {
+                                mpCost += amt
+                              } else if (subcatLower.includes('embellecimiento') || subcatLower.includes('destajo') || itemLower.includes('mano de obra') || itemLower.includes('confección') || itemLower.includes('confeccion')) {
+                                modCost += amt
+                              } else {
+                                otherDirectCost += amt
+                              }
+                            })
+
+                            // Gastos indirectos prorrateados para este/estos contratos
+                            const contractRevenueShare = analysisStats.totalPeriodRevenue > 0 ? (totalRevenue / analysisStats.totalPeriodRevenue) : 0
+                            const gifCost = contractRevenueShare * analysisStats.periodOverheadCosts
+
+                            const totalContractCost = mpCost + modCost + otherDirectCost + gifCost
+                            const costPerUnit = totalGarments > 0 ? totalContractCost / totalGarments : 0
+                            const pricePerUnit = totalGarments > 0 ? totalRevenue / totalGarments : 0
+                            const netProfit = totalRevenue - totalContractCost
+                            const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
+
+                            return (
+                              <div className="space-y-6 pt-4 border-t border-outline-variant/30">
+                                {/* Estado de Resultados / Costos KPI Grid */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                  <div className="neu-pressed p-4 rounded-xl text-left">
+                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Monto Total Contrato</span>
+                                    <span className="text-xl font-mono font-bold text-white block mt-1">{formatCurrency(totalRevenue)}</span>
+                                    <span className="text-[10px] font-mono text-on-surface-variant">{totalGarments} prendas producidas</span>
+                                  </div>
+                                  <div className="neu-pressed p-4 rounded-xl text-left">
+                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Total Producción</span>
+                                    <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(totalContractCost)}</span>
+                                    <span className="text-[10px] font-mono text-on-surface-variant">MP + MOD + GIF Prorrateados</span>
+                                  </div>
+                                  <div className="neu-pressed p-4 rounded-xl text-left">
+                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Unitario por Prenda</span>
+                                    <span className="text-xl font-mono font-bold text-amber-400 block mt-1">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</span>
+                                    <span className="text-[10px] font-mono text-on-surface-variant">Precio Venta: {formatCurrency(pricePerUnit)}</span>
+                                  </div>
+                                  <div className="neu-pressed p-4 rounded-xl text-left">
+                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Utilidad Neta</span>
+                                    <span className={`text-xl font-mono font-bold block mt-1 ${netProfit >= 0 ? 'text-emerald-400' : 'text-error'}`}>
+                                      {formatCurrency(netProfit)}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-primary font-bold">Margen: {profitMargin.toFixed(1)}%</span>
+                                  </div>
+                                </div>
+
+                                {/* Tabla de Segregación del Estado de Costos */}
+                                <div className="neu-surface p-4 rounded-xl space-y-3">
+                                  <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-primary text-base">receipt_long</span>
+                                    Segregación del Estado de Costos de Confección Textil
+                                  </h4>
+                                  <div className="overflow-x-auto rounded-xl neu-pressed">
+                                    <table className="w-full text-left text-xs border-collapse font-mono">
+                                      <thead>
+                                        <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                                          <th className="py-2.5 px-3">Elemento del Costo</th>
+                                          <th className="py-2.5 px-3 text-right">Monto Total (Bs)</th>
+                                          <th className="py-2.5 px-3 text-right">Costo / Prenda</th>
+                                          <th className="py-2.5 px-3 text-center">% del Costo</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-white/5 text-on-surface">
+                                        <tr>
+                                          <td className="py-2 px-3 text-white font-sans">🧵 Materia Prima Directa (Telas e Insumos)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(mpCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(mpCost / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((mpCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                        </tr>
+                                        <tr>
+                                          <td className="py-2 px-3 text-white font-sans">✂️ Mano de Obra Directa (Confección y Destajo)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(modCost + otherDirectCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency((modCost + otherDirectCost) / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? (((modCost + otherDirectCost) / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                        </tr>
+                                        <tr>
+                                          <td className="py-2 px-3 text-white font-sans">🏛️ Gastos Indirectos y Fijos (Prorrateados)</td>
+                                          <td className="py-2 px-3 text-right">{formatCurrency(gifCost)}</td>
+                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(gifCost / totalGarments) : '—'}</td>
+                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((gifCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                        </tr>
+                                        <tr className="bg-primary/10 font-bold border-t border-primary/20">
+                                          <td className="py-2.5 px-3 text-primary font-sans">TOTAL COSTO DE PRODUCCIÓN</td>
+                                          <td className="py-2.5 px-3 text-right text-primary">{formatCurrency(totalContractCost)}</td>
+                                          <td className="py-2.5 px-3 text-right text-emerald-400">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</td>
+                                          <td className="py-2.5 px-3 text-center text-primary">100%</td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      </Card>
                     </div>
-                  </Card>
+                  )}
+
+                  {/* SUB-TAB 3: SERVICIOS DE SUBLIMACIÓN */}
+                  {analysisSubTab === 'servicios_sublimacion' && (
+                    <Card className="relative overflow-hidden border-l-4 border-l-[#a855f7]">
+                      <div className="p-6 sm:p-8 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-[#a855f7]/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-[#a855f7] text-2xl">texture</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Sublimación</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Evaluación del costo por metro cuadrado (m²) y por panel nominal/equivalente en base a insumos comprados (tintas y papel).
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Volumen de Sublimación</span>
+                            <div className="space-y-1">
+                              <span className="text-xs font-mono text-white block"><strong>{analysisStats.sublimacion.totalNominalPanels}</strong> paneles nominales</span>
+                              <span className="text-xs font-mono text-violet-400 block"><strong>{analysisStats.sublimacion.totalM2.toFixed(1)} m²</strong> área impresa total</span>
+                            </div>
+                          </div>
+
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Insumos Consumidos</span>
+                            <div className="space-y-1 text-xs">
+                              <span className="text-white block">🧻 Papel: {analysisStats.sublimacion.paperQuantity} u ({formatCurrency(analysisStats.sublimacion.paperCost)})</span>
+                              <span className="text-white block">🧪 Tinta: {analysisStats.sublimacion.inkQuantity} u ({formatCurrency(analysisStats.sublimacion.inkCost)})</span>
+                            </div>
+                          </div>
+
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1">Ventas Totales Sublimación</span>
+                            <span className="text-xl font-mono font-bold text-white block">{formatCurrency(analysisStats.sublimacion.totalSubRevenue)}</span>
+                          </div>
+                        </div>
+
+                        {/* Indicadores de Costo Unitario */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="neu-surface p-4 rounded-2xl border border-outline-variant/30 text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Costo Total / Metro Impreso (m²)</span>
+                            <div className="mt-2 space-y-1 text-xs font-mono">
+                              <div className="flex justify-between"><span className="text-on-surface-variant">Directo (Insumo):</span><span>{formatCurrency(analysisStats.sublimacion.directCostPerM2)}</span></div>
+                              <div className="flex justify-between"><span className="text-on-surface-variant">Indirecto (Fijo):</span><span>{formatCurrency(analysisStats.sublimacion.overheadPerM2)}</span></div>
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-outline-variant/30 flex justify-between items-center">
+                              <span className="text-xs font-bold text-[#a855f7]">COSTO TOTAL m²</span>
+                              <span className="text-lg font-mono font-bold text-white">{formatCurrency(analysisStats.sublimacion.totalCostPerM2)}</span>
+                            </div>
+                          </div>
+
+                          <div className="neu-surface p-4 rounded-2xl border border-outline-variant/30 text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Costo Total / Panel Nominal</span>
+                            <div className="mt-2 space-y-1 text-xs font-mono">
+                              <div className="flex justify-between"><span className="text-on-surface-variant">Directo (Insumo):</span><span>{formatCurrency(analysisStats.sublimacion.avgCombinedCostPerPanel)}</span></div>
+                              <div className="flex justify-between"><span className="text-on-surface-variant">Indirecto (Fijo):</span><span>{formatCurrency(analysisStats.sublimacion.overheadPerNominalPanel)}</span></div>
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-outline-variant/30 flex justify-between items-center">
+                              <span className="text-xs font-bold text-primary">COSTO TOTAL PANEL</span>
+                              <span className="text-lg font-mono font-bold text-white">{formatCurrency(analysisStats.sublimacion.totalCostPerNominalPanel)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* SUB-TAB 4: SERVICIOS DE BORDADO */}
+                  {analysisSubTab === 'servicios_bordado' && (
+                    <Card className="relative overflow-hidden border-l-4 border-l-amber-500">
+                      <div className="p-6 sm:p-8 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-amber-500 text-2xl">precision_manufacturing</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Bordado</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Evaluación de costos de producción por <strong>cada 1.000 puntadas</strong>.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Volumen Producido</span>
+                            <span className="text-xl font-mono font-bold text-white block mt-1">{analysisStats.bordado.totalStitches1k} <span className="text-xs font-normal text-on-surface-variant">mil puntadas</span></span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Insumos de Bordado</span>
+                            <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(analysisStats.bordado.expenses)}</span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ventas de Bordado</span>
+                            <span className="text-xl font-mono font-bold text-emerald-400 block mt-1">{formatCurrency(analysisStats.bordado.revenue)}</span>
+                          </div>
+                        </div>
+
+                        {/* Costo por 1000 Puntadas */}
+                        <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 space-y-3 text-left">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">Costo por Cada 1.000 Puntadas</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">DIRECTO (INSUMOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.bordado.directCostPer1kStitches)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">INDIRECTO (FIJOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.bordado.overheadPer1kStitches)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl border border-amber-500/30 bg-amber-500/10">
+                              <span className="text-amber-400 block text-[10px] font-bold">TOTAL / 1.000 PUNTADAS</span>
+                              <span className="text-lg font-bold text-white">{formatCurrency(analysisStats.bordado.costPer1kStitches)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* SUB-TAB 5: SERVICIOS DE CORTE DE VINIL */}
+                  {analysisSubTab === 'servicios_corte' && (
+                    <Card className="relative overflow-hidden border-l-4 border-l-emerald-500">
+                      <div className="p-6 sm:p-8 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-emerald-500 text-2xl">content_cut</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Corte de Vinil</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Evaluación del costo por <strong>metro lineal</strong> de vinil textil y adhesivo.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Metros Lineales Vendidos</span>
+                            <span className="text-xl font-mono font-bold text-white block mt-1">{analysisStats.corte.totalVinylMeters} <span className="text-xs font-normal text-on-surface-variant">m</span></span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Insumos Vinil Comprados</span>
+                            <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(analysisStats.corte.expenses)}</span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ventas Corte de Vinil</span>
+                            <span className="text-xl font-mono font-bold text-emerald-400 block mt-1">{formatCurrency(analysisStats.corte.revenue)}</span>
+                          </div>
+                        </div>
+
+                        <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 space-y-3 text-left">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400">Costo por Metro Lineal</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">DIRECTO (INSUMO VINIL)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.corte.directCostPerMeter)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">INDIRECTO (FIJOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.corte.overheadPerMeter)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+                              <span className="text-emerald-400 block text-[10px] font-bold">TOTAL / METRO LINEAL</span>
+                              <span className="text-lg font-bold text-white">{formatCurrency(analysisStats.corte.costPerMeter)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* SUB-TAB 6: SERVICIOS DE IMPRESIÓN DTF */}
+                  {analysisSubTab === 'servicios_dtf' && (
+                    <Card className="relative overflow-hidden border-l-4 border-l-cyan-500">
+                      <div className="p-6 sm:p-8 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-cyan-500 text-2xl">print</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Impresión DTF</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Evaluación del costo por <strong>metro lineal</strong> de impresión DTF (Tintas, Film, Polvo).
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Metros DTF Impresos</span>
+                            <span className="text-xl font-mono font-bold text-white block mt-1">{analysisStats.dtf.totalDtfMeters} <span className="text-xs font-normal text-on-surface-variant">m</span></span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Insumos DTF Comprados</span>
+                            <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(analysisStats.dtf.expenses)}</span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ventas Impresión DTF</span>
+                            <span className="text-xl font-mono font-bold text-emerald-400 block mt-1">{formatCurrency(analysisStats.dtf.revenue)}</span>
+                          </div>
+                        </div>
+
+                        <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 space-y-3 text-left">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400">Costo por Metro Lineal DTF</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">DIRECTO (INSUMOS DTF)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.dtf.directCostPerMeter)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">INDIRECTO (FIJOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.dtf.overheadPerMeter)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10">
+                              <span className="text-cyan-400 block text-[10px] font-bold">TOTAL / METRO DTF</span>
+                              <span className="text-lg font-bold text-white">{formatCurrency(analysisStats.dtf.costPerMeter)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* SUB-TAB 7: SERVICIOS DE LOGOS UV-DTF */}
+                  {analysisSubTab === 'servicios_uv_dtf' && (
+                    <Card className="relative overflow-hidden border-l-4 border-l-pink-500">
+                      <div className="p-6 sm:p-8 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-pink-500 text-2xl">layers</span>
+                          </div>
+                          <div className="text-left">
+                            <h2 className="text-xl font-bold text-white mb-1">Análisis de Costos de Logos UV-DTF</h2>
+                            <p className="text-sm text-on-surface-variant leading-relaxed">
+                              Evaluación del costo por <strong>unidad de logotipo</strong> UV-DTF.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Logotipos Vendidos</span>
+                            <span className="text-xl font-mono font-bold text-white block mt-1">{analysisStats.uvDtf.totalUvLogos} <span className="text-xs font-normal text-on-surface-variant">unidades</span></span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Insumos UV-DTF</span>
+                            <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(analysisStats.uvDtf.expenses)}</span>
+                          </div>
+                          <div className="neu-pressed p-4 rounded-xl text-left">
+                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block">Ventas Logos UV-DTF</span>
+                            <span className="text-xl font-mono font-bold text-emerald-400 block mt-1">{formatCurrency(analysisStats.uvDtf.revenue)}</span>
+                          </div>
+                        </div>
+
+                        <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 space-y-3 text-left">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400">Costo por Unidad de Logotipo</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">DIRECTO (INSUMOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.uvDtf.directCostPerLogo)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl">
+                              <span className="text-on-surface-variant block text-[10px]">INDIRECTO (FIJOS)</span>
+                              <span className="text-base font-bold text-white">{formatCurrency(analysisStats.uvDtf.overheadPerLogo)}</span>
+                            </div>
+                            <div className="neu-pressed p-3 rounded-xl border border-pink-500/30 bg-pink-500/10">
+                              <span className="text-pink-400 block text-[10px] font-bold">TOTAL / UNIDAD LOGO</span>
+                              <span className="text-lg font-bold text-white">{formatCurrency(analysisStats.uvDtf.costPerLogo)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
                 </>
               )}
 
