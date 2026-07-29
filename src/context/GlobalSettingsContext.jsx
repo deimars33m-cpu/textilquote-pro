@@ -147,6 +147,7 @@ export function GlobalSettingsProvider({ children }) {
   const { user } = useAuth()
   const [settings, setSettings] = useState(INITIAL_CATALOG)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [isDbLoaded, setIsDbLoaded] = useState(false)
 
   // 1. Cargar localmente al montar
   useEffect(() => {
@@ -163,7 +164,7 @@ export function GlobalSettingsProvider({ children }) {
           expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure,
           budgets: Array.isArray(parsed.budgets) ? parsed.budgets : [],
           salesGoals: Array.isArray(parsed.salesGoals) ? parsed.salesGoals : [],
-          fixedExpenses: Array.isArray(parsed.fixedExpenses) && parsed.fixedExpenses.length > 0 ? parsed.fixedExpenses : INITIAL_CATALOG.fixedExpenses
+          fixedExpenses: Array.isArray(parsed.fixedExpenses) ? parsed.fixedExpenses : INITIAL_CATALOG.fixedExpenses
         })
       } catch (e) {
         console.error('Error parsing settings from LocalStorage', e)
@@ -175,7 +176,10 @@ export function GlobalSettingsProvider({ children }) {
   // 2. Cargar desde Supabase al iniciar sesión
   useEffect(() => {
     async function loadDbSettings() {
-      if (!user) return
+      if (!user) {
+        setIsDbLoaded(true)
+        return
+      }
       try {
         const { data, error } = await supabase
           .from('global_settings')
@@ -188,23 +192,25 @@ export function GlobalSettingsProvider({ children }) {
             expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure,
             budgets: Array.isArray(data.settings.budgets) ? data.settings.budgets : [],
             salesGoals: Array.isArray(data.settings.salesGoals) ? data.settings.salesGoals : [],
-            fixedExpenses: Array.isArray(data.settings.fixedExpenses) && data.settings.fixedExpenses.length > 0 ? data.settings.fixedExpenses : INITIAL_CATALOG.fixedExpenses
+            fixedExpenses: Array.isArray(data.settings.fixedExpenses) ? data.settings.fixedExpenses : INITIAL_CATALOG.fixedExpenses
           }))
         }
       } catch (e) {
         console.error('Error cargando configuración desde Supabase', e)
+      } finally {
+        setIsDbLoaded(true)
       }
     }
     loadDbSettings()
   }, [user])
 
-  // 3. Guardar cambios localmente y en Supabase
+  // 3. Guardar cambios localmente y en Supabase (solo tras cargar la BD)
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem('textilquote_global_settings', JSON.stringify(settings))
-      
+    }
+    if (isLoaded && isDbLoaded && user) {
       const saveDbSettings = async () => {
-        if (!user) return
         try {
           await supabase
             .from('global_settings')
@@ -215,7 +221,7 @@ export function GlobalSettingsProvider({ children }) {
       }
       saveDbSettings()
     }
-  }, [settings, isLoaded, user])
+  }, [settings, isLoaded, isDbLoaded, user])
 
   // --- CRUD Categories ---
   const addCategory = (category) => {

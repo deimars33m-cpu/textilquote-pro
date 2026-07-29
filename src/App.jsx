@@ -18,6 +18,7 @@ import OrdersPage from '@/pages/OrdersPage'
 import GlobalSettingsPage from '@/pages/GlobalSettingsPage'
 import LoansPage from '@/pages/LoansPage'
 import { GlobalSettingsProvider } from '@/context/GlobalSettingsContext'
+import { NotificationProvider } from '@/context/NotificationContext'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const queryClient = new QueryClient({
@@ -101,7 +102,9 @@ export default function App() {
         <AuthProvider>
           <CategoryProvider>
             <GlobalSettingsProvider>
-              <AppRoutes />
+              <NotificationProvider>
+                <AppRoutes />
+              </NotificationProvider>
             </GlobalSettingsProvider>
           </CategoryProvider>
         </AuthProvider>

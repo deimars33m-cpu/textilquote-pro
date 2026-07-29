@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useNotifications } from '@/context/NotificationContext'
 
 const navItems = [
   { path: '/', icon: 'dashboard', label: 'Dashboard' },
@@ -25,6 +26,7 @@ const bottomItems = [
 
 export default function Header() {
   const { user, signOut } = useAuth()
+  const { totalAlertsCount, setMobileModalOpen, setSidebarCollapsed } = useNotifications()
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'light'
@@ -37,6 +39,14 @@ export default function Header() {
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  }
+
+  const handleNotificationClick = () => {
+    if (window.innerWidth < 1280) {
+      setMobileModalOpen(true)
+    } else {
+      setSidebarCollapsed(prev => !prev)
+    }
   }
 
   return (
@@ -65,7 +75,23 @@ export default function Header() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Botón Bell de Notificaciones */}
+          <button
+            onClick={handleNotificationClick}
+            className="relative p-2.5 rounded-xl neu-raised-sm text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+            title="Notificaciones & Alertas"
+          >
+            <span className="material-symbols-outlined text-[18px] text-primary">
+              notifications
+            </span>
+            {totalAlertsCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-error text-white font-mono text-[9px] font-bold flex items-center justify-center shadow-md animate-pulse">
+                {totalAlertsCount > 9 ? '9+' : totalAlertsCount}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={toggleTheme}
             className="p-2.5 rounded-xl neu-raised-sm text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer flex items-center justify-center"
