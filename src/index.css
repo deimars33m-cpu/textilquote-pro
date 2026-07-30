@@ -50,21 +50,21 @@
 }
 
 [data-theme="dark"] {
-  /* ── Colors: Deep Indigo Dark Theme (#1B1464) ── */
-  --color-background: #1B1464;
-  --color-surface: #241B7A;
-  --color-surface-dim: #18115A;
-  --color-surface-bright: #2F2494;
-  --color-surface-variant: #281F85;
-  --color-surface-container-lowest: #120D47;
-  --color-surface-container-low: #18115A;
-  --color-surface-container: #241B7A;
-  --color-surface-container-high: #281F85;
-  --color-surface-container-highest: #3328A6;
+  /* ── Colors: Deep Navy Dark Theme (#011336) ── */
+  --color-background: #011336;
+  --color-surface: #061e47;
+  --color-surface-dim: #02173d;
+  --color-surface-bright: #0b2759;
+  --color-surface-variant: #082250;
+  --color-surface-container-lowest: #010c24;
+  --color-surface-container-low: #02173d;
+  --color-surface-container: #061e47;
+  --color-surface-container-high: #082250;
+  --color-surface-container-highest: #0f306b;
 
   --color-primary: #00f5ff;
   --color-primary-container: #00454d;
-  --color-on-primary: #1B1464;
+  --color-on-primary: #011336;
   --color-on-primary-container: #a1faff;
   --color-primary-fixed: #00f4fe;
   --color-primary-fixed-dim: #00e5ee;
@@ -72,7 +72,7 @@
 
   --color-secondary: #39ff14;
   --color-secondary-container: #106e00;
-  --color-on-secondary: #1B1464;
+  --color-on-secondary: #011336;
   --color-on-secondary-container: #e7ffd9;
 
   --color-tertiary: #a855f7;
@@ -89,7 +89,7 @@
   --color-on-surface-variant: #cbd5e1;
   --color-on-background: #f1f5f9;
   --color-inverse-surface: #f9f9ff;
-  --color-inverse-on-surface: #1B1464;
+  --color-inverse-on-surface: #011336;
 
   --color-outline: rgba(255, 255, 255, 0.05);
   --color-outline-variant: rgba(255, 255, 255, 0.03);
@@ -97,8 +97,8 @@
 }
 
 [data-theme="dark"] body {
-  background-color: #1B1464 !important;
-  background-image: radial-gradient(circle at 50% 0%, #2A1F8D 0%, #1B1464 100%) !important;
+  background-color: #011336 !important;
+  background-image: radial-gradient(circle at 50% 0%, #082250 0%, #011336 100%) !important;
 }
 
 [data-theme="dark"] .neu-surface {
