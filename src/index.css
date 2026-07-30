@@ -50,21 +50,21 @@
 }
 
 [data-theme="dark"] {
-  /* ── Colors: Deep Indigo Dark Theme (#1B1464) ── */
-  --color-background: #1B1464;
-  --color-surface: #241B7A;
-  --color-surface-dim: #18115A;
-  --color-surface-bright: #2F2494;
-  --color-surface-variant: #281F85;
-  --color-surface-container-lowest: #120D47;
-  --color-surface-container-low: #18115A;
-  --color-surface-container: #241B7A;
-  --color-surface-container-high: #281F85;
-  --color-surface-container-highest: #3328A6;
+  /* ── Colors: Gulf Blue (#030a4f) & Ultramarine (#060b98) Pro Dark Theme ── */
+  --color-background: #030a4f;
+  --color-surface: #060b98;
+  --color-surface-dim: #040870;
+  --color-surface-bright: #0a11ca;
+  --color-surface-variant: #080da8;
+  --color-surface-container-lowest: #010424;
+  --color-surface-container-low: #040870;
+  --color-surface-container: #060b98;
+  --color-surface-container-high: #080da8;
+  --color-surface-container-highest: #0a11ca;
 
   --color-primary: #00f5ff;
   --color-primary-container: #00454d;
-  --color-on-primary: #1B1464;
+  --color-on-primary: #030a4f;
   --color-on-primary-container: #a1faff;
   --color-primary-fixed: #00f4fe;
   --color-primary-fixed-dim: #00e5ee;
@@ -72,13 +72,13 @@
 
   --color-secondary: #39ff14;
   --color-secondary-container: #106e00;
-  --color-on-secondary: #1B1464;
+  --color-on-secondary: #030a4f;
   --color-on-secondary-container: #e7ffd9;
 
-  --color-tertiary: #a855f7;
-  --color-tertiary-container: #6f00be;
+  --color-tertiary: #38bdf8;
+  --color-tertiary-container: #0284c7;
   --color-on-tertiary: #ffffff;
-  --color-on-tertiary-container: #d6a9ff;
+  --color-on-tertiary-container: #bae6fd;
 
   --color-error: #ff716c;
   --color-error-container: #9f0519;
@@ -86,57 +86,67 @@
   --color-on-error-container: #ffa8a3;
 
   --color-on-surface: #f1f5f9;
-  --color-on-surface-variant: #cbd5e1;
+  --color-on-surface-variant: #94a3b8;
   --color-on-background: #f1f5f9;
   --color-inverse-surface: #f9f9ff;
-  --color-inverse-on-surface: #1B1464;
+  --color-inverse-on-surface: #030a4f;
 
-  --color-outline: rgba(255, 255, 255, 0.05);
-  --color-outline-variant: rgba(255, 255, 255, 0.03);
+  --color-outline: rgba(0, 245, 255, 0.12);
+  --color-outline-variant: rgba(255, 255, 255, 0.05);
   --color-surface-tint: #00f5ff;
 }
 
 [data-theme="dark"] body {
-  background-color: #1B1464 !important;
-  background-image: radial-gradient(circle at 50% 0%, #2A1F8D 0%, #1B1464 100%) !important;
+  background-color: #030a4f !important;
+  background-image: radial-gradient(circle at 50% 0%, #060b98 0%, #030a4f 100%) !important;
 }
 
 [data-theme="dark"] .neu-surface {
-  background: rgba(36, 27, 122, 0.65) !important;
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  background: linear-gradient(135deg, rgba(6, 11, 152, 0.75) 0%, rgba(4, 8, 112, 0.85) 100%) !important;
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border-radius: 20px !important;
   box-shadow: 
-    rgba(0, 0, 0, 0.35) 0px -15px 20px 0px inset, 
-    0 10px 30px rgba(0, 0, 0, 0.35) !important;
-  border: none !important;
+    rgba(0, 0, 0, 0.6) 0px -20px 30px 0px inset,
+    rgba(0, 245, 255, 0.08) 0px 1px 2px 0px inset,
+    0 12px 35px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(0, 245, 255, 0.12) !important;
 }
 
 [data-theme="dark"] .neu-pressed {
-  background: rgba(24, 17, 90, 0.7) !important;
-  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.4) !important;
-  border: none !important;
+  background: rgba(3, 10, 79, 0.85) !important;
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.7) !important;
+  border: 1px solid rgba(0, 245, 255, 0.08) !important;
+  border-radius: 14px !important;
 }
 
 [data-theme="dark"] .neu-raised-sm {
-  background: rgba(40, 31, 133, 0.6) !important;
+  background: rgba(8, 13, 168, 0.7) !important;
   backdrop-filter: blur(12px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
-  border: none !important;
+  box-shadow: 
+    rgba(0, 0, 0, 0.5) 0px -8px 15px 0px inset,
+    0 4px 15px rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(0, 245, 255, 0.15) !important;
+  border-radius: 14px !important;
 }
 
 [data-theme="dark"] .neu-button-primary {
-  background: linear-gradient(135deg, #00f5ff 0%, #00c4cc 100%) !important;
-  color: #1B1464 !important;
-  box-shadow: 0 8px 20px rgba(0, 245, 255, 0.3) !important;
-  border: none !important;
+  background: linear-gradient(135deg, #00f5ff 0%, #0a11ca 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 
+    0 8px 25px rgba(0, 245, 255, 0.35),
+    inset 0 1px 2px rgba(255, 255, 255, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
 }
 
 [data-theme="dark"] .neu-button-primary:hover {
-  box-shadow: 0 12px 24px rgba(0, 245, 255, 0.4) !important;
+  box-shadow: 
+    0 12px 30px rgba(0, 245, 255, 0.5),
+    inset 0 1px 2px rgba(255, 255, 255, 0.5) !important;
 }
 
 [data-theme="dark"] .orange-glow {
-  filter: drop-shadow(0 0 8px rgba(0, 245, 255, 0.5)) !important;
+  filter: drop-shadow(0 0 8px rgba(0, 245, 255, 0.6)) !important;
 }
 
 [data-theme="dark"] .progress-bar {
@@ -145,40 +155,47 @@
 }
 
 [data-theme="dark"] .glass-header {
-  background: rgba(27, 20, 100, 0.85) !important;
+  background: rgba(3, 10, 79, 0.9) !important;
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 245, 255, 0.12) !important;
 }
 
 [data-theme="dark"] .glass-card {
-  background: rgba(36, 27, 122, 0.55) !important;
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-  border: none !important;
+  background: linear-gradient(135deg, rgba(6, 11, 152, 0.65) 0%, rgba(4, 8, 112, 0.75) 100%) !important;
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border-radius: 20px !important;
+  border: 1px solid rgba(0, 245, 255, 0.12) !important;
   box-shadow: 
-    rgba(0, 0, 0, 0.35) 0px -15px 20px 0px inset,
-    0 8px 32px 0 rgba(0, 0, 0, 0.35) !important;
+    rgba(0, 0, 0, 0.55) 0px -20px 30px 0px inset,
+    0 10px 32px 0 rgba(0, 0, 0, 0.45) !important;
 }
 
 [data-theme="dark"] .bg-white\/5,
-[data-theme="dark"] .bg-surface-container-low\/30 {
-  background-color: rgba(255, 255, 255, 0.03) !important;
+[data-theme="dark"] .bg-surface-container-low\/30,
+[data-theme="dark"] .bg-surface-container-low {
+  background-color: rgba(3, 10, 79, 0.5) !important;
+}
+
+[data-theme="dark"] .bg-surface-container,
+[data-theme="dark"] .bg-surface-container-high {
+  background-color: rgba(6, 11, 152, 0.5) !important;
 }
 
 [data-theme="dark"] .bg-white\/10 {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: rgba(0, 245, 255, 0.08) !important;
 }
 
 [data-theme="dark"] .hover\:bg-white\/5:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
+  background-color: rgba(0, 245, 255, 0.1) !important;
 }
 
 [data-theme="dark"] .hover\:bg-white\/10:hover {
-  background-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(0, 245, 255, 0.15) !important;
 }
 
-/* ── Eliminación total de bordes blancos/visibles en modo oscuro ── */
-[data-theme="dark"] .border,
+/* ── Bordes finos y elegantes estilo Tech Neon Pro ── */
 [data-theme="dark"] .border-outline-variant,
 [data-theme="dark"] .border-outline,
 [data-theme="dark"] .border-outline-variant\/40,
@@ -186,16 +203,14 @@
 [data-theme="dark"] .border-outline-variant\/20,
 [data-theme="dark"] .border-white\/5,
 [data-theme="dark"] .border-white\/10,
-[data-theme="dark"] .border-white\/20,
-[data-theme="dark"] .border-error\/30,
-[data-theme="dark"] .border-amber-500\/30 {
-  border-color: rgba(255, 255, 255, 0.03) !important;
+[data-theme="dark"] .border-white\/20 {
+  border-color: rgba(0, 245, 255, 0.1) !important;
 }
 
 [data-theme="dark"] input:-webkit-autofill,
 [data-theme="dark"] input:-webkit-autofill:hover,
 [data-theme="dark"] input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0px 1000px #18115A inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px #030a4f inset !important;
 }
 
 /* ── Base styles ── */
