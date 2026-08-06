@@ -7,6 +7,7 @@ const navItems = [
   { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos y Presup.' },
   { path: '/loans', icon: 'account_balance', label: 'Préstamos' },
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
+  { path: '/contracts', icon: 'assignment', label: 'Contratos' },
   { path: '/terceros', icon: 'groups', label: 'Terceros' },
   { type: 'divider' },
   { path: '/materials', icon: 'inventory_2', label: 'Materiales' },

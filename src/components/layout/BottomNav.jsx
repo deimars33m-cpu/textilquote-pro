@@ -2,9 +2,9 @@ import { NavLink } from 'react-router-dom'
 
 const items = [
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
-  { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos' },
-  { path: '/terceros', icon: 'groups', label: 'Terceros' },
+  { path: '/contracts', icon: 'assignment', label: 'Contratos' },
   { path: '/quotes/new', icon: 'calculate', label: 'Cotizar' },
+  { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos' },
   { path: '/settings/global', icon: 'admin_panel_settings', label: 'Global' },
 ]
 
