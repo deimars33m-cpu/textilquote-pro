@@ -100,7 +100,8 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
 
   useEffect(() => {
     supabase.from('quotes')
-      .select('id, quote_number, status, total_price, terceros(name), quote_items(product_name, quantity)')
+      // IMPORTANT: include 'id' in quote_items so item.id is available for downstream queries
+      .select('id, quote_number, status, total_price, terceros(name), quote_items(id, product_name, quantity)')
       .eq('user_id', user.id)
       .eq('status', 'aprobada')
       .order('quote_number', { ascending: false })
@@ -164,74 +165,112 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
         .single()
       if (err) throw err
 
-      // If quote selected, pre-load materials (using Wholesale Purchase calculation) and embellishments
+      // If quote selected, pre-load data from quote (materials + embellishments + expenses linked to the order)
       if (form.quote_id) {
         const q = quotes.find(q => q.id === form.quote_id)
         const item = q?.quote_items?.[0]
-        if (item) {
-          // Load quote_materials with materials catalog metadata for wholesale calculations
+        const totalUnits = parseInt(form.total_units) || 1
+
+        if (item?.id) {
+          // ── 1. Materiales al Por Mayor ──────────────────────────────────────
+          // Join to materials catalog to get purchase_quantity and purchase_unit
           const { data: qmats } = await supabase
             .from('quote_materials')
-            .select('*, materials(name, unit_price, usage_unit, purchase_quantity, purchase_unit)')
+            .select('*, materials(usage_unit, purchase_quantity, purchase_unit)')
             .eq('quote_item_id', item.id)
 
           if (qmats?.length > 0) {
-            const totalUnits = parseInt(form.total_units) || 1
             await supabase.from('contract_material_purchases').insert(
               qmats.map(m => {
-                const qtyReq = parseFloat(m.quantity_per_unit) || 0
-                const price = parseFloat(m.unit_price) || parseFloat(m.materials?.unit_price) || 0
-                const waste = parseFloat(m.waste_pct) || 0
-                const baseTotal = qtyReq * totalUnits
+                const qtyReq   = parseFloat(m.quantity_per_unit) || 0
+                const price    = parseFloat(m.unit_price) || 0
+                const waste    = parseFloat(m.waste_pct) || 0
+                const baseTotal    = qtyReq * totalUnits
                 const totalRequired = baseTotal + (baseTotal * waste / 100)
 
-                const packQty = parseFloat(m.materials?.purchase_quantity) || 1
+                // Use catalog data if available, otherwise fall back to usage units
+                const packQty  = parseFloat(m.materials?.purchase_quantity) || 1
                 const packUnit = m.materials?.purchase_unit || m.materials?.usage_unit || 'unidad'
                 const usageUnit = m.materials?.usage_unit || 'unidad'
-                const toBuy = Math.ceil(totalRequired / packQty)
+                const toBuy    = Math.ceil(totalRequired / packQty)
                 const unitCost = packQty * price
 
                 return {
-                  contract_id: contract.id,
+                  contract_id:   contract.id,
                   material_name: m.material_name,
-                  unit: packUnit,
-                  qty_required: toBuy,
+                  unit:          packUnit,
+                  qty_required:  toBuy,
                   qty_purchased: 0,
-                  unit_cost: unitCost,
-                  status: 'pendiente',
-                  notes: `Resumen al Por Mayor: ${toBuy} ${packUnit}${toBuy > 1 ? 's' : ''} (${packQty} ${usageUnit}/${packUnit}) para cubrir ${totalRequired.toFixed(2)} ${usageUnit}`,
+                  unit_cost:     unitCost,
+                  status:        'pendiente',
+                  notes:         `Al por mayor: ${toBuy} ${packUnit}(s) [${packQty} ${usageUnit}/${packUnit}] → cubre ${totalRequired.toFixed(2)} ${usageUnit} c/merma`,
                 }
               })
             )
           }
 
-          // Load quote_embellishments
+          // ── 2. Embellecimientos ─────────────────────────────────────────────
           const { data: qemb } = await supabase
             .from('quote_embellishments')
             .select('*')
             .eq('quote_item_id', item.id)
           if (qemb?.length > 0) {
-            const totalUnits = parseInt(form.total_units) || 1
             await supabase.from('contract_embellishment_progress').insert(
               qemb.map(e => ({
-                contract_id: contract.id,
-                process_type: e.type || 'otro',
-                process_name: e.name || 'Embellecimiento',
-                units_total: totalUnits,
-                units_sent: 0,
+                contract_id:   contract.id,
+                process_type:  e.type || 'otro',
+                process_name:  e.name || 'Embellecimiento',
+                units_total:   totalUnits,
+                units_sent:    0,
                 units_returned: 0,
                 units_approved: 0,
               }))
             )
           }
-          // Add default production phase
+
+          // ── 3. Fase de producción por defecto ───────────────────────────────
           await supabase.from('contract_production_progress').insert([{
-            contract_id: contract.id,
-            phase_name: 'Producción General',
-            units_planned: parseInt(form.total_units) || 1,
-            units_completed: 0,
+            contract_id:      contract.id,
+            phase_name:       'Producción General',
+            units_planned:    totalUnits,
+            units_completed:  0,
             units_in_progress: 0,
           }])
+        }
+
+        // ── 4. Importar gastos del pedido vinculado a la cotización ─────────
+        // Find the order that was created from this quote
+        const { data: linkedOrders } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('quote_id', form.quote_id)
+          .eq('user_id', user.id)
+          .limit(1)
+
+        if (linkedOrders?.length > 0) {
+          const orderId = linkedOrders[0].id
+          const { data: orderExpenses } = await supabase
+            .from('expenses')
+            .select('*')
+            .eq('order_id', orderId)
+            .eq('user_id', user.id)
+
+          if (orderExpenses?.length > 0) {
+            // Import each expense as a contract material purchase (gasto registrado)
+            await supabase.from('contract_material_purchases').insert(
+              orderExpenses.map(exp => ({
+                contract_id:   contract.id,
+                material_name: `[${exp.subcategory}] ${exp.specific_item}`,
+                unit:          exp.category_label,
+                qty_required:  parseFloat(exp.quantity) || 1,
+                qty_purchased: parseFloat(exp.quantity) || 1,
+                unit_cost:     parseFloat(exp.unit_price) || 0,
+                status:        'recibido',
+                supplier_name: exp.provider || '',
+                notes:         `Gasto importado (${exp.category_label} › ${exp.subcategory}): ${exp.description || exp.specific_item}`,
+              }))
+            )
+          }
         }
       }
 
@@ -359,6 +398,8 @@ function ContractDetail({ contract, onBack, onRefresh }) {
   const [activeTab, setActiveTab] = useState('compras')
   const [contractData, setContractData] = useState(contract)
   const [loading, setLoading] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const reloadContract = useCallback(async () => {
     setLoading(true)
@@ -379,6 +420,16 @@ function ContractDetail({ contract, onBack, onRefresh }) {
 
   useEffect(() => { reloadContract() }, [reloadContract])
 
+  async function handleDeleteContract() {
+    setDeleting(true)
+    await supabase.from('contract_material_purchases').delete().eq('contract_id', contractData.id)
+    await supabase.from('contract_cutting_progress').delete().eq('contract_id', contractData.id)
+    await supabase.from('contract_production_progress').delete().eq('contract_id', contractData.id)
+    await supabase.from('contract_embellishment_progress').delete().eq('contract_id', contractData.id)
+    await supabase.from('contract_tracking').delete().eq('id', contractData.id)
+    onBack()
+  }
+
   const progress = calcContractProgress(contractData)
   const days = daysLeft(contractData.delivery_date)
 
@@ -391,6 +442,33 @@ function ContractDetail({ contract, onBack, onRefresh }) {
 
   return (
     <div className="space-y-5 animate-scale-in">
+      {/* Delete confirm dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative neu-surface w-full max-w-sm p-6 space-y-4 animate-scale-in">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-error text-3xl">warning</span>
+              <div>
+                <h3 className="font-bold text-on-surface">¿Eliminar seguimiento?</h3>
+                <p className="text-sm text-on-surface-variant mt-0.5">Esta acción eliminará el contrato y todos sus registros de compras, cortes, producción y embellecimiento. No se puede deshacer.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors">Cancelar</button>
+              <button
+                onClick={handleDeleteContract}
+                disabled={deleting}
+                className="px-4 py-2 rounded-xl bg-error text-white text-sm font-bold flex items-center gap-2 hover:bg-error/80 transition-colors"
+              >
+                {deleting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span className="material-symbols-outlined text-[16px]">delete_forever</span>}
+                {deleting ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start gap-4">
         <button onClick={onBack} className="neu-raised-sm p-2 rounded-xl text-on-surface-variant hover:text-primary transition-colors mt-1">
@@ -408,7 +486,16 @@ function ContractDetail({ contract, onBack, onRefresh }) {
             {contractData.delivery_date && ` · Entrega: ${formatDate(contractData.delivery_date)}`}
           </p>
         </div>
-        <StatusSelector contractId={contractData.id} current={contractData.status} onChanged={reloadContract} />
+        <div className="flex items-center gap-2">
+          <StatusSelector contractId={contractData.id} current={contractData.status} onChanged={reloadContract} />
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="p-2 rounded-xl neu-raised-sm text-on-surface-variant hover:text-error transition-colors"
+            title="Eliminar seguimiento"
+          >
+            <span className="material-symbols-outlined text-[20px]">delete</span>
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -1204,6 +1291,17 @@ export default function ContractTrackingPage() {
 
   useEffect(() => { fetchContracts() }, [fetchContracts])
 
+  async function handleDeleteContractFromList(e, contractId) {
+    e.stopPropagation()
+    if (!window.confirm('¿Eliminar este seguimiento y todos sus registros? Esta acción no se puede deshacer.')) return
+    await supabase.from('contract_material_purchases').delete().eq('contract_id', contractId)
+    await supabase.from('contract_cutting_progress').delete().eq('contract_id', contractId)
+    await supabase.from('contract_production_progress').delete().eq('contract_id', contractId)
+    await supabase.from('contract_embellishment_progress').delete().eq('contract_id', contractId)
+    await supabase.from('contract_tracking').delete().eq('id', contractId)
+    fetchContracts()
+  }
+
   function handleCreated(contract) {
     setShowNewModal(false)
     fetchContracts()
@@ -1312,9 +1410,18 @@ export default function ContractTrackingPage() {
                     <p className="font-bold text-on-surface text-base leading-tight">{contract.contract_name}</p>
                     <p className="text-[12px] text-on-surface-variant mt-0.5">{contract.client_name} · {contract.total_units} uds</p>
                   </div>
-                  <span className={`text-[9px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${STATUS_COLORS[contract.status]}`}>
-                    {STATUS_LABELS[contract.status]}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`text-[9px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${STATUS_COLORS[contract.status]}`}>
+                      {STATUS_LABELS[contract.status]}
+                    </span>
+                    <button
+                      onClick={(e) => handleDeleteContractFromList(e, contract.id)}
+                      className="p-1 rounded-md text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+                      title="Eliminar contrato"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
