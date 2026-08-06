@@ -695,10 +695,16 @@ export default function QuoteDetailPage() {
 
         <div className="flex items-center gap-2">
           {quote.status === 'aprobada' && (
-            <Button onClick={() => navigate(`/orders?convertQuoteId=${quote.id}`)}>
-              <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
-              Generar Pedido
-            </Button>
+            <>
+              <Button onClick={() => navigate(`/orders?convertQuoteId=${quote.id}`)}>
+                <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
+                Generar Pedido
+              </Button>
+              <Button variant="secondary" onClick={() => navigate(`/contracts?quoteId=${quote.id}`)}>
+                <span className="material-symbols-outlined text-[18px]">assignment</span>
+                Iniciar Contrato
+              </Button>
+            </>
           )}
           <Button variant="secondary" onClick={() => setViewMode('client')}>
             <span className="material-symbols-outlined text-[18px]">assignment</span>

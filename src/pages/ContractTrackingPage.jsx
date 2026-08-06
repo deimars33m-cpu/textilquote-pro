@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { formatCurrency } from '@/lib/formatters'
@@ -85,10 +85,10 @@ function KpiCard({ icon, label, value, sub, color = 'text-primary' }) {
 
 // ── Modal: Nuevo Contrato ────────────────────────────────────────────────────
 
-function NewContractModal({ onClose, onCreated, user }) {
+function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
   const [quotes, setQuotes] = useState([])
   const [form, setForm] = useState({
-    quote_id: '',
+    quote_id: initialQuoteId || '',
     contract_name: '',
     client_name: '',
     total_units: '',
@@ -104,8 +104,24 @@ function NewContractModal({ onClose, onCreated, user }) {
       .eq('user_id', user.id)
       .eq('status', 'aprobada')
       .order('quote_number', { ascending: false })
-      .then(({ data }) => setQuotes(data || []))
-  }, [user])
+      .then(({ data }) => {
+        const loaded = data || []
+        setQuotes(loaded)
+        if (initialQuoteId) {
+          const q = loaded.find(q => q.id === initialQuoteId)
+          if (q) {
+            const item = q.quote_items?.[0]
+            setForm(f => ({
+              ...f,
+              quote_id: initialQuoteId,
+              contract_name: item?.product_name ? `Contrato: ${item.product_name}` : `Cotización #${q.quote_number}`,
+              client_name: q.terceros?.name || '',
+              total_units: item?.quantity || '',
+            }))
+          }
+        }
+      })
+  }, [user, initialQuoteId])
 
   function handleQuoteSelect(e) {
     const qid = e.target.value
@@ -148,29 +164,47 @@ function NewContractModal({ onClose, onCreated, user }) {
         .single()
       if (err) throw err
 
-      // If quote selected, pre-load materials and embellishments
+      // If quote selected, pre-load materials (using Wholesale Purchase calculation) and embellishments
       if (form.quote_id) {
         const q = quotes.find(q => q.id === form.quote_id)
         const item = q?.quote_items?.[0]
         if (item) {
-          // Load quote_materials
+          // Load quote_materials with materials catalog metadata for wholesale calculations
           const { data: qmats } = await supabase
             .from('quote_materials')
-            .select('*')
+            .select('*, materials(name, unit_price, usage_unit, purchase_quantity, purchase_unit)')
             .eq('quote_item_id', item.id)
+
           if (qmats?.length > 0) {
             const totalUnits = parseInt(form.total_units) || 1
             await supabase.from('contract_material_purchases').insert(
-              qmats.map(m => ({
-                contract_id: contract.id,
-                material_name: m.material_name,
-                unit: 'unidad',
-                qty_required: Math.ceil((m.quantity_per_unit || 0) * totalUnits * (1 + (m.waste_pct || 0) / 100)),
-                qty_purchased: 0,
-                status: 'pendiente',
-              }))
+              qmats.map(m => {
+                const qtyReq = parseFloat(m.quantity_per_unit) || 0
+                const price = parseFloat(m.unit_price) || parseFloat(m.materials?.unit_price) || 0
+                const waste = parseFloat(m.waste_pct) || 0
+                const baseTotal = qtyReq * totalUnits
+                const totalRequired = baseTotal + (baseTotal * waste / 100)
+
+                const packQty = parseFloat(m.materials?.purchase_quantity) || 1
+                const packUnit = m.materials?.purchase_unit || m.materials?.usage_unit || 'unidad'
+                const usageUnit = m.materials?.usage_unit || 'unidad'
+                const toBuy = Math.ceil(totalRequired / packQty)
+                const unitCost = packQty * price
+
+                return {
+                  contract_id: contract.id,
+                  material_name: m.material_name,
+                  unit: packUnit,
+                  qty_required: toBuy,
+                  qty_purchased: 0,
+                  unit_cost: unitCost,
+                  status: 'pendiente',
+                  notes: `Resumen al Por Mayor: ${toBuy} ${packUnit}${toBuy > 1 ? 's' : ''} (${packQty} ${usageUnit}/${packUnit}) para cubrir ${totalRequired.toFixed(2)} ${usageUnit}`,
+                }
+              })
             )
           }
+
           // Load quote_embellishments
           const { data: qemb } = await supabase
             .from('quote_embellishments')
@@ -1136,11 +1170,19 @@ function EmbellishmentProgressTab({ contractId, rows, totalUnits, onRefresh }) {
 export default function ContractTrackingPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const initialQuoteId = searchParams.get('quoteId')
   const [contracts, setContracts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showNewModal, setShowNewModal] = useState(false)
+  const [showNewModal, setShowNewModal] = useState(!!initialQuoteId)
   const [selectedContract, setSelectedContract] = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
+
+  useEffect(() => {
+    if (initialQuoteId) {
+      setShowNewModal(true)
+    }
+  }, [initialQuoteId])
 
   const fetchContracts = useCallback(async () => {
     if (!user) return
@@ -1305,7 +1347,7 @@ export default function ContractTrackingPage() {
 
       {/* New Contract Modal */}
       {showNewModal && (
-        <NewContractModal user={user} onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
+        <NewContractModal user={user} initialQuoteId={initialQuoteId} onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
       )}
     </div>
   )
