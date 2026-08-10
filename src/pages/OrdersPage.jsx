@@ -542,6 +542,7 @@ export default function OrdersPage() {
   const [paymentFilter, setPaymentFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
+  const [showAnalytics, setShowAnalytics] = useState(false)
 
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
@@ -782,7 +783,7 @@ export default function OrdersPage() {
     setLoading(true)
     setDbError(null)
     try {
-      const { data, error } = await supabase
+      const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
         .select(`
           *,
@@ -793,16 +794,42 @@ export default function OrdersPage() {
         `)
         .order('created_at', { ascending: false })
 
-      if (error) {
-        // Capturar si la tabla no existe en la BD
-        if (error.code === '42P01' || error.message?.includes('relation "orders" does not exist')) {
+      if (ordersError) {
+        if (ordersError.code === '42P01' || ordersError.message?.includes('relation "orders" does not exist')) {
           setDbError('orders_table_missing')
+          setLoading(false)
+          return
         } else {
-          throw error
+          throw ordersError
         }
-      } else {
-        setOrders(data);
       }
+
+      // Fetch expenses with order_id to calculate real ROI
+      const { data: expensesData, error: expensesError } = await supabase
+        .from('expenses')
+        .select('order_id, amount')
+        .not('order_id', 'is', null)
+
+      if (expensesError) {
+        console.error("Error fetching order expenses:", expensesError)
+      }
+
+      // Map expenses to orders
+      const expensesMap = {}
+      if (expensesData) {
+        expensesData.forEach(exp => {
+          if (exp.order_id) {
+            expensesMap[exp.order_id] = (expensesMap[exp.order_id] || 0) + (parseFloat(exp.amount) || 0)
+          }
+        })
+      }
+
+      const enrichedOrders = (ordersData || []).map(o => ({
+        ...o,
+        actual_expenses_sum: expensesMap[o.id] || 0
+      }))
+
+      setOrders(enrichedOrders);
     } catch (err) {
       console.error('Error fetching orders:', err)
       setDbError(err.message || 'Error al cargar los pedidos.')
@@ -941,6 +968,101 @@ export default function OrdersPage() {
       dailySales,
       pendingProduction,
       pendingCobro
+    }
+  }, [orders])
+
+  // Estadísticas avanzadas y ROI (Task #3 - Especializadas)
+  const advancedStats = useMemo(() => {
+    let totalRevenue = 0
+    let totalPaid = 0
+    let totalEstimatedCost = 0
+    let totalActualExpenses = 0
+    let totalProductionTime = 0
+    let totalOrdersCount = 0
+
+    // Canales de venta
+    let revenueQuoted = 0
+    let revenueDaily = 0
+    let countQuoted = 0
+    let countDaily = 0
+
+    // Categorías de trabajo
+    const categoryRevenue = {}
+    const categoryCounts = {}
+
+    orders.forEach(o => {
+      if (o.status === 'cancelado') return
+      
+      const revenue = parseFloat(o.total_amount) || 0
+      const paid = parseFloat(o.paid_amount) || 0
+      const actualExpenses = parseFloat(o.actual_expenses_sum) || 0
+
+      totalRevenue += revenue
+      totalPaid += paid
+      totalActualExpenses += actualExpenses
+      totalOrdersCount++
+
+      if (o.order_type === 'pedido_cotizado') {
+        revenueQuoted += revenue
+        countQuoted++
+      } else {
+        revenueDaily += revenue
+        countDaily++
+      }
+
+      // Costos y tiempos de ítems
+      const items = o.order_items || []
+      items.forEach(item => {
+        const itemTotal = parseFloat(item.total_price) || 0
+        const itemMatCost = parseFloat(item.materials_cost) || 0
+        const itemProcCost = parseFloat(item.processes_cost) || 0
+        const itemTime = parseFloat(item.production_time_minutes) || 0
+
+        totalEstimatedCost += (itemMatCost + itemProcCost)
+        totalProductionTime += itemTime
+
+        const cat = item.category || 'otro'
+        categoryRevenue[cat] = (categoryRevenue[cat] || 0) + itemTotal
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1
+      })
+    })
+
+    const totalPending = totalRevenue - totalPaid
+    
+    // Rentabilidades
+    const estProfit = totalRevenue - totalEstimatedCost
+    const estMargin = totalRevenue > 0 ? (estProfit / totalRevenue) * 100 : 0
+    const estROI = totalEstimatedCost > 0 ? (estProfit / totalEstimatedCost) * 100 : 0
+
+    const realProfit = totalRevenue - totalActualExpenses
+    const realMargin = totalRevenue > 0 ? (realProfit / totalRevenue) * 100 : 0
+    const realROI = totalActualExpenses > 0 ? (realProfit / totalActualExpenses) * 100 : 0
+
+    // Eficiencia operativa (Ventas por hora de confección/producción)
+    const timeHours = totalProductionTime / 60
+    const revenuePerHour = timeHours > 0 ? totalRevenue / timeHours : 0
+
+    return {
+      totalRevenue,
+      totalPaid,
+      totalPending,
+      totalEstimatedCost,
+      totalActualExpenses,
+      estProfit,
+      estMargin,
+      estROI,
+      realProfit,
+      realMargin,
+      realROI,
+      revenueQuoted,
+      revenueDaily,
+      countQuoted,
+      countDaily,
+      categoryRevenue,
+      categoryCounts,
+      totalProductionTime,
+      revenuePerHour,
+      totalOrdersCount
     }
   }, [orders])
 
@@ -2728,6 +2850,191 @@ export default function OrdersPage() {
               </div>
             </Card>
           </div>
+
+          {/* Toggle de Estadísticas Avanzadas */}
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {showAnalytics ? 'expand_less' : 'analytics'}
+              </span>
+              {showAnalytics ? 'Ocultar Estadísticas Avanzadas' : 'Ver Estadísticas Avanzadas y ROI'}
+            </Button>
+          </div>
+
+          {showAnalytics && (
+            <div className="glass-card p-6 border border-outline-variant/30 space-y-6 relative overflow-hidden text-left">
+              {/* Luz de fondo sutil cian en la parte baja derecha */}
+              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-2 relative z-10">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[24px]">insights</span>
+                  <h3 className="text-body-lg font-extrabold text-white">Análisis de Rendimiento y Rentabilidad (ROI)</h3>
+                </div>
+                <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider bg-surface-container-high/40 px-2 py-0.5 rounded-full">
+                  {advancedStats.totalOrdersCount} pedidos activos
+                </span>
+              </div>
+
+              {/* Grid de KPIs especializados */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+                {/* ROI Real vs Estimado */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Retorno de Inversión (ROI)</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-emerald-400">
+                        {advancedStats.realROI.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">Real</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{advancedStats.estROI.toFixed(1)}%</span>
+                  </p>
+                </div>
+
+                {/* Margen de Utilidad */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Margen de Utilidad</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-cyan-400">
+                        {advancedStats.realMargin.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">Real</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{advancedStats.estMargin.toFixed(1)}%</span>
+                  </p>
+                </div>
+
+                {/* Costo vs Gastos */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Egresos del Canal</p>
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      <h4 className="text-lg font-bold font-mono text-rose-400">
+                        {formatCurrency(advancedStats.totalActualExpenses)} <span className="text-[9px] text-on-surface-variant font-normal">Gastado</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{formatCurrency(advancedStats.totalEstimatedCost)}</span>
+                  </p>
+                </div>
+
+                {/* Eficiencia de Tiempo (Ingresos/Hora) */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Rendimiento Operativo</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-amber-400">
+                        {formatCurrency(advancedStats.revenuePerHour)}/h
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Tiempo Total: <span className="font-mono text-white font-bold">{(advancedStats.totalProductionTime / 60).toFixed(1)} hrs</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Gráficos de Fuentes de Ingreso */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 relative z-10">
+                {/* Categorías de Trabajo */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-primary">category</span>
+                    Ingresos por Línea de Producción
+                  </h4>
+                  <div className="space-y-2.5 bg-white/[0.02] p-4 rounded-xl border border-white/5 max-h-[220px] overflow-y-auto">
+                    {Object.entries(advancedStats.categoryRevenue).length === 0 ? (
+                      <p className="text-xs text-on-surface-variant italic">No hay datos de ítems detallados</p>
+                    ) : (
+                      Object.entries(advancedStats.categoryRevenue)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([cat, val]) => {
+                          const percent = advancedStats.totalRevenue > 0 ? (val / advancedStats.totalRevenue) * 100 : 0
+                          // Asignar colores neon segun categoría
+                          let colorClass = 'bg-primary' // cyan
+                          if (cat.includes('sublimacion')) colorClass = 'bg-purple-500 shadow-[0_0_8px_#a855f7]'
+                          else if (cat.includes('confeccion') || cat.includes('produccion')) colorClass = 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
+                          else if (cat.includes('bordado')) colorClass = 'bg-blue-500 shadow-[0_0_8px_#3b82f6]'
+                          else if (cat.includes('vinil') || cat.includes('corte')) colorClass = 'bg-emerald-500 shadow-[0_0_8px_#10b981]'
+                          else if (cat.includes('dtf') && !cat.includes('uv')) colorClass = 'bg-orange-500 shadow-[0_0_8px_#f97316]'
+                          else if (cat.includes('uv')) colorClass = 'bg-pink-500 shadow-[0_0_8px_#ec4899]'
+                          
+                          const label = cat === 'produccion_textil' ? 'Confección Textil' :
+                                        cat === 'servicios_sublimacion' ? 'Sublimación' :
+                                        cat === 'servicios_bordado' ? 'Bordado' :
+                                        cat === 'servicios_estampado_vinil' ? 'Estampado Vinil' :
+                                        cat === 'servicios_dtf' ? 'DTF' :
+                                        cat === 'servicios_uv_dtf' ? 'UV-DTF' : cat;
+
+                          return (
+                            <div key={cat} className="space-y-1">
+                              <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                                <span className="capitalize text-white font-semibold">{label}</span>
+                                <span className="font-mono text-on-surface-variant">{formatCurrency(val)} ({percent.toFixed(1)}%)</span>
+                              </div>
+                              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })
+                    )}
+                  </div>
+                </div>
+
+                {/* Tipo de Pedido */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-primary">storefront</span>
+                    Ingresos por Canal de Venta
+                  </h4>
+                  <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4 h-[162px] flex flex-col justify-center">
+                    {/* Canal: Pedidos Cotizados */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                        <span className="text-white font-semibold">Pedidos Cotizados (Mayoristas/Contratos)</span>
+                        <span className="font-mono text-on-surface-variant">
+                          {formatCurrency(advancedStats.revenueQuoted)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-[0_0_8px_#06b6d4]" 
+                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0}%` }} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Canal: Venta Menor */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                        <span className="text-white font-semibold">Servicio Diario (Venta Menor / Mostrador)</span>
+                        <span className="font-mono text-on-surface-variant">
+                          {formatCurrency(advancedStats.revenueDaily)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 shadow-[0_0_8px_#10b981]" 
+                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0}%` }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Filtros */}
           <Card className="py-2.5 px-4">
