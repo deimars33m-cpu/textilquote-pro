@@ -71,14 +71,26 @@ function ProgressBar({ value, color = 'from-primary to-secondary', label }) {
 }
 
 function KpiCard({ icon, label, value, sub, color = 'text-primary' }) {
+  // Use a second generic chart/stats icon for the background subtle look
+  const bgIcon = icon === 'assignment' ? 'analytics' : icon === 'check_circle' ? 'task_alt' : 'bar_chart'
+  
   return (
-    <div className="neu-surface p-4 space-y-1 flex flex-col">
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`material-symbols-outlined text-[18px] ${color}`}>{icon}</span>
-        <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{label}</span>
+    <div className="glass-card p-4 space-y-2 flex flex-col relative overflow-hidden group">
+      {/* Background subtle icon (bottom right) */}
+      <span className="material-symbols-outlined absolute -bottom-3 -right-3 text-[70px] text-on-surface-variant/10 group-hover:text-primary/10 transition-colors duration-500 pointer-events-none">
+        {bgIcon}
+      </span>
+      
+      {/* Main content */}
+      <div className="relative z-10 flex items-start justify-between">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">{label}</span>
+          <span className={`text-2xl font-mono font-extrabold ${color}`}>{value}</span>
+          {sub && <span className="text-[10px] text-on-surface-variant mt-1">{sub}</span>}
+        </div>
+        {/* Main top right icon */}
+        <span className={`material-symbols-outlined text-[24px] ${color} drop-shadow-[0_0_5px_currentColor]`}>{icon}</span>
       </div>
-      <span className={`text-xl font-mono font-extrabold ${color}`}>{value}</span>
-      {sub && <span className="text-[10px] text-on-surface-variant">{sub}</span>}
     </div>
   )
 }

@@ -92,8 +92,8 @@ function BudgetBar({ label, spent, limit, categoryLabel }) {
   }
 
   return (
-    <div className="space-y-2 p-3.5 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300">
-      <div className="flex items-center justify-between">
+    <div className="glass-card space-y-2 p-3.5 hover:border-primary/50 transition-all duration-300">
+      <div className="flex items-center justify-between relative z-10">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
           <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase">{categoryLabel}</p>
@@ -131,8 +131,8 @@ function GoalBar({ label, current, target, period }) {
   }
 
   return (
-    <div className="space-y-2 p-3.5 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-emerald-500/20 transition-all duration-300">
-      <div className="flex items-center justify-between">
+    <div className="glass-card space-y-2 p-3.5 hover:border-emerald-500/50 transition-all duration-300">
+      <div className="flex items-center justify-between relative z-10">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
           <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase">Meta {periodLabel}</p>
@@ -167,7 +167,7 @@ function BudgetRingCard({ label, spent, limit, categoryLabel }) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-between p-4 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-primary/20 transition-all duration-300 text-center space-y-3">
+    <div className="glass-card flex flex-col items-center justify-between p-4 hover:border-primary/50 transition-all duration-300 text-center space-y-3 relative z-10">
       <div className="min-w-0 w-full">
         <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
         <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase truncate">{categoryLabel}</p>
@@ -201,7 +201,7 @@ function GoalRingCard({ label, current, target, period }) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-between p-4 bg-surface-container-low/30 backdrop-blur-sm rounded-xl border border-outline-variant/40 hover:border-emerald-500/20 transition-all duration-300 text-center space-y-3">
+    <div className="glass-card flex flex-col items-center justify-between p-4 hover:border-emerald-500/50 transition-all duration-300 text-center space-y-3 relative z-10">
       <div className="min-w-0 w-full">
         <p className="text-sm font-semibold text-on-surface truncate">{label}</p>
         <p className="text-[10px] text-on-surface-variant font-medium tracking-wider uppercase truncate">Meta {periodLabel}</p>
@@ -255,7 +255,7 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
   }, { accumulated: 0, items: [] }).items
 
   return (
-    <Card className="p-5 flex flex-col justify-between h-full bg-surface-container-low/30 backdrop-blur-sm border border-outline-variant/40 hover:border-primary/10 transition-all duration-300">
+    <div className="glass-card p-5 flex flex-col justify-between h-full hover:border-primary/30 transition-all duration-300 relative z-10">
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 mb-4">
         <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
@@ -382,7 +382,7 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
           </div>
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
