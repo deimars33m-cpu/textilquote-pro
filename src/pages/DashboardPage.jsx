@@ -26,6 +26,17 @@ function getStartOfMonth() {
   return getTodayStr(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
+function getStartOfQuarter() {
+  const d = new Date()
+  const quarterMonth = Math.floor(d.getMonth() / 3) * 3
+  return getTodayStr(new Date(d.getFullYear(), quarterMonth, 1))
+}
+
+function getStartOfYear() {
+  const d = new Date()
+  return getTodayStr(new Date(d.getFullYear(), 0, 1))
+}
+
 // --- Progress Ring Component (SVG with CSS Variables & Gradients) ---
 function ProgressRing({ percent, size = 90, strokeWidth = 8, color = 'url(#grad-primary-secondary)' }) {
   const radius = (size - strokeWidth) / 2
@@ -393,10 +404,27 @@ export default function DashboardPage() {
 
   const [budgetViewMode, setBudgetViewMode] = useState('bars') // 'bars' | 'rings'
   const [goalsViewMode, setGoalsViewMode] = useState('rings') // 'rings' | 'bars'
+  const [timePeriod, setTimePeriod] = useState('month') // 'week' | 'month' | 'quarter' | 'year'
 
   const today = getToday()
   const startOfWeek = getStartOfWeek()
   const startOfMonth = getStartOfMonth()
+  const startOfQuarter = getStartOfQuarter()
+  const startOfYear = getStartOfYear()
+
+  const startDate = useMemo(() => {
+    if (timePeriod === 'week') return startOfWeek
+    if (timePeriod === 'quarter') return startOfQuarter
+    if (timePeriod === 'year') return startOfYear
+    return startOfMonth
+  }, [timePeriod, startOfWeek, startOfMonth, startOfQuarter, startOfYear])
+
+  const timePeriodLabel = useMemo(() => {
+    if (timePeriod === 'week') return 'de la semana en curso'
+    if (timePeriod === 'quarter') return 'del trimestre en curso'
+    if (timePeriod === 'year') return 'del año en curso'
+    return 'del mes en curso'
+  }, [timePeriod])
 
   const budgets = settings?.budgets || []
   const salesGoals = Array.isArray(settings?.salesGoals) ? settings.salesGoals : []
@@ -404,14 +432,14 @@ export default function DashboardPage() {
 
   // --- Queries con React Query (cacheados 5 min) ---
 
-  // Gastos del mes actual (para presupuestos)
+  // Gastos del periodo actual (para presupuestos)
   const { data: monthExpenses = [], isLoading: loadingExpenses } = useQuery({
-    queryKey: ['dashboard_expenses', user?.id, startOfMonth],
+    queryKey: ['dashboard_expenses', user?.id, startDate],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
         .select('category_key, subcategory, amount, date')
-        .gte('date', startOfMonth)
+        .gte('date', startDate)
         .order('date', { ascending: false })
       if (error) throw error
       return data || []
@@ -419,13 +447,14 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  // Pedidos (para metas de ventas y KPIs)
+  // Pedidos del periodo actual (para metas de ventas y KPIs)
   const { data: monthOrders = [], isLoading: loadingOrders } = useQuery({
-    queryKey: ['dashboard_orders', user?.id],
+    queryKey: ['dashboard_orders', user?.id, startDate],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
         .select('id, total_amount, paid_amount, status, created_at, order_type, terceros(name), order_items(name, category, product_category, total_price)')
+        .gte('created_at', startDate)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -433,13 +462,14 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  // Cotizaciones recientes
+  // Cotizaciones recientes del periodo actual
   const { data: recentQuotes = [], isLoading: loadingQuotes } = useQuery({
-    queryKey: ['dashboard_quotes', user?.id],
+    queryKey: ['dashboard_quotes', user?.id, startDate],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('quotes')
         .select('id, quote_number, status, created_at, total_price, terceros(name)')
+        .gte('created_at', startDate)
         .order('created_at', { ascending: false })
         .limit(5)
       if (error) throw error
@@ -509,11 +539,14 @@ export default function DashboardPage() {
   const salesGoalsMetrics = useMemo(() => {
     return salesGoals.map(goal => {
       let currentSales = 0
-      const periodStart = goal.period === 'diario'
+      const goalPeriodStart = goal.period === 'diario'
         ? today
         : goal.period === 'semanal'
           ? startOfWeek
           : startOfMonth
+
+      // Asegurar que no contemos ventas anteriores al periodo seleccionado en el Dashboard
+      const periodStart = goalPeriodStart < startDate ? startDate : goalPeriodStart
 
       monthOrders.forEach(o => {
         if (!['pendiente', 'en_proceso', 'listo', 'entregado'].includes(o.status)) return
@@ -530,13 +563,16 @@ export default function DashboardPage() {
         percent: goal.targetAmount > 0 ? (currentSales / goal.targetAmount) * 100 : 0
       }
     })
-  }, [salesGoals, monthOrders, today, startOfWeek, startOfMonth])
+  }, [salesGoals, monthOrders, today, startOfWeek, startOfMonth, startDate])
 
   // --- Cálculos de Presupuestos ---
   const budgetMetrics = useMemo(() => {
     return budgets.map(budget => {
       let spent = 0
-      const periodStart = budget.period === 'semanal' ? startOfWeek : startOfMonth
+      const budgetPeriodStart = budget.period === 'semanal' ? startOfWeek : startOfMonth
+      
+      // Asegurar que no contemos gastos anteriores al periodo seleccionado en el Dashboard
+      const periodStart = budgetPeriodStart < startDate ? startDate : budgetPeriodStart
 
       monthExpenses.forEach(exp => {
         if (exp.date < periodStart) return
@@ -570,7 +606,7 @@ export default function DashboardPage() {
 
       return { ...budget, spent }
     })
-  }, [budgets, monthExpenses, startOfWeek, startOfMonth])
+  }, [budgets, monthExpenses, startOfWeek, startOfMonth, startDate])
 
   // --- Cálculos de Gastos Personales y de Casa ---
   const personalData = useMemo(() => {
@@ -700,9 +736,17 @@ export default function DashboardPage() {
     )
   }
 
+  const periodNames = {
+    week: 'la Semana',
+    month: 'del Mes',
+    quarter: 'del Trimestre',
+    year: 'del Año'
+  }
+  const periodName = periodNames[timePeriod] || 'del Mes'
+
   const metricCards = [
     {
-      label: 'Ventas del Mes',
+      label: `Ventas de ${periodName}`,
       value: formatCurrency(financialKPIs.totalRevenue),
       subtext: `${financialKPIs.ordersCount} pedidos registrados`,
       icon: 'trending_up',
@@ -712,7 +756,7 @@ export default function DashboardPage() {
       trendColor: 'text-emerald-500/60'
     },
     {
-      label: 'Cobrado del Mes',
+      label: `Cobrado de ${periodName}`,
       value: formatCurrency(financialKPIs.totalCollected),
       subtext: `${financialKPIs.collectionRate}% de ventas cobradas`,
       icon: 'payments',
@@ -732,7 +776,7 @@ export default function DashboardPage() {
       trendColor: 'text-amber-500/60'
     },
     {
-      label: 'Gastos del Mes',
+      label: `Gastos de ${periodName}`,
       value: formatCurrency(financialKPIs.totalExpensesMonth),
       subtext: `${monthExpenses.length} egresos registrados`,
       icon: 'account_balance_wallet',
@@ -794,11 +838,33 @@ export default function DashboardPage() {
       </svg>
 
       {/* Page header */}
-      <div>
-        <h1 className="text-headline-md font-semibold text-on-surface">Dashboard</h1>
-        <p className="text-body-md text-on-surface-variant mt-1">
-          Resumen financiero del mes en curso
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-headline-md font-semibold text-on-surface">Dashboard</h1>
+          <p className="text-body-md text-on-surface-variant mt-1">
+            Resumen financiero {timePeriodLabel}
+          </p>
+        </div>
+        <div className="flex bg-surface-container-high/40 p-0.5 rounded-xl border border-outline-variant/30 select-none w-fit">
+          {[
+            { key: 'week', label: 'Semana' },
+            { key: 'month', label: 'Mes' },
+            { key: 'quarter', label: 'Trimestre' },
+            { key: 'year', label: 'Año' }
+          ].map((period) => (
+            <button
+              key={period.key}
+              onClick={() => setTimePeriod(period.key)}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                timePeriod === period.key
+                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Alerta de Vencimiento de Gastos Fijos Mensuales */}
