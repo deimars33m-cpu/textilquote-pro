@@ -241,6 +241,22 @@
   background-color: #111827 !important;
   color: #ffffff !important;
 }
+
+[data-theme="dark"] input:not(.bg-transparent),
+[data-theme="dark"] select:not(.bg-transparent),
+[data-theme="dark"] textarea:not(.bg-transparent) {
+  background-color: rgba(11, 15, 25, 0.8) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] input:not(.bg-transparent):focus,
+[data-theme="dark"] select:not(.bg-transparent):focus,
+[data-theme="dark"] textarea:not(.bg-transparent):focus {
+  border-color: #00f5ff !important;
+  box-shadow: 0 0 0 1px #00f5ff !important;
+}
+
 /* ── Base styles ── */
 * {
   margin: 0;
