@@ -50,6 +50,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   /* ── Colors: Nexus OS Futuristic Theme ── */
   --color-background: #0b0f19;
   --color-surface: rgba(17, 24, 39, 0.7);
@@ -137,6 +138,20 @@
   border-radius: 8px !important;
 }
 
+[data-theme="dark"] .neu-input {
+  background: rgba(11, 15, 25, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .neu-input:focus {
+  border-color: #00f5ff !important;
+  box-shadow: 
+    inset 0 2px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 1px #00f5ff !important;
+}
+
 [data-theme="dark"] .neu-raised-sm {
   background: rgba(31, 41, 55, 0.4) !important;
   backdrop-filter: blur(8px);
@@ -221,6 +236,11 @@
   -webkit-box-shadow: 0 0 0px 1000px #0b0f19 inset !important;
 }
 
+[data-theme="dark"] option,
+[data-theme="dark"] optgroup {
+  background-color: #111827 !important;
+  color: #ffffff !important;
+}
 /* ── Base styles ── */
 * {
   margin: 0;
@@ -275,6 +295,25 @@ body {
     inset 3px 3px 6px rgba(148, 163, 184, 0.25),
     inset -3px -3px 6px rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.neu-input {
+  background: #f8fafc;
+  box-shadow:
+    inset 3px 3px 6px rgba(148, 163, 184, 0.25),
+    inset -3px -3px 6px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  color: var(--color-on-surface);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.neu-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 
+    inset 3px 3px 6px rgba(148, 163, 184, 0.25), 
+    inset -3px -3px 6px rgba(255, 255, 255, 0.95),
+    0 0 0 1px var(--color-primary);
 }
 
 /* Small raised element – icon buttons, chips */
