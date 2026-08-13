@@ -244,13 +244,13 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
   const circumference = 2 * Math.PI * radius // ~314.16
   
   const colors = [
-    'var(--color-primary)',
-    'var(--color-secondary)',
-    'var(--color-tertiary)',
-    '#38bdf8', // Light blue
-    '#f59e0b', // Amber
-    '#ec4899', // Pink
-    '#a855f7'  // Purple
+    'var(--chart-color-1)',
+    'var(--chart-color-2)',
+    'var(--chart-color-3)',
+    'var(--chart-color-4)',
+    'var(--chart-color-5)',
+    'var(--chart-color-6)',
+    'var(--chart-color-7)'
   ]
 
   // Pre-calculamos offsets fuera del render para evitar mutación durante JSX
@@ -288,7 +288,7 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
           <p className="text-xs text-on-surface-variant italic">Sin gastos registrados este mes</p>
         </div>
       ) : (
-        <div className="flex flex-col sm:flex-row items-center gap-6 flex-grow">
+        <div className="flex flex-col xl:flex-row items-center gap-6 flex-grow w-full">
           {/* SVG Doughnut */}
           <div className="relative flex items-center justify-center shrink-0 select-none">
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform rotate-[-90deg]">
@@ -379,11 +379,11 @@ function DoughnutChart({ data, total, title, icon, iconColor }) {
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: color }}
                     />
-                    <span className="font-medium text-on-surface truncate pr-1">
+                    <span className="font-medium text-on-surface text-[11px] leading-tight pr-1 whitespace-normal break-words">
                       {item.name}
                     </span>
                   </div>
-                  <div className="text-right shrink-0 flex items-center gap-1.5 pl-2 font-mono">
+                  <div className="text-right shrink-0 flex items-center gap-1.5 pl-2 font-mono text-[11px]">
                     <span className="text-on-surface font-semibold">{formatCurrency(item.value)}</span>
                     <span className="text-on-surface-variant/60 text-[10px] w-6 text-right font-bold">{percent}%</span>
                   </div>

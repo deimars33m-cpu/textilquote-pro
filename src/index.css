@@ -47,6 +47,15 @@
   --color-outline: #cbd5e1;
   --color-outline-variant: #cbd5e1;
   --color-surface-tint: #ff7a00;
+
+  /* ── Chart Colors: Diverse palette for light theme ── */
+  --chart-color-1: var(--color-primary); /* Brand Orange */
+  --chart-color-2: #06b6d4;              /* Turquoise / Cyan */
+  --chart-color-3: #ec4899;              /* Magenta / Pink */
+  --chart-color-4: #3b82f6;              /* Vibrant Blue */
+  --chart-color-5: #f59e0b;              /* Amber / Gold */
+  --chart-color-6: #a855f7;              /* Electric Purple */
+  --chart-color-7: #ef4444;              /* Coral Red */
 }
 
 [data-theme="dark"] {
@@ -95,6 +104,15 @@
   --color-outline: rgba(0, 245, 255, 0.3);
   --color-outline-variant: rgba(255, 255, 255, 0.1);
   --color-surface-tint: #00f5ff;
+
+  /* ── Chart Colors: Diverse palette for dark theme ── */
+  --chart-color-1: var(--color-primary);   /* Neon Cyan */
+  --chart-color-2: var(--color-secondary); /* Neon Green */
+  --chart-color-3: var(--color-tertiary);  /* Neon Magenta */
+  --chart-color-4: #f59e0b;                /* Amber / Gold */
+  --chart-color-5: #38bdf8;                /* Light Blue */
+  --chart-color-6: #a855f7;                /* Purple */
+  --chart-color-7: #ef4444;                /* Crimson Red */
 }
 
 [data-theme="dark"] body {
