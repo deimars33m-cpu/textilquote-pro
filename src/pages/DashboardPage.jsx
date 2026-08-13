@@ -875,21 +875,21 @@ export default function DashboardPage() {
         {metricCards.map((card) => (
           <Card
             key={card.label}
-            className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between h-[136px] p-5 border ${card.effectClass}`}
+            className={`relative overflow-hidden backdrop-blur-md transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between h-[128px] p-4 border ${card.effectClass}`}
           >
             {/* Top Row: Title and Main Icon */}
             <div className="flex items-center justify-between w-full">
-              <span className="text-sm font-semibold text-on-surface-variant">
+              <span className="text-xs font-semibold text-on-surface-variant">
                 {card.label}
               </span>
-              <span className={`material-symbols-outlined text-[20px] ${card.iconColor}`}>
+              <span className={`material-symbols-outlined text-[18px] ${card.iconColor}`}>
                 {card.icon}
               </span>
             </div>
 
             {/* Middle Row: Large Value */}
             <div className="my-auto">
-              <p className="font-mono font-bold text-2xl text-white leading-none tracking-tight">
+              <p className="font-mono font-bold text-lg text-white leading-none tracking-tight">
                 {card.value}
               </p>
             </div>
