@@ -54,7 +54,7 @@ function CostBreakdownPanel({
       : 'text-tertiary'
 
   return (
-    <Card className="p-0 sticky top-24 border border-primary/20 overflow-hidden">
+    <Card className="p-0 border border-primary/20 overflow-hidden">
       <div className="px-5 py-4 border-b border-outline-variant bg-surface-container-high/40">
         <h3 className="text-body-lg font-bold text-on-surface flex items-center gap-2">
           <span className="material-symbols-outlined text-primary text-[20px]">equalizer</span>
@@ -1341,7 +1341,7 @@ export default function QuoterPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 lg:sticky lg:top-24 self-start">
           <CostBreakdownPanel
             calc={calc}
             quantity={quantity}
