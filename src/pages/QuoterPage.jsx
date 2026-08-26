@@ -649,17 +649,6 @@ export default function QuoterPage() {
 
     setSaving(true)
     try {
-      // Get next quote number
-      const { data: lastQuote } = await supabase
-        .from('quotes')
-        .select('quote_number')
-        .eq('user_id', user.id)
-        .order('quote_number', { ascending: false })
-        .limit(1)
-        .single()
-
-      const nextNumber = (lastQuote?.quote_number || 0) + 1
-
       // Determine validity date
       const validityDays = settings?.quote_validity_days || 15
       const validUntil = new Date()
@@ -677,125 +666,77 @@ export default function QuoterPage() {
       }
       finalNotes = `${finalNotes}\n${notes || ''}`.trim()
 
-      // 1) Create quote record
+      const selectedTemplate = templates.find(t => t.id === templateId)
+      const quoteMaterials = materials.map(m => {
+        const qty = parseFloat(m.quantity_per_unit) || 0
+        const price = parseFloat(m.unit_price) || 0
+        const waste = parseFloat(m.waste_pct) || 0
+        return {
+          material_id: m.material_id || null,
+          material_name: m.material_name,
+          quantity_per_unit: qty,
+          unit_price: price,
+          waste_pct: waste,
+          total_cost: qty * price * (1 + waste / 100) * quantity,
+        }
+      })
+
+      const quoteProcesses = processes.map(p => {
+        const cost = parseFloat(p.cost) || 0
+        const time = parseFloat(p.time_minutes) || 0
+        const totalCost = p.cost_type === 'por_hora'
+          ? (time / 60) * cost * quantity
+          : p.cost_type === 'por_unidad'
+            ? cost * quantity
+            : cost
+
+        return {
+          process_id: p.process_id || null,
+          process_name: p.process_name,
+          cost_type: p.cost_type,
+          cost,
+          time_minutes: time,
+          total_cost: totalCost,
+        }
+      })
+
+      const quoteEmbellishments = embellishments.map(e => {
+        const cost = parseFloat(e.cost) || 0
+        const embellishmentQuantity = parseFloat(e.quantity) || 1
+        return {
+          type: e.type,
+          name: e.name,
+          cost,
+          quantity: embellishmentQuantity,
+          total_cost: cost * embellishmentQuantity * quantity,
+        }
+      })
+
+      // The RPC allocates the number and inserts every related row in one DB transaction.
       const { data: quote, error: quoteError } = await supabase
-        .from('quotes')
-        .insert({
-          user_id: user.id,
-          tercero_id: clientId,
-          quote_number: nextNumber,
-          status: 'borrador',
-          discount_pct: discountPct,
-          tax_pct: applyTax ? (settings?.tax_percentage || 0) : 0,
-          notes: finalNotes,
-          valid_until: validUntil.toISOString(),
-          total_cost: calc.totalCost,
-          total_price: finalQuotePrice,
-          total_profit: finalQuoteProfit,
-          real_margin: finalQuoteMargin,
+        .rpc('create_quote_transactional', {
+          p_tercero_id: clientId,
+          p_template_id: templateId || null,
+          p_product_name: selectedTemplate?.name || 'Producto personalizado',
+          p_quantity: quantity,
+          p_margin_pct: marginPct,
+          p_discount_pct: discountPct,
+          p_tax_pct: applyTax ? (settings?.tax_percentage || 0) : 0,
+          p_notes: finalNotes,
+          p_valid_until: validUntil.toISOString().slice(0, 10),
+          p_total_cost: calc.totalCost,
+          p_total_price: finalQuotePrice,
+          p_total_profit: finalQuoteProfit,
+          p_real_margin: finalQuoteMargin,
+          p_unit_cost: calc.unitCost,
+          p_unit_price: finalQuotePrice / quantity,
+          p_materials: quoteMaterials,
+          p_processes: quoteProcesses,
+          p_embellishments: quoteEmbellishments,
         })
-        .select()
         .single()
 
       if (quoteError) throw quoteError
-
-      // 2) Create quote_items record
-      const selectedTemplate = templates.find(t => t.id === templateId)
-      const { data: quoteItem, error: itemError } = await supabase
-        .from('quote_items')
-        .insert({
-          quote_id: quote.id,
-          template_id: templateId || null,
-          product_name: selectedTemplate?.name || 'Producto personalizado',
-          quantity,
-          margin_pct: marginPct,
-          fixed_expense_per_unit: 0,
-          unit_cost: calc.unitCost,
-          unit_price: finalQuotePrice / quantity,
-          total_cost: calc.totalCost,
-          total_price: finalQuotePrice,
-          profit: finalQuoteProfit,
-          real_margin: finalQuoteMargin,
-        })
-        .select()
-        .single()
-
-      if (itemError) throw itemError
-
-      // 3) Create quote_materials
-      if (materials.length > 0) {
-        const quoteMaterials = materials.map(m => {
-          const qty = parseFloat(m.quantity_per_unit) || 0
-          const price = parseFloat(m.unit_price) || 0
-          const waste = parseFloat(m.waste_pct) || 0
-          const materialUnitCost = qty * price * (1 + waste / 100)
-          const materialTotalCost = materialUnitCost * quantity
-          return {
-            quote_item_id: quoteItem.id,
-            material_id: m.material_id,
-            material_name: m.material_name,
-            quantity_per_unit: qty,
-            unit_price: price,
-            waste_pct: waste,
-            total_cost: materialTotalCost,
-          }
-        })
-
-        const { error: matError } = await supabase
-          .from('quote_materials')
-          .insert(quoteMaterials)
-
-        if (matError) throw matError
-      }
-
-      // 4) Create quote_processes
-      if (processes.length > 0) {
-        const quoteProcesses = processes.map(p => {
-          const cost = parseFloat(p.cost) || 0
-          const time = parseFloat(p.time_minutes) || 0
-          let processTotalCost = 0
-          if (p.cost_type === 'por_hora') {
-            processTotalCost = (time / 60) * cost * quantity
-          } else if (p.cost_type === 'por_unidad') {
-            processTotalCost = cost * quantity
-          } else {
-            processTotalCost = cost // fijo_por_pedido
-          }
-          return {
-            quote_item_id: quoteItem.id,
-            process_id: p.process_id,
-            process_name: p.process_name,
-            cost_type: p.cost_type,
-            cost: cost,
-            time_minutes: time,
-            total_cost: processTotalCost,
-          }
-        })
-
-        const { error: procError } = await supabase
-          .from('quote_processes')
-          .insert(quoteProcesses)
-
-        if (procError) throw procError
-      }
-
-      // 5) Create quote_embellishments
-      if (embellishments.length > 0) {
-        const quoteEmbellishments = embellishments.map(e => ({
-          quote_item_id: quoteItem.id,
-          type: e.type,
-          name: e.name,
-          cost: parseFloat(e.cost) || 0,
-          quantity: parseFloat(e.quantity) || 1,
-          total_cost: (parseFloat(e.cost) || 0) * (parseFloat(e.quantity) || 1) * quantity,
-        }))
-
-        const { error: embError } = await supabase
-          .from('quote_embellishments')
-          .insert(quoteEmbellishments)
-
-        if (embError) throw embError
-      }
 
       // Navigate to quote detail
       navigate(`/quotes/${quote.id}`)

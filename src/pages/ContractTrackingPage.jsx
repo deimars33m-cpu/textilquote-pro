@@ -161,130 +161,17 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
     setSaving(true)
     setError('')
     try {
-      const { data: contract, error: err } = await supabase
-        .from('contract_tracking')
-        .insert({
-          user_id: user.id,
-          quote_id: form.quote_id || null,
-          contract_name: form.contract_name.trim(),
-          client_name: form.client_name.trim(),
-          total_units: parseInt(form.total_units) || 1,
-          delivery_date: form.delivery_date || null,
-          notes: form.notes.trim() || null,
-          status: 'en_proceso',
+      const { data: contract, error: createError } = await supabase
+        .rpc('create_contract_transactional', {
+          p_quote_id: form.quote_id || null,
+          p_contract_name: form.contract_name.trim(),
+          p_client_name: form.client_name.trim(),
+          p_total_units: parseInt(form.total_units) || 1,
+          p_delivery_date: form.delivery_date || null,
+          p_notes: form.notes.trim() || null,
         })
-        .select()
         .single()
-      if (err) throw err
-
-      // If quote selected, pre-load data from quote (materials + embellishments + expenses linked to the order)
-      if (form.quote_id) {
-        const q = quotes.find(q => q.id === form.quote_id)
-        const item = q?.quote_items?.[0]
-        const totalUnits = parseInt(form.total_units) || 1
-
-        if (item?.id) {
-          // ── 1. Materiales al Por Mayor ──────────────────────────────────────
-          // Join to materials catalog to get purchase_quantity and purchase_unit
-          const { data: qmats } = await supabase
-            .from('quote_materials')
-            .select('*, materials(usage_unit, purchase_quantity, purchase_unit)')
-            .eq('quote_item_id', item.id)
-
-          if (qmats?.length > 0) {
-            await supabase.from('contract_material_purchases').insert(
-              qmats.map(m => {
-                const qtyReq   = parseFloat(m.quantity_per_unit) || 0
-                const price    = parseFloat(m.unit_price) || 0
-                const waste    = parseFloat(m.waste_pct) || 0
-                const baseTotal    = qtyReq * totalUnits
-                const totalRequired = baseTotal + (baseTotal * waste / 100)
-
-                // Use catalog data if available, otherwise fall back to usage units
-                const packQty  = parseFloat(m.materials?.purchase_quantity) || 1
-                const packUnit = m.materials?.purchase_unit || m.materials?.usage_unit || 'unidad'
-                const usageUnit = m.materials?.usage_unit || 'unidad'
-                const toBuy    = Math.ceil(totalRequired / packQty)
-                const unitCost = packQty * price
-
-                return {
-                  contract_id:   contract.id,
-                  material_name: m.material_name,
-                  unit:          packUnit,
-                  qty_required:  toBuy,
-                  qty_purchased: 0,
-                  unit_cost:     unitCost,
-                  status:        'pendiente',
-                  notes:         `Al por mayor: ${toBuy} ${packUnit}(s) [${packQty} ${usageUnit}/${packUnit}] → cubre ${totalRequired.toFixed(2)} ${usageUnit} c/merma`,
-                }
-              })
-            )
-          }
-
-          // ── 2. Embellecimientos ─────────────────────────────────────────────
-          const { data: qemb } = await supabase
-            .from('quote_embellishments')
-            .select('*')
-            .eq('quote_item_id', item.id)
-          if (qemb?.length > 0) {
-            await supabase.from('contract_embellishment_progress').insert(
-              qemb.map(e => ({
-                contract_id:   contract.id,
-                process_type:  e.type || 'otro',
-                process_name:  e.name || 'Embellecimiento',
-                units_total:   totalUnits,
-                units_sent:    0,
-                units_returned: 0,
-                units_approved: 0,
-              }))
-            )
-          }
-
-          // ── 3. Fase de producción por defecto ───────────────────────────────
-          await supabase.from('contract_production_progress').insert([{
-            contract_id:      contract.id,
-            phase_name:       'Producción General',
-            units_planned:    totalUnits,
-            units_completed:  0,
-            units_in_progress: 0,
-          }])
-        }
-
-        // ── 4. Importar gastos del pedido vinculado a la cotización ─────────
-        // Find the order that was created from this quote
-        const { data: linkedOrders } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('quote_id', form.quote_id)
-          .eq('user_id', user.id)
-          .limit(1)
-
-        if (linkedOrders?.length > 0) {
-          const orderId = linkedOrders[0].id
-          const { data: orderExpenses } = await supabase
-            .from('expenses')
-            .select('*')
-            .eq('order_id', orderId)
-            .eq('user_id', user.id)
-
-          if (orderExpenses?.length > 0) {
-            // Import each expense as a contract material purchase (gasto registrado)
-            await supabase.from('contract_material_purchases').insert(
-              orderExpenses.map(exp => ({
-                contract_id:   contract.id,
-                material_name: `[${exp.subcategory}] ${exp.specific_item}`,
-                unit:          exp.category_label,
-                qty_required:  parseFloat(exp.quantity) || 1,
-                qty_purchased: parseFloat(exp.quantity) || 1,
-                unit_cost:     parseFloat(exp.unit_price) || 0,
-                status:        'recibido',
-                supplier_name: exp.provider || '',
-                notes:         `Gasto importado (${exp.category_label} › ${exp.subcategory}): ${exp.description || exp.specific_item}`,
-              }))
-            )
-          }
-        }
-      }
+      if (createError) throw createError
 
       onCreated(contract)
     } catch (e) {

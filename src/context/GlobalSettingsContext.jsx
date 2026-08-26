@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 
@@ -143,85 +143,117 @@ const INITIAL_CATALOG = {
   ]
 }
 
+function mergeSettings(saved = {}) {
+  return {
+    ...INITIAL_CATALOG,
+    ...saved,
+    categories: Array.isArray(saved.categories) ? saved.categories : INITIAL_CATALOG.categories,
+    subcategories: saved.subcategories || INITIAL_CATALOG.subcategories,
+    sizes: { ...INITIAL_CATALOG.sizes, ...(saved.sizes || {}) },
+    sizesBySubcategory: saved.sizesBySubcategory || {},
+    panels: { ...INITIAL_CATALOG.panels, ...(saved.panels || {}) },
+    expenseStructure: saved.expenseStructure || INITIAL_CATALOG.expenseStructure,
+    budgets: Array.isArray(saved.budgets) ? saved.budgets : [],
+    salesGoals: Array.isArray(saved.salesGoals) ? saved.salesGoals : [],
+    fixedExpenses: Array.isArray(saved.fixedExpenses) ? saved.fixedExpenses : INITIAL_CATALOG.fixedExpenses,
+  }
+}
+
 export function GlobalSettingsProvider({ children }) {
   const { user } = useAuth()
   const [settings, setSettings] = useState(INITIAL_CATALOG)
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [isDbLoaded, setIsDbLoaded] = useState(false)
+  const hydrationRequestRef = useRef(0)
+  const [hydration, setHydration] = useState({
+    userId: null,
+    requestId: 0,
+    dbWriteReady: false,
+  })
 
-  // 1. Cargar localmente al montar
+  // Cargar una copia local aislada por usuario y luego reconciliarla con Supabase.
+  // El estado de hidratación evita exponer o persistir la sesión anterior.
   useEffect(() => {
-    const stored = localStorage.getItem('textilquote_global_settings')
+    let cancelled = false
+    const userId = user?.id
+    const requestId = ++hydrationRequestRef.current
+
+    if (!userId) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const storageKey = `textilquote_global_settings_${userId}`
+    let localSettings = INITIAL_CATALOG
+    const stored = localStorage.getItem(storageKey)
+
     if (stored) {
       try {
-        const parsed = JSON.parse(stored)
-        setSettings({
-          categories: parsed.categories || INITIAL_CATALOG.categories,
-          subcategories: parsed.subcategories || INITIAL_CATALOG.subcategories,
-          sizes: { ...INITIAL_CATALOG.sizes, ...(parsed.sizes || {}) },
-          sizesBySubcategory: parsed.sizesBySubcategory || {},
-          panels: { ...INITIAL_CATALOG.panels, ...(parsed.panels || {}) },
-          expenseStructure: parsed.expenseStructure || INITIAL_CATALOG.expenseStructure,
-          budgets: Array.isArray(parsed.budgets) ? parsed.budgets : [],
-          salesGoals: Array.isArray(parsed.salesGoals) ? parsed.salesGoals : [],
-          fixedExpenses: Array.isArray(parsed.fixedExpenses) ? parsed.fixedExpenses : INITIAL_CATALOG.fixedExpenses
-        })
+        localSettings = mergeSettings(JSON.parse(stored))
       } catch (e) {
         console.error('Error parsing settings from LocalStorage', e)
       }
     }
-    setIsLoaded(true)
-  }, [])
 
-  // 2. Cargar desde Supabase al iniciar sesión
-  useEffect(() => {
-    async function loadDbSettings() {
-      if (!user) {
-        setIsDbLoaded(true)
-        return
-      }
+    async function hydrateSettings() {
+      let nextSettings = localSettings
+      let dbWriteReady = false
+
       try {
         const { data, error } = await supabase
           .from('global_settings')
           .select('settings')
-          .single()
-        if (!error && data?.settings) {
-          setSettings(prev => ({
-            ...prev,
-            ...data.settings,
-            expenseStructure: data.settings.expenseStructure || INITIAL_CATALOG.expenseStructure,
-            budgets: Array.isArray(data.settings.budgets) ? data.settings.budgets : [],
-            salesGoals: Array.isArray(data.settings.salesGoals) ? data.settings.salesGoals : [],
-            fixedExpenses: Array.isArray(data.settings.fixedExpenses) ? data.settings.fixedExpenses : INITIAL_CATALOG.fixedExpenses
-          }))
-        }
-      } catch (e) {
-        console.error('Error cargando configuración desde Supabase', e)
-      } finally {
-        setIsDbLoaded(true)
-      }
-    }
-    loadDbSettings()
-  }, [user])
+          .eq('user_id', userId)
+          .maybeSingle()
 
-  // 3. Guardar cambios localmente y en Supabase (solo tras cargar la BD)
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('textilquote_global_settings', JSON.stringify(settings))
-    }
-    if (isLoaded && isDbLoaded && user) {
-      const saveDbSettings = async () => {
-        try {
-          await supabase
-            .from('global_settings')
-            .upsert({ user_id: user.id, settings }, { onConflict: 'user_id' })
-        } catch (e) {
-          console.error('Error guardando configuración en Supabase', e)
+        if (error) throw error
+        nextSettings = data?.settings ? mergeSettings(data.settings) : localSettings
+        dbWriteReady = true
+      } catch (e) {
+        if (!cancelled) {
+          console.error('Error cargando configuración desde Supabase', e)
         }
       }
-      saveDbSettings()
+
+      if (!cancelled && requestId === hydrationRequestRef.current) {
+        setSettings(nextSettings)
+        setHydration({ userId, requestId, dbWriteReady })
+      }
     }
-  }, [settings, isLoaded, isDbLoaded, user])
+
+    hydrateSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  // Persistir únicamente después de hidratar la cuenta activa. Un fallo de lectura
+  // desactiva la escritura remota para no reemplazar datos con una copia obsoleta.
+  useEffect(() => {
+    const userId = user?.id
+    const isCurrentHydration = hydration.userId === userId
+      && hydration.requestId === hydrationRequestRef.current
+    if (!userId || !isCurrentHydration) return undefined
+
+    localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(settings))
+    if (!hydration.dbWriteReady) return undefined
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from('global_settings')
+          .upsert({ user_id: userId, settings }, { onConflict: 'user_id' })
+        if (error) throw error
+      } catch (e) {
+        console.error('Error guardando configuración en Supabase', e)
+      }
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }, [settings, hydration, user?.id])
+
+  const isLoaded = !user?.id || hydration.userId === user.id
+  const activeSettings = user?.id && isLoaded ? settings : INITIAL_CATALOG
 
   // --- CRUD Categories ---
   const addCategory = (category) => {
@@ -333,7 +365,7 @@ export function GlobalSettingsProvider({ children }) {
   }
 
   const getServicePrice = (categoryId, subcategoryId) => {
-    const sub = settings.subcategories[categoryId]?.find(s => s.id === subcategoryId)
+    const sub = activeSettings.subcategories[categoryId]?.find(s => s.id === subcategoryId)
     return sub?.unitPrice || 50
   }
 
@@ -523,7 +555,7 @@ export function GlobalSettingsProvider({ children }) {
 
   return (
     <GlobalSettingsContext.Provider value={{
-      settings,
+      settings: activeSettings,
       addCategory,
       updateCategory,
       deleteCategory,
