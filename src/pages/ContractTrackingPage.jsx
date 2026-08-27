@@ -17,7 +17,7 @@ function daysLeft(dateStr) {
   return diff
 }
 
-function calcContractProgress(contract) {
+function calcContractProgress(contract, laborExpenses = [], quoteProcesses = []) {
   const purchases = contract.contract_material_purchases || []
   const cuts = contract.contract_cutting_progress || []
   const production = contract.contract_production_progress || []
@@ -35,10 +35,25 @@ function calcContractProgress(contract) {
   const embPct = embellishment.length === 0 ? 0
     : Math.min(100, embellishment.reduce((s, e) => s + (e.units_total > 0 ? Math.min(100, (e.units_approved / e.units_total) * 100) : 0), 0) / embellishment.length)
 
-  const phases = [purchases.length > 0 ? purchasePct : null, cuts.length > 0 ? cutPct : null, production.length > 0 ? prodPct : null, embellishment.length > 0 ? embPct : null].filter(v => v !== null)
+  const budgetedLabor = quoteProcesses.reduce((sum, p) => sum + (Number(p.total_cost) || 0), 0)
+  const spentLabor = laborExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+  const laborPct = budgetedLabor > 0
+    ? Math.min(100, (spentLabor / budgetedLabor) * 100)
+    : (spentLabor > 0 ? 100 : 0)
+
+  const hasLabor = quoteProcesses.length > 0 || laborExpenses.length > 0
+
+  const phases = [
+    purchases.length > 0 ? purchasePct : null,
+    cuts.length > 0 ? cutPct : null,
+    production.length > 0 ? prodPct : null,
+    embellishment.length > 0 ? embPct : null,
+    hasLabor ? laborPct : null
+  ].filter(v => v !== null)
+
   const overall = phases.length === 0 ? 0 : phases.reduce((a, b) => a + b, 0) / phases.length
 
-  return { purchasePct, cutPct, prodPct, embPct, overall }
+  return { purchasePct, cutPct, prodPct, embPct, laborPct, overall }
 }
 
 const STATUS_LABELS = { en_proceso: 'En Proceso', pausado: 'Pausado', completado: 'Completado', entregado: 'Entregado' }
@@ -294,11 +309,16 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
 // ── Contract Detail View ─────────────────────────────────────────────────────
 
 function ContractDetail({ contract, onBack, onRefresh }) {
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('compras')
   const [contractData, setContractData] = useState(contract)
   const [loading, setLoading] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const [quoteProcesses, setQuoteProcesses] = useState([])
+  const [laborExpenses, setLaborExpenses] = useState([])
+  const [terceros, setTerceros] = useState([])
 
   const reloadContract = useCallback(async () => {
     setLoading(true)
@@ -313,9 +333,59 @@ function ContractDetail({ contract, onBack, onRefresh }) {
       `)
       .eq('id', contract.id)
       .single()
-    if (data) setContractData(data)
+    
+    if (data) {
+      setContractData(data)
+      
+      // Load quote processes
+      if (data.quote_id) {
+        const { data: quoteItems } = await supabase
+          .from('quote_items')
+          .select('*, quote_processes(*)')
+          .eq('quote_id', data.quote_id)
+        if (quoteItems) {
+          const procs = quoteItems.flatMap(item => (item.quote_processes || []).map(p => ({ ...p, estimated_cost: Number(p.total_cost) || 0 })))
+          setQuoteProcesses(procs)
+        }
+      } else {
+        setQuoteProcesses([])
+      }
+
+      // Load labor expenses
+      if (data.order_id) {
+        const { data: exps } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('order_id', data.order_id)
+          .eq('user_id', user?.id)
+        if (exps) {
+          const labor = exps.filter(e => {
+            const subcatLower = (e.subcategory || '').toLowerCase().trim()
+            const itemLower = (e.specific_item || e.specificItem || e.description || '').toLowerCase().trim()
+            return subcatLower.includes('destajo') || itemLower.includes('destajo') || itemLower.includes('mano de obra') || itemLower.includes('confecci') || itemLower.includes('costura') || itemLower.includes('taller') || e.category_key === 'PRODUCCION' && (subcatLower.includes('mano de obra') || subcatLower.includes('confección'))
+          })
+          setLaborExpenses(labor)
+        }
+      } else {
+        setLaborExpenses([])
+      }
+    }
     setLoading(false)
-  }, [contract.id])
+  }, [contract.id, user?.id])
+
+  useEffect(() => {
+    async function loadTerceros() {
+      if (!user) return
+      const { data } = await supabase
+        .from('terceros')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('role', ['proveedor', 'dependiente'])
+        .order('name')
+      if (data) setTerceros(data)
+    }
+    loadTerceros()
+  }, [user])
 
   useEffect(() => { reloadContract() }, [reloadContract])
 
@@ -329,7 +399,7 @@ function ContractDetail({ contract, onBack, onRefresh }) {
     onBack()
   }
 
-  const progress = calcContractProgress(contractData)
+  const progress = calcContractProgress(contractData, laborExpenses, quoteProcesses)
   const days = daysLeft(contractData.delivery_date)
 
   const tabs = [
@@ -337,6 +407,7 @@ function ContractDetail({ contract, onBack, onRefresh }) {
     { id: 'cortes', label: 'Cortes', icon: 'content_cut', pct: progress.cutPct },
     { id: 'produccion', label: 'Producción', icon: 'precision_manufacturing', pct: progress.prodPct },
     { id: 'embellecimiento', label: 'Embellecimiento', icon: 'auto_fix_high', pct: progress.embPct },
+    { id: 'mano_de_obra', label: 'Mano de Obra', icon: 'badge', pct: progress.laborPct },
   ]
 
   return (
@@ -356,9 +427,9 @@ function ContractDetail({ contract, onBack, onRefresh }) {
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors">Cancelar</button>
               <button
-                onClick={handleDeleteContract}
-                disabled={deleting}
-                className="px-4 py-2 rounded-xl bg-error text-white text-sm font-bold flex items-center gap-2 hover:bg-error/80 transition-colors"
+                 onClick={handleDeleteContract}
+                 disabled={deleting}
+                 className="px-4 py-2 rounded-xl bg-error text-white text-sm font-bold flex items-center gap-2 hover:bg-error/80 transition-colors"
               >
                 {deleting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span className="material-symbols-outlined text-[16px]">delete_forever</span>}
                 {deleting ? 'Eliminando...' : 'Sí, eliminar'}
@@ -398,10 +469,11 @@ function ContractDetail({ contract, onBack, onRefresh }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard icon="shopping_cart" label="Compras" value={`${Math.round(progress.purchasePct)}%`} color="text-primary" />
         <KpiCard icon="content_cut" label="Cortes" value={`${Math.round(progress.cutPct)}%`} color="text-secondary" />
         <KpiCard icon="precision_manufacturing" label="Producción" value={`${Math.round(progress.prodPct)}%`} color="text-tertiary" />
+        <KpiCard icon="badge" label="Mano de Obra" value={`${Math.round(progress.laborPct)}%`} color="text-emerald-400" />
         <KpiCard
           icon="schedule"
           label="Días Restantes"
@@ -455,6 +527,18 @@ function ContractDetail({ contract, onBack, onRefresh }) {
           )}
           {activeTab === 'embellecimiento' && (
             <EmbellishmentProgressTab contractId={contractData.id} rows={contractData.contract_embellishment_progress || []} totalUnits={contractData.total_units} onRefresh={reloadContract} />
+          )}
+          {activeTab === 'mano_de_obra' && (
+            <LaborProgressTab
+              contractId={contractData.id}
+              orderId={contractData.order_id}
+              quoteProcesses={quoteProcesses}
+              laborExpenses={laborExpenses}
+              terceros={terceros}
+              totalUnits={contractData.total_units}
+              onRefresh={reloadContract}
+              user={user}
+            />
           )}
         </>
       )}
@@ -1354,6 +1438,509 @@ export default function ContractTrackingPage() {
       {/* New Contract Modal */}
       {showNewModal && (
         <NewContractModal user={user} initialQuoteId={initialQuoteId} onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
+      )}
+    </div>
+  )
+}
+
+// ── Tab: Mano de Obra Directa ────────────────────────────────────────────────
+
+function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, terceros, totalUnits, onRefresh, user }) {
+  const [form, setForm] = useState({
+    processName: '',
+    providerName: '',
+    providerId: '',
+    quantity: totalUnits || 1,
+    unitPrice: '',
+    amount: '',
+    advanceAmount: '',
+    paymentMethod: 'efectivo',
+    date: new Date().toISOString().slice(0, 10),
+    description: '',
+  })
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+
+  // Re-calculate amount when quantity or unit price changes
+  useEffect(() => {
+    const qty = Number(form.quantity) || 0
+    const price = Number(form.unitPrice) || 0
+    setForm(f => ({ ...f, amount: (qty * price).toFixed(2) }))
+  }, [form.quantity, form.unitPrice])
+
+  // Get employees and suppliers
+  const dependientes = terceros.filter(t => t.role === 'dependiente')
+  const providers = terceros.filter(t => t.role === 'proveedor')
+
+  // Group processes and sum actual spent
+  const processSummary = quoteProcesses.map(proc => {
+    const name = proc.process_name || proc.name || ''
+    // Find matching labor expenses
+    const matchingExpenses = laborExpenses.filter(e => 
+      (e.specific_item || '').toLowerCase().trim() === name.toLowerCase().trim()
+    )
+    const spent = matchingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+    const budgeted = Number(proc.total_cost) || 0
+    const progress = budgeted > 0 ? Math.min(100, (spent / budgeted) * 100) : (spent > 0 ? 100 : 0)
+    
+    return {
+      id: proc.id,
+      name,
+      costType: proc.cost_type || 'por_unidad',
+      unitCost: Number(proc.cost) || 0,
+      quantity: Number(proc.quantity) || Number(proc.time_minutes) || totalUnits,
+      budgeted,
+      spent,
+      progress
+    }
+  })
+
+  // Handle opening modal for a specific quote process
+  function handleOpenForProcess(proc) {
+    setError(null)
+    setForm({
+      processName: proc.name,
+      providerName: '',
+      providerId: '',
+      quantity: proc.quantity || totalUnits,
+      unitPrice: proc.unitCost || '',
+      amount: '',
+      advanceAmount: '',
+      paymentMethod: 'efectivo',
+      date: new Date().toISOString().slice(0, 10),
+      description: `Mano de obra para: ${proc.name}`,
+    })
+    setShowAddModal(true)
+  }
+
+  function handleOpenGeneric() {
+    setError(null)
+    setForm({
+      processName: '',
+      providerName: '',
+      providerId: '',
+      quantity: totalUnits,
+      unitPrice: '',
+      amount: '',
+      advanceAmount: '',
+      paymentMethod: 'efectivo',
+      date: new Date().toISOString().slice(0, 10),
+      description: '',
+    })
+    setShowAddModal(true)
+  }
+
+  async function handleSaveExpense() {
+    if (!form.processName.trim()) {
+      setError('El nombre del proceso es requerido.')
+      return
+    }
+    if (!form.providerName.trim()) {
+      setError('El operario / taller es requerido.')
+      return
+    }
+    if (!form.amount || Number(form.amount) <= 0) {
+      setError('El monto total debe ser mayor que cero.')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    try {
+      const trimmedProvider = form.providerName.trim()
+      let providerId = form.providerId || null
+
+      // Check if we need to insert a new third party (tercero)
+      if (!providerId && trimmedProvider !== 'Empleado Genérico' && trimmedProvider !== 'Proveedor Genérico') {
+        const existing = terceros.find(t => t.name.toLowerCase() === trimmedProvider.toLowerCase())
+        if (existing) {
+          providerId = existing.id
+        } else {
+          // Insert new dependiente
+          const { data: newTercero, error: errTercero } = await supabase
+            .from('terceros')
+            .insert({
+              user_id: user.id,
+              name: trimmedProvider,
+              role: 'dependiente',
+              client_type: 'dependiente'
+            })
+            .select()
+            .single()
+          
+          if (errTercero) throw errTercero
+          if (newTercero) {
+            providerId = newTercero.id
+          }
+        }
+      }
+
+      // Replicate the payload structure from ExpensesAndBudgetsPage
+      const payload = {
+        user_id: user.id,
+        date: form.date,
+        category_key: 'PRODUCCION',
+        category_label: 'Producción Textil y Confección',
+        subcategory: 'Mano de Obra (Confección y Destajo)',
+        specific_item: form.processName.trim(),
+        description: form.description.trim() || `Pago de Mano de Obra: ${form.processName}`,
+        provider: trimmedProvider,
+        provider_id: providerId,
+        quantity: Number(form.quantity) || 1,
+        unit_price: Number(form.unitPrice) || 0,
+        amount: Number(form.amount),
+        advance_amount: form.advanceAmount ? Number(form.advanceAmount) : 0,
+        payment_method: form.paymentMethod,
+        payment_history: form.advanceAmount && Number(form.advanceAmount) > 0 ? [{
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          amount: Number(form.advanceAmount),
+          method: form.paymentMethod,
+          note: 'Abono inicial'
+        }] : [],
+        order_id: orderId || null
+      }
+
+      const { error: errSave } = await supabase.from('expenses').insert(payload)
+      if (errSave) throw errSave
+
+      setShowAddModal(false)
+      onRefresh()
+    } catch (e) {
+      console.error('Error saving labor expense:', e)
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteExpense(id) {
+    if (!window.confirm('¿Eliminar este registro de gasto de mano de obra?')) return
+    setDeleting(id)
+    try {
+      const { error } = await supabase.from('expenses').delete().eq('id', id)
+      if (error) throw error
+      onRefresh()
+    } catch (e) {
+      alert('Error al eliminar: ' + e.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const COST_TYPE_LABELS = {
+    por_hora: 'Por Hora',
+    por_unidad: 'Por Unidad',
+    fijo_por_pedido: 'Fijo por Pedido'
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ─── Part 1: Budget vs Actual ─── */}
+      <div className="neu-surface p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-emerald-400">badge</span>
+            <div>
+              <h3 className="font-bold text-on-surface">Mano de Obra Directa (Presupuestada vs Real)</h3>
+              <p className="text-[11px] text-on-surface-variant">Comparativa del costo cotizado frente a los pagos registrados</p>
+            </div>
+          </div>
+          <button
+            onClick={handleOpenGeneric}
+            className="neu-button-primary px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            Registrar Pago Manual
+          </button>
+        </div>
+
+        {processSummary.length === 0 ? (
+          <p className="text-xs text-on-surface-variant italic py-2 text-center">No hay procesos de mano de obra definidos en la cotización de este contrato.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                  <th className="py-2.5 px-3">Proceso</th>
+                  <th className="py-2.5 px-3 text-center">Tipo Costo</th>
+                  <th className="py-2.5 px-3 text-right">Cotizado</th>
+                  <th className="py-2.5 px-3 text-right">Ejecutado</th>
+                  <th className="py-2.5 px-3 text-center">Avance Fin.</th>
+                  <th className="py-2.5 px-3 w-16"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/20 text-on-surface">
+                {processSummary.map(proc => (
+                  <tr key={proc.id} className="hover:bg-surface-container-high/30 transition-colors">
+                    <td className="py-3 px-3 font-semibold text-white">{proc.name}</td>
+                    <td className="py-3 px-3 text-center">{COST_TYPE_LABELS[proc.costType] || proc.costType}</td>
+                    <td className="py-3 px-3 text-right font-mono">{formatCurrency(proc.budgeted)}</td>
+                    <td className="py-3 px-3 text-right font-mono text-emerald-400 font-bold">{formatCurrency(proc.spent)}</td>
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2 max-w-[120px] mx-auto">
+                        <ProgressBar value={proc.progress} color="from-emerald-500 to-emerald-400" />
+                        <span className="font-mono text-[10px] min-w-[28px] text-right">{Math.round(proc.progress)}%</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={() => handleOpenForProcess(proc)}
+                        className="p-1 px-2 rounded-lg bg-primary/10 border border-primary/20 text-[10px] font-bold text-primary hover:bg-primary/20 transition-colors"
+                        title="Registrar pago para este proceso"
+                      >
+                        Pagar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Part 2: Actual Labor Payments List ─── */}
+      <div className="neu-surface p-5 space-y-4">
+        <h3 className="font-bold text-on-surface flex items-center gap-2 text-sm uppercase tracking-wider text-on-surface-variant/80">
+          <span className="material-symbols-outlined text-primary text-base">receipt_long</span>
+          Historial de Egresos de Mano de Obra Directa
+        </h3>
+
+        {laborExpenses.length === 0 ? (
+          <p className="text-xs text-on-surface-variant italic py-6 text-center">No se han registrado pagos de mano de obra para este contrato.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                  <th className="py-2.5 px-3">Fecha</th>
+                  <th className="py-2.5 px-3">Operario / Taller</th>
+                  <th className="py-2.5 px-3">Proceso</th>
+                  <th className="py-2.5 px-3 text-right">Cant.</th>
+                  <th className="py-2.5 px-3 text-right">Costo Unit.</th>
+                  <th className="py-2.5 px-3 text-right">Monto Total</th>
+                  <th className="py-2.5 px-3 text-right">Adelanto</th>
+                  <th className="py-2.5 px-3 text-center">Método</th>
+                  <th className="py-2.5 px-3 w-10"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/20 text-on-surface font-mono">
+                {laborExpenses.map(exp => (
+                  <tr key={exp.id} className="hover:bg-surface-container-high/30 transition-colors">
+                    <td className="py-3 px-3 text-on-surface-variant font-sans">{new Date(exp.date).toLocaleDateString('es-BO')}</td>
+                    <td className="py-3 px-3 font-semibold text-white font-sans">{exp.provider}</td>
+                    <td className="py-3 px-3 font-sans">{exp.specific_item}</td>
+                    <td className="py-3 px-3 text-right">{exp.quantity}</td>
+                    <td className="py-3 px-3 text-right">{formatCurrency(exp.unit_price)}</td>
+                    <td className="py-3 px-3 text-right font-bold text-white">{formatCurrency(exp.amount)}</td>
+                    <td className="py-3 px-3 text-right text-emerald-400">{formatCurrency(exp.advance_amount)}</td>
+                    <td className="py-3 px-3 text-center uppercase text-[10px] text-on-surface-variant font-sans">{exp.payment_method}</td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        disabled={deleting === exp.id}
+                        className="p-1 rounded text-on-surface-variant hover:text-error transition-colors"
+                        title="Eliminar gasto"
+                      >
+                        {deleting === exp.id ? (
+                          <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Part 3: Register Payment Modal ─── */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
+          <div className="relative neu-surface w-full max-w-md animate-scale-in">
+            <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+              <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">payments</span>
+                Registrar Gasto de Mano de Obra
+              </h2>
+              <button onClick={() => setShowAddModal(false)} className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
+
+              {/* Proceso / Concepto */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Proceso / Concepto *</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
+                  placeholder="Ej. Costura y Ensamble Lote A"
+                  value={form.processName}
+                  onChange={e => setForm(f => ({ ...f, processName: e.target.value }))}
+                />
+              </div>
+
+              {/* Tercero / Operario */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Operario / Taller *</label>
+                <div className="space-y-2">
+                  <select
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
+                    value={form.providerId}
+                    onChange={e => {
+                      const id = e.target.value
+                      const match = dependientes.find(d => d.id === id) || providers.find(p => p.id === id)
+                      setForm(f => ({
+                        ...f,
+                        providerId: id,
+                        providerName: match ? match.name : ''
+                      }))
+                    }}
+                  >
+                    <option value="">— Registrar Nuevo Operario —</option>
+                    <optgroup label="Empleados / Operarios" className="bg-surface text-on-surface">
+                      {dependientes.map(d => (
+                        <option key={d.id} value={d.id} className="bg-surface text-on-surface">{d.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Proveedores / Talleres Externos" className="bg-surface text-on-surface">
+                      {providers.map(p => (
+                        <option key={p.id} value={p.id} className="bg-surface text-on-surface">{p.name}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+
+                  {!form.providerId && (
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none"
+                      placeholder="Escribe el nombre del nuevo operario o taller..."
+                      value={form.providerName}
+                      onChange={e => setForm(f => ({ ...f, providerName: e.target.value }))}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Cantidad & Precio Unitario */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Cantidad</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
+                    value={form.quantity}
+                    onChange={e => setForm(f => ({ ...f, quantity: Math.max(1, parseInt(e.target.value) || 1) }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Costo Unitario (Bs)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
+                    placeholder="0.00"
+                    value={form.unitPrice}
+                    onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Total Gasto & Adelanto */}
+              <div className="grid grid-cols-2 gap-3 bg-surface-container/30 p-3 rounded-2xl border border-outline-variant/20">
+                <div>
+                  <span className="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Monto Total</span>
+                  <span className="text-base font-mono font-bold text-white">{formatCurrency(Number(form.amount) || 0)}</span>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-primary uppercase tracking-wider mb-1">Abono / Adelanto</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full px-2 py-1.5 bg-primary/5 border border-primary/20 rounded-xl text-xs text-white font-mono outline-none focus:border-primary"
+                    placeholder="0.00"
+                    value={form.advanceAmount}
+                    onChange={e => setForm(f => ({ ...f, advanceAmount: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Método de Pago & Fecha */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Método de Pago</label>
+                  <select
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
+                    value={form.paymentMethod}
+                    onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                  >
+                    <option value="efectivo" className="bg-surface text-on-surface">Efectivo</option>
+                    <option value="transferencia" className="bg-surface text-on-surface">Transferencia</option>
+                    <option value="tarjeta" className="bg-surface text-on-surface">Tarjeta</option>
+                    <option value="qr" className="bg-surface text-on-surface">Pago QR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Fecha del Gasto</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
+                    value={form.date}
+                    onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Notas / Descripción</label>
+                <textarea
+                  className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none resize-none h-16"
+                  placeholder="Detalles sobre el pago o el trabajo realizado..."
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2.5 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveExpense}
+                  disabled={saving}
+                  className="px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-md"
+                >
+                  {saving ? (
+                    <span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                  ) : (
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                  )}
+                  {saving ? 'Guardando...' : 'Registrar Pago'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
