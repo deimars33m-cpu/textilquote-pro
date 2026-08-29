@@ -37,9 +37,10 @@ function calcContractProgress(contract, laborExpenses = [], quoteProcesses = [],
 
   const budgetedLabor = quoteProcesses.reduce((sum, p) => sum + (Number(p.total_cost) || 0), 0)
   const spentLabor = laborExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
-  const totalDeliveredLabor = laborBatches.filter(b => b.is_delivered).reduce((s, b) => s + (Number(b.quantity) || 0), 0)
+  const totalDeliveredLabor = laborExpenses.reduce((s, e) => s + (Number(e.quantity) || 0), 0) +
+    laborBatches.filter(b => b.is_delivered).reduce((s, b) => s + (Number(b.quantity) || 0), 0)
 
-  const laborPct = contract.total_units > 0 && laborBatches.length > 0
+  const laborPct = contract.total_units > 0 && totalDeliveredLabor > 0
     ? Math.min(100, (totalDeliveredLabor / contract.total_units) * 100)
     : (budgetedLabor > 0 ? Math.min(100, (spentLabor / budgetedLabor) * 100) : (spentLabor > 0 ? 100 : 0))
 
@@ -361,11 +362,24 @@ function ContractDetail({ contract, onBack, onRefresh }) {
           .select('*')
           .eq('order_id', data.order_id)
           .eq('user_id', user?.id)
+          .order('date', { ascending: false })
         if (exps) {
           const labor = exps.filter(e => {
             const subcatLower = (e.subcategory || '').toLowerCase().trim()
             const itemLower = (e.specific_item || e.specificItem || e.description || '').toLowerCase().trim()
-            return subcatLower.includes('destajo') || itemLower.includes('destajo') || itemLower.includes('mano de obra') || itemLower.includes('confecci') || itemLower.includes('costura') || itemLower.includes('taller') || e.category_key === 'PRODUCCION' && (subcatLower.includes('mano de obra') || subcatLower.includes('confección'))
+            const catLower = (e.category_key || '').toLowerCase().trim()
+            return subcatLower.includes('destajo') || 
+                   subcatLower.includes('mano de obra') || 
+                   subcatLower.includes('confecci') || 
+                   subcatLower.includes('costura') || 
+                   subcatLower.includes('taller') || 
+                   itemLower.includes('destajo') || 
+                   itemLower.includes('mano de obra') || 
+                   itemLower.includes('confecci') || 
+                   itemLower.includes('costura') || 
+                   itemLower.includes('taller') || 
+                   catLower === 'produccion' || 
+                   catLower === 'producción'
           })
           setLaborExpenses(labor)
         }
@@ -1460,29 +1474,29 @@ export default function ContractTrackingPage() {
   )
 }
 
-// ── Tab: Mano de Obra Directa (Planilla y Liquidación por Operario) ──────────
+// ── Tab: Mano de Obra Directa (Planilla, Deudas y Liquidación por Operario) ──
 
 function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, laborBatches = [], terceros, totalUnits, onRefresh, user }) {
   const [selectedOperator, setSelectedOperator] = useState('all')
 
   // Modals state
-  const [showBatchModal, setShowBatchModal] = useState(false)
-  const [batchEditId, setBatchEditId] = useState(null)
-  const [batchForm, setBatchForm] = useState({
+  const [showTransactionModal, setShowTransactionModal] = useState(false)
+  const [transactionForm, setTransactionForm] = useState({
     operator_name: '',
     operator_id: '',
-    batch_date: new Date().toISOString().slice(0, 10),
+    concept: '',
     quantity: '',
-    unit_cost: 8,
-    is_delivered: true,
+    unit_price: 8,
+    amount: '',
+    advance_amount: '',
+    date: new Date().toISOString().slice(0, 10),
+    payment_method: 'efectivo',
     notes: ''
   })
 
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [paymentForm, setPaymentForm] = useState({
-    operator_name: '',
-    operator_id: '',
-    concept: 'Adelanto de Mano de Obra',
+  const [showAbonoModal, setShowAbonoModal] = useState(false)
+  const [abonoTarget, setAbonoTarget] = useState(null)
+  const [abonoForm, setAbonoForm] = useState({
     amount: '',
     date: new Date().toISOString().slice(0, 10),
     payment_method: 'efectivo',
@@ -1502,193 +1516,127 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
     ? (Number(quoteProcesses[0].cost) || 8) 
     : 8
 
-  // Unique operator names from batches & expenses & dependientes
+  // Autocalculate amount and debt in transaction form
+  useEffect(() => {
+    const qty = Number(transactionForm.quantity) || 0
+    const price = Number(transactionForm.unit_price) || 0
+    const total = qty * price
+    setTransactionForm(f => ({
+      ...f,
+      amount: total > 0 ? total.toFixed(2) : f.amount
+    }))
+  }, [transactionForm.quantity, transactionForm.unit_price])
+
+  // Build unified records primarily from laborExpenses and laborBatches
+  const expenseRecords = laborExpenses.map(e => {
+    const qty = Number(e.quantity) || 1
+    const total = Number(e.amount) || 0
+    const unitPrice = Number(e.unit_price) > 0 ? Number(e.unit_price) : (qty > 0 ? total / qty : defaultBaseCost)
+    const paid = Number(e.advance_amount) || 0
+    const debt = Math.max(0, total - paid)
+
+    return {
+      id: e.id,
+      type: 'expense',
+      date: e.date,
+      operator_name: e.provider || 'Sin asignar',
+      concept: e.specific_item || e.description || 'Mano de Obra',
+      quantity: qty,
+      unit_price: unitPrice,
+      amount: total,
+      paid_amount: paid,
+      debt_amount: debt,
+      payment_method: e.payment_method || 'efectivo',
+      payment_history: e.payment_history || [],
+      notes: e.description || '',
+      raw: e
+    }
+  })
+
+  const batchRecords = laborBatches.map(b => {
+    const qty = Number(b.quantity) || 0
+    const unitPrice = Number(b.unit_cost) || defaultBaseCost
+    const total = qty * unitPrice
+
+    return {
+      id: b.id,
+      type: 'batch',
+      date: b.batch_date,
+      operator_name: b.operator_name || 'Sin asignar',
+      concept: b.notes || 'Lote de Confección',
+      quantity: qty,
+      unit_price: unitPrice,
+      amount: total,
+      paid_amount: 0,
+      debt_amount: total,
+      payment_method: '—',
+      payment_history: [],
+      notes: b.notes || '',
+      is_delivered: b.is_delivered !== false,
+      raw: b
+    }
+  })
+
+  const allRecords = [...expenseRecords, ...batchRecords].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  // Unique operator names
   const operatorNames = Array.from(new Set([
-    ...laborBatches.map(b => b.operator_name).filter(Boolean),
-    ...laborExpenses.map(e => e.provider).filter(Boolean),
+    ...allRecords.map(r => r.operator_name).filter(Boolean),
     ...dependientes.map(d => d.name).filter(Boolean)
   ]))
 
-  // Filtered batches & expenses
-  const filteredBatches = selectedOperator === 'all' 
-    ? laborBatches 
-    : laborBatches.filter(b => b.operator_name?.toLowerCase() === selectedOperator.toLowerCase())
+  // Filtered records
+  const filteredRecords = selectedOperator === 'all'
+    ? allRecords
+    : allRecords.filter(r => r.operator_name.toLowerCase().trim() === selectedOperator.toLowerCase().trim())
 
-  const filteredExpenses = selectedOperator === 'all' 
-    ? laborExpenses 
-    : laborExpenses.filter(e => e.provider?.toLowerCase() === selectedOperator.toLowerCase())
+  // Calculations for selection
+  const totalQuantity = filteredRecords.reduce((sum, r) => sum + r.quantity, 0)
+  const totalDevengado = filteredRecords.reduce((sum, r) => sum + r.amount, 0)
+  const totalPagado = filteredRecords.reduce((sum, r) => sum + r.paid_amount, 0)
+  const totalAdeudado = filteredRecords.reduce((sum, r) => sum + r.debt_amount, 0)
 
-  // Calculations for current selection
-  const totalDeliveredQty = filteredBatches
-    .filter(b => b.is_delivered)
-    .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0)
+  const overallDeliveredUnits = allRecords.reduce((sum, r) => sum + r.quantity, 0)
+  const physicalLaborPct = totalUnits > 0 ? Math.min(100, (overallDeliveredUnits / totalUnits) * 100) : 0
 
-  const totalInProcessQty = filteredBatches
-    .filter(b => !b.is_delivered)
-    .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0)
-
-  const totalDevengado = filteredBatches
-    .filter(b => b.is_delivered)
-    .reduce((sum, b) => sum + ((Number(b.quantity) || 0) * (Number(b.unit_cost) || defaultBaseCost)), 0)
-
-  const totalPagado = filteredExpenses
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
-
-  const saldoPendiente = Math.max(0, totalDevengado - totalPagado)
-
-  // Overall contract physical progress
-  const allDeliveredQty = laborBatches
-    .filter(b => b.is_delivered)
-    .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0)
-  
-  const physicalLaborPct = totalUnits > 0 ? Math.min(100, (allDeliveredQty / totalUnits) * 100) : 0
-
-  // ─── Handlers for Batch Deliveries ───
-  function handleOpenNewBatch(opName = '') {
+  // ─── Handlers for New Transaction ───
+  function handleOpenNewTransaction(opName = '') {
     setError(null)
-    setBatchEditId(null)
-    setBatchForm({
-      operator_name: opName || (selectedOperator !== 'all' ? selectedOperator : (operatorNames[0] || '')),
+    const initialOp = opName || (selectedOperator !== 'all' ? selectedOperator : (operatorNames[0] || ''))
+    setTransactionForm({
+      operator_name: initialOp,
       operator_id: '',
-      batch_date: new Date().toISOString().slice(0, 10),
+      concept: quoteProcesses.length > 0 ? (quoteProcesses[0].process_name || quoteProcesses[0].name) : 'Confección-armado',
       quantity: '',
-      unit_cost: defaultBaseCost,
-      is_delivered: true,
-      notes: ''
-    })
-    setShowBatchModal(true)
-  }
-
-  function handleEditBatch(batch) {
-    setError(null)
-    setBatchEditId(batch.id)
-    setBatchForm({
-      operator_name: batch.operator_name,
-      operator_id: batch.operator_id || '',
-      batch_date: batch.batch_date,
-      quantity: batch.quantity,
-      unit_cost: batch.unit_cost || defaultBaseCost,
-      is_delivered: batch.is_delivered !== false,
-      notes: batch.notes || ''
-    })
-    setShowBatchModal(true)
-  }
-
-  async function handleToggleBatchDelivered(batch) {
-    try {
-      await supabase
-        .from('contract_labor_batches')
-        .update({ is_delivered: !batch.is_delivered })
-        .eq('id', batch.id)
-      onRefresh()
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  async function handleSaveBatch() {
-    if (!batchForm.operator_name.trim()) {
-      setError('El nombre del operario es requerido.')
-      return
-    }
-    if (!batchForm.quantity || Number(batchForm.quantity) <= 0) {
-      setError('La cantidad de prendas debe ser mayor a 0.')
-      return
-    }
-
-    setSaving(true)
-    setError(null)
-    try {
-      const trimmedOp = batchForm.operator_name.trim()
-      let opId = batchForm.operator_id || null
-
-      if (!opId) {
-        const match = terceros.find(t => t.name.toLowerCase() === trimmedOp.toLowerCase())
-        if (match) {
-          opId = match.id
-        } else {
-          const { data: newT } = await supabase
-            .from('terceros')
-            .insert({ user_id: user.id, name: trimmedOp, role: 'dependiente', client_type: 'dependiente' })
-            .select()
-            .single()
-          if (newT) opId = newT.id
-        }
-      }
-
-      const payload = {
-        contract_id: contractId,
-        operator_name: trimmedOp,
-        operator_id: opId,
-        batch_date: batchForm.batch_date,
-        quantity: parseInt(batchForm.quantity) || 0,
-        unit_cost: parseFloat(batchForm.unit_cost) || defaultBaseCost,
-        is_delivered: batchForm.is_delivered,
-        notes: batchForm.notes?.trim() || null
-      }
-
-      if (batchEditId) {
-        const { error: errUpd } = await supabase.from('contract_labor_batches').update(payload).eq('id', batchEditId)
-        if (errUpd) throw errUpd
-      } else {
-        const { error: errIns } = await supabase.from('contract_labor_batches').insert(payload)
-        if (errIns) throw errIns
-      }
-
-      setShowBatchModal(false)
-      onRefresh()
-    } catch (e) {
-      console.error('Error saving batch:', e)
-      setError(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDeleteBatch(id) {
-    if (!window.confirm('¿Eliminar este registro de entrega de lote?')) return
-    setDeletingId(id)
-    try {
-      const { error } = await supabase.from('contract_labor_batches').delete().eq('id', id)
-      if (error) throw error
-      onRefresh()
-    } catch (e) {
-      alert('Error: ' + e.message)
-    } finally {
-      setDeletingId(null)
-    }
-  }
-
-  // ─── Handlers for Payments & Advances ───
-  function handleOpenPayment(opName = '', defaultAmount = '') {
-    setError(null)
-    setPaymentForm({
-      operator_name: opName || (selectedOperator !== 'all' ? selectedOperator : (operatorNames[0] || '')),
-      operator_id: '',
-      concept: 'Adelanto de Mano de Obra',
-      amount: defaultAmount || '',
+      unit_price: defaultBaseCost,
+      amount: '',
+      advance_amount: '',
       date: new Date().toISOString().slice(0, 10),
       payment_method: 'efectivo',
       notes: ''
     })
-    setShowPaymentModal(true)
+    setShowTransactionModal(true)
   }
 
-  async function handleSavePayment() {
-    if (!paymentForm.operator_name.trim()) {
+  async function handleSaveTransaction() {
+    if (!transactionForm.operator_name.trim()) {
       setError('El nombre del operario es requerido.')
       return
     }
-    if (!paymentForm.amount || Number(paymentForm.amount) <= 0) {
-      setError('El monto del pago debe ser mayor a 0.')
+    if (!transactionForm.quantity || Number(transactionForm.quantity) <= 0) {
+      setError('La cantidad de prendas debe ser mayor a 0.')
+      return
+    }
+    if (!transactionForm.amount || Number(transactionForm.amount) <= 0) {
+      setError('El monto total debe ser mayor a 0.')
       return
     }
 
     setSaving(true)
     setError(null)
     try {
-      const trimmedOp = paymentForm.operator_name.trim()
-      let opId = paymentForm.operator_id || null
+      const trimmedOp = transactionForm.operator_name.trim()
+      let opId = transactionForm.operator_id || null
 
       if (!opId) {
         const match = terceros.find(t => t.name.toLowerCase() === trimmedOp.toLowerCase())
@@ -1704,50 +1652,144 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
         }
       }
 
+      const totalAmount = Number(transactionForm.amount)
+      const paidAmount = transactionForm.advance_amount !== '' ? Number(transactionForm.advance_amount) : totalAmount
+
       const payload = {
         user_id: user.id,
-        date: paymentForm.date,
+        date: transactionForm.date,
         category_key: 'PRODUCCION',
         category_label: 'Producción Textil y Confección',
-        subcategory: 'Mano de Obra (Confección y Destajo)',
-        specific_item: paymentForm.concept.trim() || 'Pago de Mano de Obra',
-        description: paymentForm.notes.trim() || `Pago a operario: ${trimmedOp}`,
+        subcategory: 'Pagos a destajo',
+        specific_item: transactionForm.concept.trim() || 'Confección-armado',
+        description: transactionForm.notes.trim() || `Entrega de ${transactionForm.quantity} prendas a operario: ${trimmedOp}`,
         provider: trimmedOp,
         provider_id: opId,
-        quantity: 1,
-        unit_price: Number(paymentForm.amount),
-        amount: Number(paymentForm.amount),
-        advance_amount: Number(paymentForm.amount),
-        payment_method: paymentForm.payment_method,
-        payment_history: [{
+        quantity: parseInt(transactionForm.quantity) || 1,
+        unit_price: parseFloat(transactionForm.unit_price) || defaultBaseCost,
+        amount: totalAmount,
+        advance_amount: paidAmount,
+        payment_method: transactionForm.payment_method,
+        payment_history: paidAmount > 0 ? [{
           id: crypto.randomUUID(),
           date: new Date().toISOString(),
-          amount: Number(paymentForm.amount),
-          method: paymentForm.payment_method,
-          note: paymentForm.concept.trim() || 'Abono de mano de obra'
-        }],
+          amount: paidAmount,
+          method: transactionForm.payment_method,
+          note: paidAmount >= totalAmount ? 'Cancelación total' : 'Abono / Adelanto inicial'
+        }] : [],
         order_id: orderId || null
       }
 
       const { error: errSave } = await supabase.from('expenses').insert(payload)
       if (errSave) throw errSave
 
-      setShowPaymentModal(false)
+      setShowTransactionModal(false)
       onRefresh()
     } catch (e) {
-      console.error('Error saving payment:', e)
+      console.error('Error saving transaction:', e)
       setError(e.message)
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleDeletePayment(id) {
-    if (!window.confirm('¿Eliminar este registro de pago/adelanto?')) return
-    setDeletingId(id)
+  // ─── Handlers for Abono to Debt ───
+  function handleOpenAbono(record) {
+    setError(null)
+    setAbonoTarget(record)
+    setAbonoForm({
+      amount: record.debt_amount > 0 ? record.debt_amount : '',
+      date: new Date().toISOString().slice(0, 10),
+      payment_method: 'efectivo',
+      notes: `Abono saldo entrega (${record.concept})`
+    })
+    setShowAbonoModal(true)
+  }
+
+  async function handleSaveAbono() {
+    if (!abonoForm.amount || Number(abonoForm.amount) <= 0) {
+      setError('El monto a abonar debe ser mayor a 0.')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
     try {
-      const { error } = await supabase.from('expenses').delete().eq('id', id)
-      if (error) throw error
+      const additionalPaid = Number(abonoForm.amount)
+      const currentPaid = Number(abonoTarget.paid_amount) || 0
+      const newAdvance = currentPaid + additionalPaid
+
+      const existingHistory = abonoTarget.payment_history || []
+      const newHistory = [
+        ...existingHistory,
+        {
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          amount: additionalPaid,
+          method: abonoForm.payment_method,
+          note: abonoForm.notes.trim() || 'Abono a deuda de entrega'
+        }
+      ]
+
+      if (abonoTarget.type === 'expense') {
+        const { error: errUpd } = await supabase
+          .from('expenses')
+          .update({
+            advance_amount: newAdvance,
+            payment_history: newHistory
+          })
+          .eq('id', abonoTarget.id)
+        if (errUpd) throw errUpd
+      } else {
+        // If it was a batch, insert a payment record in expenses
+        const payload = {
+          user_id: user.id,
+          date: abonoForm.date,
+          category_key: 'PRODUCCION',
+          category_label: 'Producción Textil y Confección',
+          subcategory: 'Pagos a destajo',
+          specific_item: `Abono lote (${abonoTarget.concept})`,
+          description: abonoForm.notes.trim() || `Abono a operario: ${abonoTarget.operator_name}`,
+          provider: abonoTarget.operator_name,
+          quantity: 1,
+          unit_price: additionalPaid,
+          amount: additionalPaid,
+          advance_amount: additionalPaid,
+          payment_method: abonoForm.payment_method,
+          payment_history: [{
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+            amount: additionalPaid,
+            method: abonoForm.payment_method,
+            note: 'Abono a lote de confección'
+          }],
+          order_id: orderId || null
+        }
+        const { error: errIns } = await supabase.from('expenses').insert(payload)
+        if (errIns) throw errIns
+      }
+
+      setShowAbonoModal(false)
+      onRefresh()
+    } catch (e) {
+      console.error('Error saving abono:', e)
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteRecord(record) {
+    if (!window.confirm(`¿Eliminar este registro de ${record.operator_name} (${record.concept})?`)) return
+    setDeletingId(record.id)
+    try {
+      if (record.type === 'expense') {
+        const { error } = await supabase.from('expenses').delete().eq('id', record.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('contract_labor_batches').delete().eq('id', record.id)
+        if (error) throw error
+      }
       onRefresh()
     } catch (e) {
       alert('Error: ' + e.message)
@@ -1766,20 +1808,9 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
             Avance Confección
           </div>
           <div className="text-xl font-bold font-mono text-white">
-            {allDeliveredQty} <span className="text-xs font-normal text-on-surface-variant">/ {totalUnits} uds</span>
+            {overallDeliveredUnits} <span className="text-xs font-normal text-on-surface-variant">/ {totalUnits} uds</span>
           </div>
           <ProgressBar value={physicalLaborPct} />
-        </div>
-
-        <div className="glass-card p-4 space-y-1.5 border border-outline-variant/30">
-          <div className="flex items-center gap-2 text-secondary text-xs font-bold uppercase tracking-wider">
-            <span className="material-symbols-outlined text-[18px]">sell</span>
-            Tarifa Base (Cotizada)
-          </div>
-          <div className="text-xl font-bold font-mono text-white">
-            {formatCurrency(defaultBaseCost)} <span className="text-xs font-normal text-on-surface-variant">/ ud</span>
-          </div>
-          <p className="text-[10px] text-on-surface-variant">Costo base de ensamble</p>
         </div>
 
         <div className="glass-card p-4 space-y-1.5 border border-emerald-500/20">
@@ -1790,34 +1821,48 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
           <div className="text-xl font-bold font-mono text-emerald-400">
             {formatCurrency(totalDevengado)}
           </div>
-          <p className="text-[10px] text-on-surface-variant">{totalDeliveredQty} prendas terminadas</p>
+          <p className="text-[10px] text-on-surface-variant">{totalQuantity} prendas contabilizadas</p>
         </div>
 
-        <div className={`glass-card p-4 space-y-1.5 border ${saldoPendiente > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-outline-variant/30'}`}>
-          <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${saldoPendiente > 0 ? 'text-amber-400' : 'text-on-surface-variant'}`}>
+        <div className="glass-card p-4 space-y-1.5 border border-outline-variant/30">
+          <div className="flex items-center gap-2 text-secondary text-xs font-bold uppercase tracking-wider">
+            <span className="material-symbols-outlined text-[18px]">payments</span>
+            Total Pagado
+          </div>
+          <div className="text-xl font-bold font-mono text-white">
+            {formatCurrency(totalPagado)}
+          </div>
+          <p className="text-[10px] text-on-surface-variant">Abonos y adelantos realizados</p>
+        </div>
+
+        <div className={`glass-card p-4 space-y-1.5 border ${totalAdeudado > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-outline-variant/30'}`}>
+          <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${totalAdeudado > 0 ? 'text-amber-400' : 'text-on-surface-variant'}`}>
             <span className="material-symbols-outlined text-[18px]">pending_actions</span>
-            Saldo por Liquidar
+            Monto Total Adeudado
           </div>
-          <div className={`text-xl font-bold font-mono ${saldoPendiente > 0 ? 'text-amber-400' : 'text-white'}`}>
-            {formatCurrency(saldoPendiente)}
+          <div className={`text-xl font-bold font-mono ${totalAdeudado > 0 ? 'text-amber-400' : 'text-primary'}`}>
+            {formatCurrency(totalAdeudado)}
           </div>
-          <p className="text-[10px] text-on-surface-variant">Pagado: {formatCurrency(totalPagado)}</p>
+          <p className="text-[10px] text-on-surface-variant">Saldo pendiente con operadores</p>
         </div>
       </div>
 
-      {/* ─── 2. Operator Filter Pills ─── */}
+      {/* ─── 2. Operator Filter Tabs ─── */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mr-1">Operario:</span>
+        <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mr-1">Operador:</span>
         <button
           onClick={() => setSelectedOperator('all')}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
             selectedOperator === 'all' ? 'neu-button-primary' : 'neu-raised-sm text-on-surface-variant hover:text-on-surface'
           }`}
         >
-          Todos ({laborBatches.length})
+          Todos ({allRecords.length})
         </button>
         {operatorNames.map(name => {
-          const count = laborBatches.filter(b => b.operator_name?.toLowerCase() === name.toLowerCase() && b.is_delivered).reduce((s, b) => s + (Number(b.quantity) || 0), 0)
+          const opRecords = allRecords.filter(r => r.operator_name.toLowerCase().trim() === name.toLowerCase().trim())
+          const opQty = opRecords.reduce((s, r) => s + r.quantity, 0)
+          const opDebt = opRecords.reduce((s, r) => s + r.debt_amount, 0)
+
           return (
             <button
               key={name}
@@ -1828,219 +1873,164 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
             >
               <span className="material-symbols-outlined text-[14px]">person</span>
               {name}
-              {count > 0 && <span className="text-[10px] opacity-75 font-mono">({count} uds)</span>}
+              <span className="text-[10px] opacity-75 font-mono">({opQty} uds)</span>
+              {opDebt > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-400 text-[9px] font-mono border border-amber-400/30">
+                  Deuda: {formatCurrency(opDebt)}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
 
-      {/* ─── 3. Two-Column Dashboard (Kardex de Entregas & Liquidación Financiera) ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left / Top: Kardex de Entregas de Lotes (7 cols) */}
-        <div className="lg:col-span-7 neu-surface p-5 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="material-symbols-outlined text-primary text-xl">fact_check</span>
-              <div>
-                <h3 className="font-bold text-on-surface text-sm">Kardex de Entregas por Lotes</h3>
-                <p className="text-[11px] text-on-surface-variant">Registro de prendas entregadas por fecha y operario</p>
-              </div>
+      {/* ─── 3. Kardex Table of Labor Transactions ─── */}
+      <div className="neu-surface p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-primary text-xl">receipt_long</span>
+            <div>
+              <h3 className="font-bold text-on-surface text-sm">Registro de Entregas y Control de Mano de Obra</h3>
+              <p className="text-[11px] text-on-surface-variant">
+                {selectedOperator === 'all' ? 'Todas las transacciones y entregas vinculadas al contrato' : `Entregas y pagos de: ${selectedOperator}`}
+              </p>
             </div>
-            <button
-              onClick={() => handleOpenNewBatch()}
-              className="neu-button-primary px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
-            >
-              <span className="material-symbols-outlined text-[15px]">add_box</span>
-              Registrar Entrega
-            </button>
           </div>
-
-          {filteredBatches.length === 0 ? (
-            <div className="text-center py-8 border border-dashed border-outline-variant/30 rounded-2xl">
-              <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 block mb-1">inventory_2</span>
-              <p className="text-xs text-on-surface-variant italic">No hay entregas registradas para este filtro.</p>
-              <button
-                onClick={() => handleOpenNewBatch()}
-                className="mt-2 text-xs font-bold text-primary hover:underline inline-flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-[14px]">add</span>
-                Registrar primer lote entregado
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold text-[10px]">
-                    <th className="py-2.5 px-3">Fecha</th>
-                    <th className="py-2.5 px-3">Operario</th>
-                    <th className="py-2.5 px-3 text-right">Cant.</th>
-                    <th className="py-2.5 px-3 text-right">Tarifa</th>
-                    <th className="py-2.5 px-3 text-right">Subtotal</th>
-                    <th className="py-2.5 px-3 text-center">Estado</th>
-                    <th className="py-2.5 px-3">Observaciones</th>
-                    <th className="py-2.5 px-3 w-16 text-center"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/20 text-on-surface font-mono">
-                  {filteredBatches.map(batch => {
-                    const subtotal = (Number(batch.quantity) || 0) * (Number(batch.unit_cost) || defaultBaseCost)
-                    return (
-                      <tr key={batch.id} className="hover:bg-surface-container-high/30 transition-colors">
-                        <td className="py-2.5 px-3 font-sans text-on-surface-variant whitespace-nowrap">
-                          {new Date(batch.batch_date + 'T12:00:00').toLocaleDateString('es-BO', { day: '2-digit', month: 'short' })}
-                        </td>
-                        <td className="py-2.5 px-3 font-sans font-bold text-white whitespace-nowrap">
-                          {batch.operator_name}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-white">
-                          {batch.quantity}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-on-surface-variant">
-                          {formatCurrency(batch.unit_cost)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-emerald-400">
-                          {formatCurrency(subtotal)}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-sans">
-                          <button
-                            onClick={() => handleToggleBatchDelivered(batch)}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
-                              batch.is_delivered
-                                ? 'bg-primary/10 border-primary/30 text-primary'
-                                : 'bg-amber-400/10 border-amber-400/30 text-amber-400'
-                            }`}
-                            title="Click para alternar estado"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {batch.is_delivered ? 'check_circle' : 'pending'}
-                            </span>
-                            {batch.is_delivered ? 'Entregado' : 'En proceso'}
-                          </button>
-                        </td>
-                        <td className="py-2.5 px-3 font-sans text-on-surface-variant text-[11px] max-w-[150px] truncate" title={batch.notes || ''}>
-                          {batch.notes || '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1 font-sans">
-                            <button
-                              onClick={() => handleEditBatch(batch)}
-                              className="p-1 rounded text-on-surface-variant hover:text-primary transition-colors"
-                              title="Editar lote"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">edit</span>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteBatch(batch.id)}
-                              disabled={deletingId === batch.id}
-                              className="p-1 rounded text-on-surface-variant hover:text-error transition-colors"
-                              title="Eliminar lote"
-                            >
-                              {deletingId === batch.id ? (
-                                <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <span className="material-symbols-outlined text-[15px]">delete</span>
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <button
+            onClick={() => handleOpenNewTransaction()}
+            className="neu-button-primary px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[16px]">add_task</span>
+            Registrar Entrega / Pago
+          </button>
         </div>
 
-        {/* Right / Bottom: Liquidación Financiera y Estado de Cuenta (5 cols) */}
-        <div className="lg:col-span-5 neu-surface p-5 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="material-symbols-outlined text-emerald-400 text-xl">payments</span>
-              <div>
-                <h3 className="font-bold text-on-surface text-sm">Estado de Cuenta y Pagos</h3>
-                <p className="text-[11px] text-on-surface-variant">
-                  {selectedOperator === 'all' ? 'Liquidación consolidada' : `Liquidación de ${selectedOperator}`}
-                </p>
-              </div>
-            </div>
+        {filteredRecords.length === 0 ? (
+          <div className="text-center py-10 border border-dashed border-outline-variant/30 rounded-2xl">
+            <span className="material-symbols-outlined text-4xl text-on-surface-variant/40 block mb-2">payments</span>
+            <p className="text-xs text-on-surface-variant italic">No se han registrado transacciones de mano de obra para este contrato.</p>
             <button
-              onClick={() => handleOpenPayment()}
-              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-500/30 transition-all shadow-sm"
+              onClick={() => handleOpenNewTransaction()}
+              className="mt-3 neu-button-primary px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
             >
               <span className="material-symbols-outlined text-[15px]">add</span>
-              Registrar Adelanto / Pago
+              Registrar primera entrega o pago
             </button>
           </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold text-[10px]">
+                  <th className="py-2.5 px-3">Fecha</th>
+                  <th className="py-2.5 px-3">Operario / Taller</th>
+                  <th className="py-2.5 px-3">Concepto / Proceso</th>
+                  <th className="py-2.5 px-3 text-right">Cantidad</th>
+                  <th className="py-2.5 px-3 text-right">Precio Unit.</th>
+                  <th className="py-2.5 px-3 text-right">Monto Total</th>
+                  <th className="py-2.5 px-3 text-right">Monto Pagado</th>
+                  <th className="py-2.5 px-3 text-right">Monto Adeudado</th>
+                  <th className="py-2.5 px-3 text-center">Estado</th>
+                  <th className="py-2.5 px-3 text-center w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/20 text-on-surface font-mono">
+                {filteredRecords.map(record => {
+                  const isFullyPaid = record.debt_amount <= 0
+                  const isPartial = record.paid_amount > 0 && record.debt_amount > 0
 
-          {/* Itemized Statement Card */}
-          <div className="bg-surface-container/40 p-4 rounded-2xl border border-outline-variant/30 space-y-3">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-on-surface-variant font-medium">Total Confeccionado ({totalDeliveredQty} uds × {formatCurrency(defaultBaseCost)})</span>
-              <span className="font-mono font-bold text-white">+{formatCurrency(totalDevengado)}</span>
-            </div>
-
-            {/* List of Payments */}
-            {filteredExpenses.length > 0 && (
-              <div className="space-y-1.5 pt-2 border-t border-outline-variant/20">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                  Abonos y Adelantos Registrados:
-                </span>
-                {filteredExpenses.map(exp => (
-                  <div key={exp.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-surface-container/60 hover:bg-surface-container-high/60 transition-colors group">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">
-                        {new Date(exp.date + 'T12:00:00').toLocaleDateString('es-BO', { day: '2-digit', month: 'short' })}
-                      </span>
-                      <span className="truncate text-on-surface text-[11px]" title={exp.description || exp.specific_item}>
-                        {exp.provider ? `${exp.provider} - ` : ''}{exp.specific_item || 'Pago'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="font-mono font-bold text-emerald-400">-{formatCurrency(exp.amount)}</span>
-                      <button
-                        onClick={() => handleDeletePayment(exp.id)}
-                        disabled={deletingId === exp.id}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-on-surface-variant hover:text-error transition-all"
-                        title="Eliminar este pago"
-                      >
-                        <span className="material-symbols-outlined text-[13px]">delete</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Total Paid & Balance */}
-            <div className="pt-3 border-t border-outline-variant/30 space-y-2">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant font-semibold">Total Pagado / Adelantado:</span>
-                <span className="font-mono font-bold text-emerald-400">{formatCurrency(totalPagado)}</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-xl bg-surface-container-high/80 border border-outline-variant/40">
-                <span className="text-xs font-bold text-on-surface uppercase tracking-wider">Saldo Pendiente por Pagar:</span>
-                <span className={`text-base font-mono font-extrabold ${saldoPendiente > 0 ? 'text-amber-400' : 'text-primary'}`}>
-                  {formatCurrency(saldoPendiente)}
-                </span>
-              </div>
-            </div>
+                  return (
+                    <tr key={record.id} className="hover:bg-surface-container-high/30 transition-colors">
+                      <td className="py-3 px-3 font-sans text-on-surface-variant whitespace-nowrap">
+                        {new Date(record.date + 'T12:00:00').toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="py-3 px-3 font-sans font-bold text-white whitespace-nowrap">
+                        {record.operator_name}
+                      </td>
+                      <td className="py-3 px-3 font-sans text-on-surface text-[11px]" title={record.notes}>
+                        <div className="font-semibold">{record.concept}</div>
+                        {record.notes && record.notes !== record.concept && (
+                          <div className="text-[10px] text-on-surface-variant truncate max-w-[180px]">{record.notes}</div>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-white">
+                        {record.quantity} uds
+                      </td>
+                      <td className="py-3 px-3 text-right text-on-surface-variant font-bold">
+                        {formatCurrency(record.unit_price)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-white">
+                        {formatCurrency(record.amount)}
+                      </td>
+                      <td className="py-3 px-3 text-right text-emerald-400 font-bold">
+                        {formatCurrency(record.paid_amount)}
+                      </td>
+                      <td className={`py-3 px-3 text-right font-bold ${record.debt_amount > 0 ? 'text-amber-400' : 'text-on-surface-variant'}`}>
+                        {formatCurrency(record.debt_amount)}
+                      </td>
+                      <td className="py-3 px-3 text-center font-sans">
+                        {isFullyPaid ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 border border-primary/30 text-primary whitespace-nowrap">
+                            <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                            Cancelado
+                          </span>
+                        ) : isPartial ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/10 border border-amber-400/30 text-amber-400 whitespace-nowrap">
+                            <span className="material-symbols-outlined text-[12px]">pending</span>
+                            Con Deuda
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-error/10 border border-error/30 text-error whitespace-nowrap">
+                            <span className="material-symbols-outlined text-[12px]">error</span>
+                            Pendiente
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center font-sans">
+                        <div className="flex items-center justify-center gap-1">
+                          {record.debt_amount > 0 && (
+                            <button
+                              onClick={() => handleOpenAbono(record)}
+                              className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-[10px] font-bold transition-colors"
+                              title="Abonar a la deuda de esta entrega"
+                            >
+                              Abonar
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteRecord(record)}
+                            disabled={deletingId === record.id}
+                            className="p-1 rounded text-on-surface-variant hover:text-error transition-colors"
+                            title="Eliminar registro"
+                          >
+                            {deletingId === record.id ? (
+                              <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ─── Modal 1: Registrar / Editar Entrega de Lote ─── */}
-      {showBatchModal && (
+      {/* ─── Modal 1: Registrar Entrega / Pago de Mano de Obra ─── */}
+      {showTransactionModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowBatchModal(false)} />
-          <div className="relative neu-surface w-full max-w-md animate-scale-in">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowTransactionModal(false)} />
+          <div className="relative neu-surface w-full max-w-md animate-scale-in max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
               <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">inventory_2</span>
-                {batchEditId ? 'Editar Entrega de Lote' : 'Registrar Entrega de Lote'}
+                <span className="material-symbols-outlined text-primary">add_task</span>
+                Registrar Entrega / Pago de Mano de Obra
               </h2>
-              <button onClick={() => setShowBatchModal(false)} className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors">
+              <button onClick={() => setShowTransactionModal(false)} className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
@@ -2050,15 +2040,15 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
 
               {/* Operario */}
               <div>
-                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Operario / Empleado *</label>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Operario / Taller *</label>
                 <div className="space-y-2">
                   <select
                     className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
-                    value={batchForm.operator_id}
+                    value={transactionForm.operator_id}
                     onChange={e => {
                       const id = e.target.value
                       const match = dependientes.find(d => d.id === id) || providers.find(p => p.id === id)
-                      setBatchForm(f => ({
+                      setTransactionForm(f => ({
                         ...f,
                         operator_id: id,
                         operator_name: match ? match.name : ''
@@ -2078,201 +2068,98 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
                     </optgroup>
                   </select>
 
-                  {!batchForm.operator_id && (
+                  {!transactionForm.operator_id && (
                     <input
                       type="text"
                       className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none"
-                      placeholder="Nombre del operario (ej. JUAN LUIS)..."
-                      value={batchForm.operator_name}
-                      onChange={e => setBatchForm(f => ({ ...f, operator_name: e.target.value }))}
+                      placeholder="Nombre del operario (ej. Juan Luis - Villa Ingenio)..."
+                      value={transactionForm.operator_name}
+                      onChange={e => setTransactionForm(f => ({ ...f, operator_name: e.target.value }))}
                     />
                   )}
                 </div>
               </div>
 
-              {/* Cantidad & Tarifa Base */}
+              {/* Concepto / Proceso */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Concepto / Proceso *</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
+                  placeholder="Ej. Confección-armado - MOCHILAS B1"
+                  value={transactionForm.concept}
+                  onChange={e => setTransactionForm(f => ({ ...f, concept: e.target.value }))}
+                />
+              </div>
+
+              {/* Cantidad & Precio Unitario */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Prendas Entregadas *</label>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Cantidad (Prendas) *</label>
                   <input
                     type="number"
                     min="1"
                     className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
                     placeholder="Ej. 280"
-                    value={batchForm.quantity}
-                    onChange={e => setBatchForm(f => ({ ...f, quantity: e.target.value }))}
+                    value={transactionForm.quantity}
+                    onChange={e => setTransactionForm(f => ({ ...f, quantity: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Tarifa / Costo Unit. (Bs)</label>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Precio Unitario (Bs) *</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
                     placeholder="8.00"
-                    value={batchForm.unit_cost}
-                    onChange={e => setBatchForm(f => ({ ...f, unit_cost: e.target.value }))}
+                    value={transactionForm.unit_price}
+                    onChange={e => setTransactionForm(f => ({ ...f, unit_price: e.target.value }))}
                   />
                 </div>
               </div>
 
-              {/* Subtotal calculado */}
-              <div className="bg-surface-container/40 p-3 rounded-xl border border-outline-variant/30 flex justify-between items-center">
-                <span className="text-xs text-on-surface-variant font-bold uppercase">Subtotal Devengado:</span>
-                <span className="text-base font-mono font-bold text-emerald-400">
-                  {formatCurrency((Number(batchForm.quantity) || 0) * (Number(batchForm.unit_cost) || defaultBaseCost))}
-                </span>
-              </div>
-
-              {/* Fecha & Checkbox Entregado */}
-              <div className="grid grid-cols-2 gap-3 items-center">
+              {/* Monto Total & Monto Pagado */}
+              <div className="grid grid-cols-2 gap-3 bg-surface-container/40 p-3.5 rounded-2xl border border-outline-variant/30">
                 <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Fecha</label>
+                  <label className="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Monto Total (Devengado)</label>
                   <input
-                    type="date"
-                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
-                    value={batchForm.batch_date}
-                    onChange={e => setBatchForm(f => ({ ...f, batch_date: e.target.value }))}
-                  />
-                </div>
-                <div className="pt-4">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4"
-                      checked={batchForm.is_delivered}
-                      onChange={e => setBatchForm(f => ({ ...f, is_delivered: e.target.checked }))}
-                    />
-                    <span className="text-xs font-bold text-on-surface">¿Lote Entregado?</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Observaciones */}
-              <div>
-                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Observaciones / Arreglos</label>
-                <textarea
-                  className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none resize-none h-16"
-                  placeholder="Ej. 290 mochilas arregladas, lote A conforme..."
-                  value={batchForm.notes}
-                  onChange={e => setBatchForm(f => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowBatchModal(false)}
-                  className="px-4 py-2.5 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveBatch}
-                  disabled={saving}
-                  className="px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-md"
-                >
-                  {saving ? (
-                    <span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                  ) : (
-                    <span className="material-symbols-outlined text-[18px]">save</span>
-                  )}
-                  {saving ? 'Guardando...' : (batchEditId ? 'Actualizar' : 'Guardar Entrega')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Modal 2: Registrar Adelanto / Pago ─── */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPaymentModal(false)} />
-          <div className="relative neu-surface w-full max-w-md animate-scale-in">
-            <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
-              <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-emerald-400">payments</span>
-                Registrar Adelanto / Pago
-              </h2>
-              <button onClick={() => setShowPaymentModal(false)} className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
-
-              {/* Operario */}
-              <div>
-                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Operario / Empleado *</label>
-                <div className="space-y-2">
-                  <select
-                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
-                    value={paymentForm.operator_id}
-                    onChange={e => {
-                      const id = e.target.value
-                      const match = dependientes.find(d => d.id === id) || providers.find(p => p.id === id)
-                      setPaymentForm(f => ({
-                        ...f,
-                        operator_id: id,
-                        operator_name: match ? match.name : ''
-                      }))
-                    }}
-                  >
-                    <option value="">— Escribir / Seleccionar Operario —</option>
-                    <optgroup label="Empleados / Dependientes" className="bg-surface text-on-surface">
-                      {dependientes.map(d => (
-                        <option key={d.id} value={d.id} className="bg-surface text-on-surface">{d.name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Talleres / Proveedores" className="bg-surface text-on-surface">
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id} className="bg-surface text-on-surface">{p.name}</option>
-                      ))}
-                    </optgroup>
-                  </select>
-
-                  {!paymentForm.operator_id && (
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none"
-                      placeholder="Nombre del operario (ej. JUAN LUIS)..."
-                      value={paymentForm.operator_name}
-                      onChange={e => setPaymentForm(f => ({ ...f, operator_name: e.target.value }))}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Concepto & Monto */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Concepto *</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
-                    placeholder="Ej. Adelanto 1, Cancelado..."
-                    value={paymentForm.concept}
-                    onChange={e => setPaymentForm(f => ({ ...f, concept: e.target.value }))}
+                    type="number"
+                    step="0.01"
+                    className="w-full px-2 py-1.5 bg-surface-container/80 border border-outline-variant/30 rounded-xl text-sm text-white font-mono font-bold outline-none"
+                    value={transactionForm.amount}
+                    onChange={e => setTransactionForm(f => ({ ...f, amount: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Monto (Bs) *</label>
+                  <label className="block text-[9px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Monto Pagado / Adelanto</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
-                    placeholder="Ej. 1000.00"
-                    value={paymentForm.amount}
-                    onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                    className="w-full px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-sm text-white font-mono font-bold outline-none focus:border-emerald-400"
+                    placeholder={transactionForm.amount || '0.00'}
+                    value={transactionForm.advance_amount}
+                    onChange={e => setTransactionForm(f => ({ ...f, advance_amount: e.target.value }))}
                   />
                 </div>
               </div>
+
+              {/* Saldo adeudado calculado */}
+              {(() => {
+                const total = Number(transactionForm.amount) || 0
+                const paid = transactionForm.advance_amount !== '' ? Number(transactionForm.advance_amount) : total
+                const debt = Math.max(0, total - paid)
+
+                return (
+                  <div className="flex justify-between items-center px-3 py-2 rounded-xl bg-surface-container/60 border border-outline-variant/20">
+                    <span className="text-xs text-on-surface-variant font-bold uppercase">Monto Adeudado:</span>
+                    <span className={`font-mono font-extrabold text-sm ${debt > 0 ? 'text-amber-400' : 'text-primary'}`}>
+                      {formatCurrency(debt)}
+                    </span>
+                  </div>
+                )
+              })()}
 
               {/* Método de Pago & Fecha */}
               <div className="grid grid-cols-2 gap-3">
@@ -2280,8 +2167,8 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
                   <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Método de Pago</label>
                   <select
                     className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
-                    value={paymentForm.payment_method}
-                    onChange={e => setPaymentForm(f => ({ ...f, payment_method: e.target.value }))}
+                    value={transactionForm.payment_method}
+                    onChange={e => setTransactionForm(f => ({ ...f, payment_method: e.target.value }))}
                   >
                     <option value="efectivo" className="bg-surface text-on-surface">Efectivo</option>
                     <option value="transferencia" className="bg-surface text-on-surface">Transferencia</option>
@@ -2290,24 +2177,24 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Fecha del Pago</label>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Fecha</label>
                   <input
                     type="date"
                     className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
-                    value={paymentForm.date}
-                    onChange={e => setPaymentForm(f => ({ ...f, date: e.target.value }))}
+                    value={transactionForm.date}
+                    onChange={e => setTransactionForm(f => ({ ...f, date: e.target.value }))}
                   />
                 </div>
               </div>
 
               {/* Notas */}
               <div>
-                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Notas adicionales</label>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Notas / Descripción</label>
                 <textarea
                   className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface placeholder-on-surface-variant/40 outline-none resize-none h-16"
-                  placeholder="Detalles sobre el pago..."
-                  value={paymentForm.notes}
-                  onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Detalles sobre la entrega o lote..."
+                  value={transactionForm.notes}
+                  onChange={e => setTransactionForm(f => ({ ...f, notes: e.target.value }))}
                 />
               </div>
 
@@ -2315,14 +2202,131 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
               <div className="flex gap-3 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowPaymentModal(false)}
+                  onClick={() => setShowTransactionModal(false)}
                   className="px-4 py-2.5 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={handleSavePayment}
+                  onClick={handleSaveTransaction}
+                  disabled={saving}
+                  className="px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-md"
+                >
+                  {saving ? (
+                    <span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                  ) : (
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                  )}
+                  {saving ? 'Guardando...' : 'Guardar Transacción'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal 2: Abonar a Deuda de Entrega ─── */}
+      {showAbonoModal && abonoTarget && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAbonoModal(false)} />
+          <div className="relative neu-surface w-full max-w-md animate-scale-in">
+            <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+              <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-400">payments</span>
+                Abonar Saldo a {abonoTarget.operator_name}
+              </h2>
+              <button onClick={() => setShowAbonoModal(false)} className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
+
+              <div className="bg-surface-container/50 p-3.5 rounded-2xl border border-outline-variant/30 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-on-surface-variant">Concepto:</span>
+                  <span className="font-bold text-white">{abonoTarget.concept}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-on-surface-variant">Monto Total Entrega:</span>
+                  <span className="font-mono font-bold text-white">{formatCurrency(abonoTarget.amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-on-surface-variant">Pagado hasta hoy:</span>
+                  <span className="font-mono font-bold text-emerald-400">{formatCurrency(abonoTarget.paid_amount)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-outline-variant/20">
+                  <span className="text-amber-400 font-bold uppercase">Deuda Actual:</span>
+                  <span className="font-mono font-extrabold text-amber-400">{formatCurrency(abonoTarget.debt_amount)}</span>
+                </div>
+              </div>
+
+              {/* Monto a abonar */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Monto a Abonar (Bs) *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-white font-mono font-bold outline-none focus:ring-1 focus:ring-emerald-400"
+                  placeholder="0.00"
+                  value={abonoForm.amount}
+                  onChange={e => setAbonoForm(f => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+
+              {/* Método & Fecha */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Método de Pago</label>
+                  <select
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none cursor-pointer"
+                    value={abonoForm.payment_method}
+                    onChange={e => setAbonoForm(f => ({ ...f, payment_method: e.target.value }))}
+                  >
+                    <option value="efectivo" className="bg-surface text-on-surface">Efectivo</option>
+                    <option value="transferencia" className="bg-surface text-on-surface">Transferencia</option>
+                    <option value="tarjeta" className="bg-surface text-on-surface">Tarjeta</option>
+                    <option value="qr" className="bg-surface text-on-surface">Pago QR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Fecha del Abono</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none"
+                    value={abonoForm.date}
+                    onChange={e => setAbonoForm(f => ({ ...f, date: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Notas del Abono</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
+                  placeholder="Detalles sobre este abono..."
+                  value={abonoForm.notes}
+                  onChange={e => setAbonoForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAbonoModal(false)}
+                  className="px-4 py-2.5 rounded-xl neu-raised-sm text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAbono}
                   disabled={saving}
                   className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-md"
                 >
@@ -2331,7 +2335,7 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
                   ) : (
                     <span className="material-symbols-outlined text-[18px]">save</span>
                   )}
-                  {saving ? 'Guardando...' : 'Registrar Pago'}
+                  {saving ? 'Guardando...' : 'Registrar Abono'}
                 </button>
               </div>
             </div>
