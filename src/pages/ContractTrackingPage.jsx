@@ -1683,7 +1683,7 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
                   <tr key={proc.id} className="hover:bg-surface-container-high/30 transition-colors">
                     <td className="py-3 px-3 font-semibold text-white">{proc.name}</td>
                     <td className="py-3 px-3 text-center">{COST_TYPE_LABELS[proc.costType] || proc.costType}</td>
-                    <td className="py-3 px-3 text-right font-mono">{formatCurrency(proc.budgeted)}</td>
+                    <td className="py-3 px-3 text-right font-mono">{formatCurrency(proc.unitCost)}</td>
                     <td className="py-3 px-3 text-right font-mono text-emerald-400 font-bold">{formatCurrency(proc.spent)}</td>
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2 max-w-[120px] mx-auto">
