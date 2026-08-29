@@ -1484,13 +1484,19 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
     const spent = matchingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
     const budgeted = Number(proc.total_cost) || 0
     const progress = budgeted > 0 ? Math.min(100, (spent / budgeted) * 100) : (spent > 0 ? 100 : 0)
-    
+    let qty = totalUnits
+    if (proc.cost_type === 'por_hora') {
+      qty = ((Number(proc.time_minutes) || 0) / 60) * totalUnits
+    } else if (proc.cost_type === 'fijo_por_pedido') {
+      qty = 1
+    }
+
     return {
       id: proc.id,
       name,
       costType: proc.cost_type || 'por_unidad',
       unitCost: Number(proc.cost) || 0,
-      quantity: Number(proc.quantity) || Number(proc.time_minutes) || totalUnits,
+      quantity: qty,
       budgeted,
       spent,
       progress

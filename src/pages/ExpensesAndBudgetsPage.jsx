@@ -1732,8 +1732,15 @@ export default function ExpensesAndBudgetsPage() {
                               updateForm('categoryKey', categoryKey);
                               updateForm('subcategory', subcategory);
                               updateForm('specificItem', proc.process_name || proc.name);
-                              updateForm('quantity', 1);
-                              updateForm('unitPrice', proc.estimated_cost || 0);
+                              const itemQty = selectedQuoteForExpense.quote_items?.[0]?.quantity || 1;
+                              let qty = itemQty;
+                              if (proc.cost_type === 'por_hora') {
+                                qty = ((Number(proc.time_minutes) || 0) / 60) * itemQty;
+                              } else if (proc.cost_type === 'fijo_por_pedido') {
+                                qty = 1;
+                              }
+                              updateForm('quantity', qty);
+                              updateForm('unitPrice', proc.cost || 0);
                               setSelectedQuoteItem({ type: 'proceso', data: proc });
                               setCurrentStep(5);
                             }}
