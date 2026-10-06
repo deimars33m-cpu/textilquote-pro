@@ -202,9 +202,9 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative neu-surface w-full max-w-lg animate-scale-in">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-        <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+      <div className="relative neu-surface w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-scale-in shadow-2xl">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent z-20" />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10 shrink-0">
           <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">add_task</span>
             Nuevo Seguimiento de Contrato
@@ -213,7 +213,7 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-modal-scrollbar">
           {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
 
           <div>
@@ -2024,8 +2024,8 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
       {showTransactionModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowTransactionModal(false)} />
-          <div className="relative neu-surface w-full max-w-md animate-scale-in max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+          <div className="relative neu-surface w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-scale-in shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10 shrink-0">
               <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">add_task</span>
                 Registrar Entrega / Pago de Mano de Obra
@@ -2035,7 +2035,7 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-modal-scrollbar">
               {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
 
               {/* Operario */}
@@ -2230,8 +2230,8 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
       {showAbonoModal && abonoTarget && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAbonoModal(false)} />
-          <div className="relative neu-surface w-full max-w-md animate-scale-in">
-            <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
+          <div className="relative neu-surface w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-scale-in shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10 shrink-0">
               <h2 className="text-headline-sm font-semibold text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-400">payments</span>
                 Abonar Saldo a {abonoTarget.operator_name}
@@ -2241,7 +2241,7 @@ function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, 
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-modal-scrollbar">
               {error && <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">{error}</div>}
 
               <div className="bg-surface-container/50 p-3.5 rounded-2xl border border-outline-variant/30 space-y-1.5 text-xs">

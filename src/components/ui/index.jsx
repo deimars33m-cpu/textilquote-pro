@@ -14,10 +14,10 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative neu-surface w-full ${sizes[size]} max-h-[90vh] overflow-y-auto animate-scale-in`}>
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
-        <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10">
-          <h2 className="text-headline-sm font-semibold text-white">{title}</h2>
+      <div className={`relative neu-surface w-full ${sizes[size]} max-h-[90vh] flex flex-col overflow-hidden animate-scale-in shadow-2xl`}>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent z-20"></div>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container/95 backdrop-blur-sm rounded-t-[1.5rem] z-10 shrink-0">
+          <h2 className="text-headline-sm font-semibold text-on-surface dark:text-white">{title}</h2>
           <button
             onClick={onClose}
             className="neu-raised-sm p-1.5 rounded-lg text-on-surface-variant hover:text-primary transition-colors"
@@ -25,7 +25,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1 custom-modal-scrollbar">
           {children}
         </div>
       </div>

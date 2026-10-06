@@ -439,21 +439,79 @@ input::-webkit-inner-spin-button {
 
 /* ── Scrollbar styling ── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
   background: var(--color-surface-container-low);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-outline-variant);
-  border-radius: 3px;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-outline);
+}
+
+/* ── Custom Scrollbar for Modals and scrollable containers ── */
+.custom-modal-scrollbar,
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 122, 0, 0.45) rgba(0, 0, 0, 0.05);
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+  margin: 4px 0;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-thumb,
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 122, 0, 0.5);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 122, 0, 0.9);
+}
+
+[data-theme="dark"] .custom-modal-scrollbar,
+[data-theme="dark"] .custom-scrollbar {
+  scrollbar-color: rgba(0, 245, 255, 0.45) rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .custom-modal-scrollbar::-webkit-scrollbar-track,
+[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .custom-modal-scrollbar::-webkit-scrollbar-thumb,
+[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 245, 255, 0.45);
+}
+
+[data-theme="dark"] .custom-modal-scrollbar::-webkit-scrollbar-thumb:hover,
+[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 245, 255, 0.9);
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.5);
 }
 
 /* ── Input autofill override ── */
