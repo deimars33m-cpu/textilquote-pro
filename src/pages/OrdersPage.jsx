@@ -3276,16 +3276,45 @@ export default function OrdersPage() {
                       })()}
 
                       {/* Montos Financieros en Caja Compacta */}
-                      <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
-                        <div>
-                          <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Total</span>
-                          <span className="font-bold text-white text-sm">{formatCurrency(order.total_amount)}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Cobrado / Adelanto</span>
-                          <span className="font-bold text-emerald-400 text-sm">{formatCurrency(order.paid_amount)}</span>
-                        </div>
-                      </div>
+                      {(() => {
+                        const total = Number(order.total_amount || 0);
+                        const paid = Number(order.paid_amount || 0);
+                        const balance = Math.max(0, total - paid);
+                        return (
+                          <div className="p-2.5 rounded-xl bg-surface-container-high/50 border border-white/10 grid grid-cols-2 gap-2 font-mono text-xs items-center">
+                            <div className="text-left">
+                              <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold tracking-wider">
+                                Total Pedido
+                              </span>
+                              <span className="font-bold text-on-surface dark:text-white text-sm block">
+                                {formatCurrency(total)}
+                              </span>
+                              <span className="text-[10px] text-on-surface-variant block mt-0.5 font-sans">
+                                Cobrado: <span className="text-emerald-400 font-mono font-semibold">{formatCurrency(paid)}</span>
+                              </span>
+                            </div>
+                            <div className="text-right pl-2 border-l border-white/10">
+                              <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold tracking-wider">
+                                Saldo Pendiente
+                              </span>
+                              <span className={`font-bold font-mono text-sm block ${
+                                balance > 0 
+                                  ? 'text-[#ff4d4f] dark:text-[#ff6b6b] drop-shadow-[0_0_8px_rgba(255,77,79,0.35)]' 
+                                  : 'text-emerald-400'
+                              }`}>
+                                {formatCurrency(balance)}
+                              </span>
+                              <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md mt-0.5 ${
+                                balance > 0
+                                  ? 'bg-error-container/30 text-error border border-error/25'
+                                  : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                              }`}>
+                                {balance > 0 ? 'Por Cobrar' : 'Al Día'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Botones de Estados */}
                       <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
@@ -3318,7 +3347,7 @@ export default function OrdersPage() {
                     <tr className="bg-surface-container-high text-xs uppercase tracking-wider font-mono text-on-surface-variant">
                       <th className="text-left px-4 py-3 min-w-[120px]">Pedido y Fecha</th>
                       <th className="text-left px-4 py-3 min-w-[160px]">Cliente / Detalle</th>
-                      <th className="text-right px-4 py-3 min-w-[140px]">Montos (Total / Adelanto)</th>
+                      <th className="text-right px-4 py-3 min-w-[160px]">Montos (Cobranza)</th>
                       <th className="text-center px-4 py-3 min-w-[170px]">Estados / Acciones</th>
                     </tr>
                   </thead>
@@ -3432,12 +3461,35 @@ export default function OrdersPage() {
                               })()}
                             </td>
 
-                            {/* COLUMNA 3: Montos */}
-                            <td className="px-4 py-3 text-sm text-right font-mono min-w-[140px]">
-                              <span className="font-bold text-white block text-sm">{formatCurrency(order.total_amount)}</span>
-                              <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">
-                                Abono: {formatCurrency(order.paid_amount || 0)}
-                              </span>
+                            {/* COLUMNA 3: Montos (Total, Adelanto, Saldo Pendiente) */}
+                            <td className="px-4 py-3 text-sm text-right font-mono min-w-[160px]">
+                              {(() => {
+                                const total = Number(order.total_amount || 0);
+                                const paid = Number(order.paid_amount || 0);
+                                const balance = Math.max(0, total - paid);
+                                return (
+                                  <div className="flex flex-col items-end">
+                                    <div className="flex items-baseline gap-1.5 justify-end">
+                                      <span className="text-[9px] text-on-surface-variant font-sans uppercase font-semibold">Total:</span>
+                                      <span className="font-bold text-on-surface dark:text-white text-sm">{formatCurrency(total)}</span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1 justify-end text-[10px] text-on-surface-variant mt-0.5">
+                                      <span>Cobrado:</span>
+                                      <span className="text-emerald-400 font-mono font-medium">{formatCurrency(paid)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 justify-end mt-1 pt-1 border-t border-white/10 w-full">
+                                      <span className="text-[9px] font-sans font-bold uppercase text-on-surface-variant">Saldo:</span>
+                                      <span className={`font-bold text-xs ${
+                                        balance > 0 
+                                          ? 'text-[#ff4d4f] dark:text-[#ff6b6b] drop-shadow-[0_0_6px_rgba(255,77,79,0.35)]' 
+                                          : 'text-emerald-400'
+                                      }`}>
+                                        {formatCurrency(balance)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {/* COLUMNA 4: Estados y Acciones */}
