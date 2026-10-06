@@ -549,6 +549,18 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('todos')
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const [showAnalytics, setShowAnalytics] = useState(false)
+  const [showWeeklyStats, setShowWeeklyStats] = useState(() => {
+    const saved = localStorage.getItem('orders_show_weekly_stats')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  const toggleWeeklyStats = () => {
+    setShowWeeklyStats(prev => {
+      const next = !prev
+      localStorage.setItem('orders_show_weekly_stats', String(next))
+      return next
+    })
+  }
 
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
@@ -3003,10 +3015,40 @@ export default function OrdersPage() {
             </Card>
           </div>
 
+          {/* Barra de Toggles de Resúmenes y Estadísticas */}
+          <div className="flex justify-end items-center gap-2 flex-wrap">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={toggleWeeklyStats}
+              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5 cursor-pointer shadow-sm"
+              title={showWeeklyStats ? 'Ocultar panel de ventas semanales' : 'Mostrar panel de ventas semanales'}
+            >
+              <span className="material-symbols-outlined text-[16px] text-primary">
+                {showWeeklyStats ? 'expand_less' : 'calendar_view_week'}
+              </span>
+              {showWeeklyStats ? 'Ocultar Resumen Semanal' : 'Ver Resumen Semanal'}
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5 cursor-pointer shadow-sm"
+              title={showAnalytics ? 'Ocultar estadísticas avanzadas' : 'Mostrar estadísticas avanzadas y ROI'}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {showAnalytics ? 'expand_less' : 'analytics'}
+              </span>
+              {showAnalytics ? 'Ocultar Estadísticas Avanzadas' : 'Ver Estadísticas Avanzadas y ROI'}
+            </Button>
+          </div>
+
           {/* =========================================================================
               PANEL DE ESTADÍSTICAS DIARIAS Y META SEMANAL (LUNES A SÁBADO)
               ========================================================================= */}
-          <div className="glass-card p-5 border border-primary/20 space-y-5 rounded-2xl relative overflow-hidden text-left shadow-xl bg-surface-container/60">
+          {showWeeklyStats && (
+            <div className="glass-card p-5 border border-primary/20 space-y-5 rounded-2xl relative overflow-hidden text-left shadow-xl bg-surface-container/60 animate-fade-in">
             {/* Luz de fondo ambiental */}
             <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -3277,23 +3319,12 @@ export default function OrdersPage() {
                 )}
               </div>
             )}
-          </div>
+            </div>
+          )}
 
-          {/* Toggle de Estadísticas Avanzadas */}
-          <div className="flex justify-end">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">
-                {showAnalytics ? 'expand_less' : 'analytics'}
-              </span>
-              {showAnalytics ? 'Ocultar Estadísticas Avanzadas' : 'Ver Estadísticas Avanzadas y ROI'}
-            </Button>
-          </div>
-
+          {/* =========================================================================
+              PANEL DE ESTADÍSTICAS AVANZADAS Y ROI
+              ========================================================================= */}
           {showAnalytics && (
             <div className="glass-card p-6 border border-outline-variant/30 space-y-6 relative overflow-hidden text-left">
               {/* Luz de fondo sutil cian en la parte baja derecha */}
