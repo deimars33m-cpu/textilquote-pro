@@ -524,6 +524,25 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
+  const getWeeklySalesGoal = () => {
+    const goals = Array.isArray(activeSettings?.salesGoals) ? activeSettings.salesGoals : []
+    const goal = goals.find(g => g.period === 'semanal' && (g.categoryId === 'global' || !g.categoryId))
+    return goal ? Number(goal.targetAmount) : (Number(activeSettings?.weeklySalesGoal) || 6000)
+  }
+
+  const updateWeeklySalesGoal = (amount) => {
+    const targetAmount = parseFloat(amount) || 0
+    const currentGoals = Array.isArray(activeSettings?.salesGoals) ? [...activeSettings.salesGoals] : []
+    const idx = currentGoals.findIndex(g => g.period === 'semanal' && (g.categoryId === 'global' || !g.categoryId))
+    let newGoals
+    if (idx >= 0) {
+      newGoals = currentGoals.map((g, i) => i === idx ? { ...g, targetAmount } : g)
+    } else {
+      newGoals = [...currentGoals, { id: 'goal_weekly_global', categoryId: 'global', period: 'semanal', targetAmount }]
+    }
+    saveBudgetsAndGoals(activeSettings.budgets || [], newGoals)
+  }
+
   // --- Métodos de Gastos Fijos Mensuales ---
   const addFixedExpense = (item) => {
     setSettings(prev => ({
@@ -576,6 +595,8 @@ export function GlobalSettingsProvider({ children }) {
       addExpenseSpecificItem,
       deleteExpenseSpecificItem,
       saveBudgetsAndGoals,
+      getWeeklySalesGoal,
+      updateWeeklySalesGoal,
       addFixedExpense,
       updateFixedExpense,
       deleteFixedExpense,

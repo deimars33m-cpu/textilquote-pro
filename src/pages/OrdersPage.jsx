@@ -528,7 +528,13 @@ export default function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const convertQuoteId = searchParams.get('convertQuoteId')
-  const { settings, getServicePrice } = useGlobalSettings()
+  const { settings, getServicePrice, getWeeklySalesGoal, updateWeeklySalesGoal } = useGlobalSettings()
+
+  // Semanas y Metas de Ventas (Lunes a Sábado)
+  const [weekOffset, setWeekOffset] = useState(0) // 0 = actual, -1 = anterior, +1 = siguiente
+  const [showGoalModal, setShowGoalModal] = useState(false)
+  const [goalModalInput, setGoalModalInput] = useState('')
+  const [showWeekCategories, setShowWeekCategories] = useState(true)
 
   // Estado de datos
   const [orders, setOrders] = useState([])
@@ -970,6 +976,126 @@ export default function OrdersPage() {
       pendingCobro
     }
   }, [orders])
+
+  // Estadísticas Semanales (Lunes a Sábado) y Meta de Ventas
+  const weeklyStats = useMemo(() => {
+    const baseDate = new Date()
+    baseDate.setDate(baseDate.getDate() + (weekOffset * 7))
+
+    const dayOfWeek = baseDate.getDay() // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+    const diffToMonday = baseDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+    const monday = new Date(baseDate)
+    monday.setDate(diffToMonday)
+    monday.setHours(0, 0, 0, 0)
+
+    const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+    const dayShorts = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB']
+    const todayStr = getTodayStr()
+
+    const days = []
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      const dateStr = getTodayStr(d)
+      days.push({
+        dayIndex: i,
+        dayName: dayNames[i],
+        dayShort: dayShorts[i],
+        date: d,
+        dateStr: dateStr,
+        isToday: dateStr === todayStr,
+        sales: 0,
+        ordersCount: 0,
+        orders: []
+      })
+    }
+
+    const startDateStr = days[0].dateStr
+    const endDateStr = days[5].dateStr
+
+    let totalWeeklySales = 0
+    let totalWeeklyOrdersCount = 0
+    const categoryTotals = {}
+
+    const catMap = {
+      produccion_textil: { label: 'Confección / Producción Textil', icon: 'checkroom', color: '#ff7a00' },
+      servicios_sublimacion: { label: 'Sublimación (Metro / Paneles)', icon: 'texture', color: '#a855f7' },
+      servicios_bordado: { label: 'Bordado Computarizado', icon: 'diamond', color: '#3b82f6' },
+      servicios_dtf: { label: 'Impresión / Estampado DTF', icon: 'print', color: '#f97316' },
+      servicios_uv_dtf: { label: 'Logos UV-DTF', icon: 'layers', color: '#ec4899' },
+      servicios_corte: { label: 'Corte de Vinil Textil / Adhesivo', icon: 'content_cut', color: '#10b981' }
+    }
+
+    orders.forEach(o => {
+      if (o.status === 'cancelado') return
+      const orderDateStr = o.created_at?.split('T')[0]
+      if (!orderDateStr) return
+
+      const dayObj = days.find(d => d.dateStr === orderDateStr)
+      const isWithinWeek = orderDateStr >= startDateStr && orderDateStr <= endDateStr
+
+      if (isWithinWeek) {
+        const orderAmount = parseFloat(o.total_amount) || 0
+        totalWeeklySales += orderAmount
+        totalWeeklyOrdersCount++
+
+        if (dayObj) {
+          dayObj.sales += orderAmount
+          dayObj.ordersCount++
+          dayObj.orders.push(o)
+        }
+
+        const items = o.order_items || []
+        if (items.length > 0) {
+          items.forEach(it => {
+            const itemPrice = parseFloat(it.total_price) || 0
+            const catId = it.category || 'produccion_textil'
+            if (!categoryTotals[catId]) {
+              const info = catMap[catId] || { label: catId.replace(/_/g, ' '), icon: 'category', color: '#06b6d4' }
+              categoryTotals[catId] = { id: catId, label: info.label, icon: info.icon, color: info.color, amount: 0, count: 0 }
+            }
+            categoryTotals[catId].amount += itemPrice
+            categoryTotals[catId].count++
+          })
+        } else {
+          const firstCat = o.category || 'produccion_textil'
+          if (!categoryTotals[firstCat]) {
+            const info = catMap[firstCat] || { label: firstCat.replace(/_/g, ' '), icon: 'category', color: '#06b6d4' }
+            categoryTotals[firstCat] = { id: firstCat, label: info.label, icon: info.icon, color: info.color, amount: 0, count: 0 }
+          }
+          categoryTotals[firstCat].amount += orderAmount
+          categoryTotals[firstCat].count++
+        }
+      }
+    })
+
+    const weeklyGoal = typeof getWeeklySalesGoal === 'function' ? getWeeklySalesGoal() : 6000
+    const progressPct = weeklyGoal > 0 ? (totalWeeklySales / weeklyGoal) * 100 : 0
+    const remaining = Math.max(0, weeklyGoal - totalWeeklySales)
+    const surplus = totalWeeklySales > weeklyGoal ? totalWeeklySales - weeklyGoal : 0
+    const isGoalMet = totalWeeklySales >= weeklyGoal
+
+    const categoriesList = Object.values(categoryTotals)
+      .map(c => ({
+        ...c,
+        pct: totalWeeklySales > 0 ? (c.amount / totalWeeklySales) * 100 : 0
+      }))
+      .sort((a, b) => b.amount - a.amount)
+
+    return {
+      days,
+      startDateStr,
+      endDateStr,
+      totalWeeklySales,
+      totalWeeklyOrdersCount,
+      weeklyGoal,
+      progressPct,
+      remaining,
+      surplus,
+      isGoalMet,
+      categoriesList
+    }
+  }, [orders, weekOffset, settings, getWeeklySalesGoal])
 
   // Estadísticas avanzadas y ROI (Task #3 - Especializadas)
   const advancedStats = useMemo(() => {
@@ -2849,6 +2975,277 @@ export default function OrdersPage() {
                 </div>
               </div>
             </Card>
+          </div>
+
+          {/* =========================================================================
+              PANEL DE ESTADÍSTICAS DIARIAS Y META SEMANAL (LUNES A SÁBADO)
+              ========================================================================= */}
+          <div className="glass-card p-5 border border-primary/20 space-y-5 rounded-2xl relative overflow-hidden text-left shadow-xl bg-surface-container/60">
+            {/* Luz de fondo ambiental */}
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Cabecera del Panel con Navegación de Semanas */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/30 shadow-sm shrink-0">
+                  <span className="material-symbols-outlined text-primary text-[22px]">calendar_view_week</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-extrabold text-on-surface dark:text-white">
+                      Ventas Semanales y Meta (Lun - Sáb)
+                    </h3>
+                    {weekOffset === 0 ? (
+                      <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Semana Actual
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-white/5 text-on-surface-variant font-mono px-2 py-0.5 rounded-full">
+                        {weekOffset < 0 ? `Hace ${Math.abs(weekOffset)} sem.` : `En +${weekOffset} sem.`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-on-surface-variant font-mono mt-0.5">
+                    {formatDate(weeklyStats.startDateStr)} al {formatDate(weeklyStats.endDateStr)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Navegación y Ajuste de Meta */}
+              <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(w => w - 1)}
+                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
+                  title="Ver semana anterior"
+                >
+                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                  <span className="hidden md:inline">Anterior</span>
+                </button>
+
+                {weekOffset !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setWeekOffset(0)}
+                    className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-bold transition-all border border-primary/20 cursor-pointer"
+                  >
+                    Hoy
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(w => w + 1)}
+                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
+                  title="Ver semana siguiente"
+                >
+                  <span className="hidden md:inline">Siguiente</span>
+                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                </button>
+
+                <div className="h-5 w-px bg-white/10 mx-1 hidden sm:block" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoalModalInput(weeklyStats.weeklyGoal.toString())
+                    setShowGoalModal(true)
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-surface-container-high/70 border border-outline-variant/40 hover:border-primary/50 text-xs font-semibold text-on-surface flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Configurar monto de meta semanal"
+                >
+                  <span className="material-symbols-outlined text-primary text-[16px]">edit</span>
+                  Meta: <span className="font-mono font-bold text-primary">{formatCurrency(weeklyStats.weeklyGoal, 0)}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tarjeta de Resumen y Barra de Meta */}
+            <div className="p-4 rounded-2xl bg-surface-container-low/80 border border-white/5 space-y-3 relative z-10">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
+                <div>
+                  <p className="text-[10px] font-mono uppercase font-bold text-on-surface-variant tracking-wider">
+                    Total Ventas Semanales (Lunes a Sábado)
+                  </p>
+                  <div className="flex items-baseline gap-3 mt-1 flex-wrap">
+                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-on-surface dark:text-white">
+                      {formatCurrency(weeklyStats.totalWeeklySales)}
+                    </span>
+                    <span className="text-xs text-on-surface-variant font-mono">
+                      de <strong className="text-primary font-bold">{formatCurrency(weeklyStats.weeklyGoal)}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span className={`text-lg font-mono font-extrabold ${weeklyStats.isGoalMet ? 'text-emerald-400' : 'text-primary'}`}>
+                        {weeklyStats.progressPct.toFixed(1)}%
+                      </span>
+                      <span className="text-xs text-on-surface-variant">alcanzado</span>
+                    </div>
+                    <p className="text-[11px] font-mono mt-0.5">
+                      {weeklyStats.isGoalMet ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1 justify-end">
+                          <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                          ¡Meta Cumplida! (+{formatCurrency(weeklyStats.surplus)})
+                        </span>
+                      ) : (
+                        <span className="text-[#ff7a00] font-semibold">
+                          Faltan {formatCurrency(weeklyStats.remaining)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra de Progreso 3D */}
+              <div className="w-full bg-black/40 rounded-full h-3.5 p-0.5 border border-white/5 overflow-hidden shadow-inner">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${
+                    weeklyStats.isGoalMet
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                      : weeklyStats.progressPct >= 50
+                      ? 'bg-gradient-to-r from-primary to-amber-400 shadow-[0_0_12px_rgba(255,122,0,0.5)]'
+                      : 'bg-gradient-to-r from-[#ff5c00] to-orange-400'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(2, weeklyStats.progressPct))}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between items-center text-[10px] text-on-surface-variant font-mono pt-1">
+                <span>{weeklyStats.totalWeeklyOrdersCount} pedidos registrados en esta semana</span>
+                <span>
+                  Promedio: {formatCurrency(weeklyStats.totalWeeklySales / 6)} / día
+                </span>
+              </div>
+            </div>
+
+            {/* Grilla de los 6 Días (Lunes a Sábado) */}
+            <div className="space-y-2 relative z-10">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-primary">view_week</span>
+                  Ventas Diarias (Lunes a Sábado)
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                {weeklyStats.days.map((day) => {
+                  const dayPct = weeklyStats.totalWeeklySales > 0 ? (day.sales / weeklyStats.totalWeeklySales) * 100 : 0
+                  const formattedDatePart = `${String(day.date.getDate()).padStart(2, '0')}/${String(day.date.getMonth() + 1).padStart(2, '0')}`
+                  return (
+                    <div
+                      key={day.dateStr}
+                      className={`p-3 rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden ${
+                        day.isToday
+                          ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,122,0,0.25)] ring-1 ring-primary/40'
+                          : 'bg-surface-container-high/40 border-outline-variant/30 hover:border-white/20'
+                      }`}
+                    >
+                      {day.isToday && (
+                        <div className="absolute top-0 right-0 bg-primary text-on-primary text-[8px] font-extrabold px-1.5 py-0.5 rounded-bl-lg uppercase tracking-wider shadow-sm">
+                          HOY
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] font-extrabold uppercase tracking-wider font-mono ${
+                            day.isToday ? 'text-primary' : 'text-on-surface-variant'
+                          }`}>
+                            {day.dayShort}
+                          </span>
+                          <span className="text-[10px] text-on-surface-variant font-mono">
+                            {formattedDatePart}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-left">
+                          <p className={`text-sm font-extrabold font-mono ${
+                            day.sales > 0 ? (day.isToday ? 'text-primary' : 'text-white') : 'text-on-surface-variant/60'
+                          }`}>
+                            {formatCurrency(day.sales, 0)}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant mt-0.5 font-sans">
+                            {day.ordersCount === 1 ? '1 pedido' : `${day.ordersCount} pedidos`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Micro barra de proporción */}
+                      <div className="mt-2.5 pt-1.5 border-t border-white/5">
+                        <div className="w-full bg-black/30 rounded-full h-1 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${day.isToday ? 'bg-primary' : 'bg-white/40'}`}
+                            style={{ width: `${dayPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Desglose por Categorías de Venta (Producción, Servicios, etc.) */}
+            {weeklyStats.categoriesList.length > 0 && (
+              <div className="space-y-2.5 pt-2 border-t border-white/5 relative z-10">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-primary">category</span>
+                    Subcategorización por Línea de Venta
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowWeekCategories(!showWeekCategories)}
+                    className="text-[10px] text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    {showWeekCategories ? 'Contraer' : 'Expandir'}
+                    <span className="material-symbols-outlined text-[14px]">
+                      {showWeekCategories ? 'expand_less' : 'expand_more'}
+                    </span>
+                  </button>
+                </div>
+
+                {showWeekCategories && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {weeklyStats.categoriesList.map(cat => (
+                      <div
+                        key={cat.id}
+                        className="p-2.5 rounded-xl bg-surface-container-high/30 border border-outline-variant/20 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white"
+                            style={{ backgroundColor: `${cat.color}25`, border: `1px solid ${cat.color}50` }}
+                          >
+                            <span className="material-symbols-outlined text-[15px]" style={{ color: cat.color }}>
+                              {cat.icon}
+                            </span>
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="text-xs font-bold text-on-surface dark:text-white truncate" title={cat.label}>
+                              {cat.label}
+                            </p>
+                            <p className="text-[10px] text-on-surface-variant font-mono">
+                              {cat.count} {cat.count === 1 ? 'servicio' : 'servicios'} ({cat.pct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 pl-2">
+                          <span className="text-xs font-mono font-bold text-on-surface dark:text-white">
+                            {formatCurrency(cat.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Toggle de Estadísticas Avanzadas */}
@@ -4804,6 +5201,65 @@ export default function OrdersPage() {
       entityData={selectedPaymentOrder}
       onSave={handleSavePayments}
     />
+
+    {/* MODAL PARA CONFIGURAR META SEMANAL */}
+    {showGoalModal && (
+      <Modal
+        isOpen={showGoalModal}
+        onClose={() => setShowGoalModal(false)}
+        title="Configurar Meta Semanal de Ventas"
+        size="sm"
+      >
+        <div className="space-y-4 text-left">
+          <p className="text-xs text-on-surface-variant">
+            Define el monto objetivo de ventas brutas semanales (Lunes a Sábado). Este valor también se actualizará en la Configuración Global.
+          </p>
+
+          <div>
+            <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">
+              Meta Semanal (Bs)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-mono text-on-surface-variant font-bold">
+                Bs
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={goalModalInput}
+                onChange={e => setGoalModalInput(e.target.value)}
+                className="w-full bg-surface-variant/30 dark:bg-[#0d1527] border border-outline-variant/30 rounded-xl pl-9 pr-3 py-2 text-base font-mono font-bold text-on-surface dark:text-white outline-none focus:ring-1 focus:ring-primary/50"
+                placeholder="6000"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowGoalModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const num = parseFloat(goalModalInput) || 6000
+                if (typeof updateWeeklySalesGoal === 'function') {
+                  updateWeeklySalesGoal(num)
+                }
+                setShowGoalModal(false)
+              }}
+            >
+              Guardar Meta
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
     </>
   )
 }

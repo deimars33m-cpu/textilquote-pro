@@ -1134,6 +1134,7 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
   const [editingGoalId, setEditingGoalId] = useState(null)
   const [editGoalTarget, setEditGoalTarget] = useState('')
   const [editGoalPeriod, setEditGoalPeriod] = useState('diario')
+  const [quickWeeklyGoal, setQuickWeeklyGoal] = useState('6000')
 
   const expenseStructure = settings.expenseStructure || {}
 
@@ -1142,9 +1143,29 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
       setLocalBudgets(settings.budgets)
     }
     if (settings.salesGoals) {
-      setLocalSalesGoals(Array.isArray(settings.salesGoals) ? settings.salesGoals : [])
+      const goals = Array.isArray(settings.salesGoals) ? settings.salesGoals : []
+      setLocalSalesGoals(goals)
+      const weekly = goals.find(g => g.period === 'semanal' && (g.categoryId === 'global' || !g.categoryId))
+      if (weekly) {
+        setQuickWeeklyGoal(weekly.targetAmount.toString())
+      }
     }
   }, [settings.budgets, settings.salesGoals])
+
+  const handleSaveQuickWeeklyGoal = () => {
+    const targetAmount = parseFloat(quickWeeklyGoal) || 6000
+    const current = [...localSalesGoals]
+    const idx = current.findIndex(g => g.period === 'semanal' && (g.categoryId === 'global' || !g.categoryId))
+    let updated
+    if (idx >= 0) {
+      updated = current.map((g, i) => i === idx ? { ...g, targetAmount } : g)
+    } else {
+      updated = [...current, { id: 'goal_weekly_global', categoryId: 'global', period: 'semanal', targetAmount }]
+    }
+    setLocalSalesGoals(updated)
+    saveBudgetsAndGoals(localBudgets, updated)
+    showSavedIndicator('budgets_goals_save')
+  }
 
   const handleAddBudget = () => {
     if (!newBudgetLimit) return
@@ -1476,6 +1497,47 @@ function BudgetsAndGoalsEditor({ settings, saveBudgetsAndGoals, showSavedIndicat
             <div>
               <h4 className="text-base font-bold text-on-surface">Metas de Ventas</h4>
               <p className="text-xs text-on-surface-variant">Objetivos de facturación global o por categoría (diario/semanal/mensual).</p>
+            </div>
+          </div>
+
+          {/* Tarjeta destacada: Meta Semanal Principal */}
+          <div className="p-4 rounded-xl neu-pressed border border-primary/30 space-y-3 bg-surface-container-low/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[20px]">calendar_view_week</span>
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-wider text-primary">
+                    Meta Semanal de Ventas (Lunes a Sábado)
+                  </h5>
+                  <p className="text-[11px] text-on-surface-variant">
+                    Monto objetivo de ventas brutas semanales para el panel de Pedidos.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-on-surface-variant font-bold">
+                  Bs
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={quickWeeklyGoal}
+                  onChange={e => setQuickWeeklyGoal(e.target.value)}
+                  className="w-full bg-surface border border-outline rounded-lg pl-8 pr-3 py-2 text-sm font-mono font-bold text-on-surface"
+                  placeholder="6000"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveQuickWeeklyGoal}
+                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg hover:brightness-110 flex items-center gap-1.5 transition-all shadow-md shrink-0"
+              >
+                <span className="material-symbols-outlined text-[16px]">save</span>
+                Guardar Meta
+              </button>
             </div>
           </div>
 
