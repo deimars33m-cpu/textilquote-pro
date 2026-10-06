@@ -6,7 +6,7 @@ import { Card, SearchInput, Button, StatusBadge,
   LoadingSpinner, EmptyState, Select, AlertBanner, Modal,
   Input, Textarea, PaymentStatusModal
 } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, formatQuoteNumber, getTodayStr } from '@/lib/formatters'
+import { formatCurrency, formatDate, formatQuoteNumber, getTodayStr, parseDateToLocalYMD } from '@/lib/formatters'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 
 const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -960,9 +960,10 @@ export default function OrdersPage() {
     let pendingCobro = 0
 
     orders.forEach(o => {
-      const orderDateStr = o.created_at?.split('T')[0]
-      if (orderDateStr === todayStr) {
-        dailySales += parseFloat(o.total_amount) || 0
+      const orderDateStr = parseDateToLocalYMD(o.created_at) || parseDateToLocalYMD(o.delivery_date)
+      const orderAmount = parseFloat(o.total_amount) || (o.order_items || []).reduce((sum, it) => sum + (parseFloat(it.total_price) || 0), 0)
+      if (orderDateStr === todayStr && o.status !== 'cancelado') {
+        dailySales += orderAmount
       }
       if (o.status === 'pendiente' || o.status === 'en_proceso') {
         pendingProduction++
@@ -996,7 +997,7 @@ export default function OrdersPage() {
     for (let i = 0; i < 6; i++) {
       const d = new Date(monday)
       d.setDate(monday.getDate() + i)
-      const dateStr = getTodayStr(d)
+      const dateStr = parseDateToLocalYMD(d)
       days.push({
         dayIndex: i,
         dayName: dayNames[i],
@@ -1006,66 +1007,86 @@ export default function OrdersPage() {
         isToday: dateStr === todayStr,
         sales: 0,
         ordersCount: 0,
-        orders: []
+        orders: [],
+        sundayOrdersCount: 0
       })
     }
 
     const startDateStr = days[0].dateStr
     const endDateStr = days[5].dateStr
 
+    // Domingo posterior de la misma semana comercial
+    const sundayDate = new Date(days[5].date)
+    sundayDate.setDate(sundayDate.getDate() + 1)
+    const sundayDateStr = parseDateToLocalYMD(sundayDate)
+
     let totalWeeklySales = 0
     let totalWeeklyOrdersCount = 0
     const categoryTotals = {}
 
-    const catMap = {
-      produccion_textil: { label: 'Confección / Producción Textil', icon: 'checkroom', color: '#ff7a00' },
-      servicios_sublimacion: { label: 'Sublimación (Metro / Paneles)', icon: 'texture', color: '#a855f7' },
-      servicios_bordado: { label: 'Bordado Computarizado', icon: 'diamond', color: '#3b82f6' },
-      servicios_dtf: { label: 'Impresión / Estampado DTF', icon: 'print', color: '#f97316' },
-      servicios_uv_dtf: { label: 'Logos UV-DTF', icon: 'layers', color: '#ec4899' },
-      servicios_corte: { label: 'Corte de Vinil Textil / Adhesivo', icon: 'content_cut', color: '#10b981' }
+    const resolveCategoryInfo = (rawCat) => {
+      const c = String(rawCat || '').toLowerCase()
+      if (c.includes('uv') && c.includes('dtf')) return { id: 'servicios_uv_dtf', label: 'Logos UV-DTF', icon: 'layers', color: '#ec4899' }
+      if (c.includes('dtf')) return { id: 'servicios_dtf', label: 'Impresión / Estampado DTF', icon: 'print', color: '#f97316' }
+      if (c.includes('sublim')) return { id: 'servicios_sublimacion', label: 'Sublimación (Metro / Paneles)', icon: 'texture', color: '#a855f7' }
+      if (c.includes('bordad')) return { id: 'servicios_bordado', label: 'Bordado Computarizado', icon: 'diamond', color: '#3b82f6' }
+      if (c.includes('corte') || c.includes('vinil')) return { id: 'servicios_corte', label: 'Corte de Vinil Textil / Adhesivo', icon: 'content_cut', color: '#10b981' }
+      if (c.includes('confecc') || c.includes('producc') || c.includes('textil') || c.includes('pedido_cotizado')) return { id: 'produccion_textil', label: 'Confección / Producción Textil', icon: 'checkroom', color: '#ff7a00' }
+      return { id: rawCat || 'otros', label: rawCat ? String(rawCat).replace(/_/g, ' ') : 'Otros Servicios', icon: 'category', color: '#06b6d4' }
     }
 
     orders.forEach(o => {
       if (o.status === 'cancelado') return
-      const orderDateStr = o.created_at?.split('T')[0]
-      if (!orderDateStr) return
 
-      const dayObj = days.find(d => d.dateStr === orderDateStr)
-      const isWithinWeek = orderDateStr >= startDateStr && orderDateStr <= endDateStr
+      // Normalizar fechas de creación y entrega
+      const createdDate = parseDateToLocalYMD(o.created_at)
+      const deliveryDate = parseDateToLocalYMD(o.delivery_date)
 
-      if (isWithinWeek) {
-        const orderAmount = parseFloat(o.total_amount) || 0
-        totalWeeklySales += orderAmount
-        totalWeeklyOrdersCount++
+      // Identificar si corresponde a la semana en curso
+      let matchedDateStr = ''
+      if (createdDate && ((createdDate >= startDateStr && createdDate <= endDateStr) || createdDate === sundayDateStr)) {
+        matchedDateStr = createdDate
+      } else if (deliveryDate && ((deliveryDate >= startDateStr && deliveryDate <= endDateStr) || deliveryDate === sundayDateStr)) {
+        matchedDateStr = deliveryDate
+      }
 
-        if (dayObj) {
-          dayObj.sales += orderAmount
-          dayObj.ordersCount++
-          dayObj.orders.push(o)
-        }
+      if (!matchedDateStr) return
 
-        const items = o.order_items || []
-        if (items.length > 0) {
-          items.forEach(it => {
-            const itemPrice = parseFloat(it.total_price) || 0
-            const catId = it.category || 'produccion_textil'
-            if (!categoryTotals[catId]) {
-              const info = catMap[catId] || { label: catId.replace(/_/g, ' '), icon: 'category', color: '#06b6d4' }
-              categoryTotals[catId] = { id: catId, label: info.label, icon: info.icon, color: info.color, amount: 0, count: 0 }
-            }
-            categoryTotals[catId].amount += itemPrice
-            categoryTotals[catId].count++
-          })
-        } else {
-          const firstCat = o.category || 'produccion_textil'
-          if (!categoryTotals[firstCat]) {
-            const info = catMap[firstCat] || { label: firstCat.replace(/_/g, ' '), icon: 'category', color: '#06b6d4' }
-            categoryTotals[firstCat] = { id: firstCat, label: info.label, icon: info.icon, color: info.color, amount: 0, count: 0 }
+      // Encontrar día correspondiente (si es domingo se asocia a sábado para no perder el pedido ni la venta)
+      const isSundayOrder = matchedDateStr === sundayDateStr
+      const dayObj = days.find(d => d.dateStr === matchedDateStr) || (isSundayOrder ? days[5] : null)
+
+      const orderAmount = parseFloat(o.total_amount) || (o.order_items || []).reduce((sum, it) => sum + (parseFloat(it.total_price) || 0), 0)
+      totalWeeklySales += orderAmount
+      totalWeeklyOrdersCount++
+
+      if (dayObj) {
+        dayObj.sales += orderAmount
+        dayObj.ordersCount++
+        if (isSundayOrder) dayObj.sundayOrdersCount = (dayObj.sundayOrdersCount || 0) + 1
+        dayObj.orders.push(o)
+      }
+
+      const items = o.order_items || []
+      if (items.length > 0) {
+        items.forEach(it => {
+          const itemPrice = parseFloat(it.total_price) || 0
+          const catInfo = resolveCategoryInfo(it.category || it.product_category)
+          const catId = catInfo.id
+          if (!categoryTotals[catId]) {
+            categoryTotals[catId] = { id: catId, label: catInfo.label, icon: catInfo.icon, color: catInfo.color, amount: 0, count: 0 }
           }
-          categoryTotals[firstCat].amount += orderAmount
-          categoryTotals[firstCat].count++
+          categoryTotals[catId].amount += itemPrice
+          categoryTotals[catId].count++
+        })
+      } else {
+        const catInfo = resolveCategoryInfo(o.category || o.order_type)
+        const catId = catInfo.id
+        if (!categoryTotals[catId]) {
+          categoryTotals[catId] = { id: catId, label: catInfo.label, icon: catInfo.icon, color: catInfo.color, amount: 0, count: 0 }
         }
+        categoryTotals[catId].amount += orderAmount
+        categoryTotals[catId].count++
       }
     })
 
@@ -1314,8 +1335,8 @@ export default function OrdersPage() {
       flatUnitPrice: Number(item.unit_price) || 50,
       particularDetails: item.description || '',
       orderNotes: order.notes || '',
-      orderDate: order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-      deliveryDate: order.delivery_date?.split('T')[0] || '',
+      orderDate: parseDateToLocalYMD(order.created_at) || getTodayStr(),
+      deliveryDate: parseDateToLocalYMD(order.delivery_date) || '',
       basePanelPrice: loadedBasePanelPrice,
       panelSizes: loadedPanelSizes,
       panelSizePrices: getInitialPanelSizePrices(loadedBasePanelPrice)
@@ -1543,15 +1564,20 @@ export default function OrdersPage() {
       const paymentStatus = advance >= total ? 'pagado' : (advance > 0 ? 'adelanto' : 'pendiente')
 
       // 2. Actualizar tabla orders
+      const orderUpdatePayload = {
+        notes: editForm.orderNotes || '',
+        delivery_date: editForm.deliveryDate ? parseDateToLocalYMD(editForm.deliveryDate) : null,
+        total_amount: total,
+        payment_status: paymentStatus,
+        updated_at: new Date().toISOString()
+      }
+      if (editForm.orderDate) {
+        orderUpdatePayload.created_at = new Date(editForm.orderDate + 'T12:00:00Z').toISOString()
+      }
+
       const { error: orderError } = await supabase
         .from('orders')
-        .update({
-          notes: editForm.orderNotes || '',
-          delivery_date: editForm.deliveryDate ? new Date(editForm.deliveryDate).toISOString() : null,
-          total_amount: total,
-          payment_status: paymentStatus,
-          updated_at: new Date().toISOString()
-        })
+        .update(orderUpdatePayload)
         .eq('id', editForm.orderId)
 
       if (orderError) throw orderError
@@ -3171,6 +3197,11 @@ export default function OrdersPage() {
                           </p>
                           <p className="text-[10px] text-on-surface-variant mt-0.5 font-sans">
                             {day.ordersCount === 1 ? '1 pedido' : `${day.ordersCount} pedidos`}
+                            {day.sundayOrdersCount > 0 && (
+                              <span className="text-[9px] text-[#ff7a00] font-mono block font-semibold">
+                                (+{day.sundayOrdersCount} dom.)
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -3548,7 +3579,7 @@ export default function OrdersPage() {
                     entregado: 'Entregado',
                     cancelado: 'Cancelado'
                   }
-                  const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
+                  const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (parseDateToLocalYMD(order.delivery_date) < getTodayStr());
 
                   return (
                     <Card
@@ -3814,7 +3845,7 @@ export default function OrdersPage() {
                               <span className="text-[10px] text-on-surface-variant font-mono block mt-0.5">{formatDate(order.created_at)}</span>
                               {/* Delivery Date and Alert */}
                               {(() => {
-                                const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (order.delivery_date.split('T')[0] < getTodayStr());
+                                const isDelayed = order.delivery_date && order.status !== 'entregado' && order.status !== 'cancelado' && order.status !== 'listo' && (parseDateToLocalYMD(order.delivery_date) < getTodayStr());
                                 if (isDelayed) {
                                   return (
                                     <span className="inline-flex items-center gap-1 text-[9px] bg-error-container/25 text-error border border-error/20 font-bold px-1.5 py-0.5 rounded-md mt-1 animate-pulse">
