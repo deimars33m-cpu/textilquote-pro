@@ -604,35 +604,157 @@ function StatusSelector({ contractId, current, onChanged }) {
 // ── Tab: Compras de Materiales ───────────────────────────────────────────────
 
 function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
-  const [form, setForm] = useState({ material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' })
+  const { user } = useAuth()
+  const [form, setForm] = useState({ material_id: null, material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' })
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(null)
 
-  const STATUS_MAP = { pendiente: { label: 'Pendiente', cls: 'text-amber-400 bg-amber-400/10' }, parcial: { label: 'Parcial', cls: 'text-primary bg-primary/10' }, recibido: { label: 'Recibido', cls: 'text-emerald-400 bg-emerald-400/10' } }
+  // Catálogo y Estado de Inventario de Almacén
+  const [materialsCatalog, setMaterialsCatalog] = useState([])
+  const [assignTarget, setAssignTarget] = useState(null)
+  const [assignQty, setAssignQty] = useState('')
+  const [assignNotes, setAssignNotes] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignError, setAssignError] = useState(null)
+
+  const fetchCatalog = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase.from('materials').select('*').eq('user_id', user.id).order('name')
+    if (data) setMaterialsCatalog(data)
+  }, [user])
+
+  useEffect(() => {
+    fetchCatalog()
+  }, [fetchCatalog])
+
+  const STATUS_MAP = { pendiente: { label: 'Pendiente', cls: 'text-amber-400 bg-amber-400/10' }, parcial: { label: 'Parcial', cls: 'text-primary bg-primary/10' }, recibido: { label: 'Cubierto', cls: 'text-emerald-400 bg-emerald-400/10' } }
 
   function startEdit(row) {
     setEditId(row.id)
-    setForm({ material_name: row.material_name, unit: row.unit, qty_required: row.qty_required, qty_purchased: row.qty_purchased, supplier_name: row.supplier_name || '', unit_cost: row.unit_cost || '', purchase_date: row.purchase_date || '', receipt_number: row.receipt_number || '', status: row.status, notes: row.notes || '' })
+    setForm({
+      material_id: row.material_id || null,
+      material_name: row.material_name,
+      unit: row.unit,
+      qty_required: row.qty_required,
+      qty_purchased: row.qty_purchased,
+      supplier_name: row.supplier_name || '',
+      unit_cost: row.unit_cost || '',
+      purchase_date: row.purchase_date || '',
+      receipt_number: row.receipt_number || '',
+      status: row.status,
+      notes: row.notes || ''
+    })
   }
-  function cancelEdit() { setEditId(null); setForm({ material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' }) }
+
+  function cancelEdit() {
+    setEditId(null)
+    setForm({ material_id: null, material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' })
+  }
 
   async function handleSave() {
     if (!form.material_name.trim()) return
     setSaving(true)
-    const payload = { ...form, contract_id: contractId, qty_required: parseFloat(form.qty_required) || 0, qty_purchased: parseFloat(form.qty_purchased) || 0, unit_cost: parseFloat(form.unit_cost) || 0, purchase_date: form.purchase_date || null, material_name: form.material_name.trim() }
-    if (editId) {
+    const payload = {
+      ...form,
+      contract_id: contractId,
+      qty_required: parseFloat(form.qty_required) || 0,
+      qty_purchased: parseFloat(form.qty_purchased) || 0,
+      unit_cost: parseFloat(form.unit_cost) || 0,
+      purchase_date: form.purchase_date || null,
+      material_name: form.material_name.trim(),
+      material_id: form.material_id || null
+    }
+
+    if (editId && editId !== 'new') {
       await supabase.from('contract_material_purchases').update(payload).eq('id', editId)
     } else {
       await supabase.from('contract_material_purchases').insert(payload)
     }
-    cancelEdit(); onRefresh(); setSaving(false)
+    cancelEdit()
+    onRefresh()
+    fetchCatalog()
+    setSaving(false)
   }
 
   async function handleDelete(id) {
     setDeleting(id)
     await supabase.from('contract_material_purchases').delete().eq('id', id)
-    onRefresh(); setDeleting(null)
+    onRefresh()
+    fetchCatalog()
+    setDeleting(null)
+  }
+
+  function openAssignModal(row) {
+    const matched = materialsCatalog.find(m => m.id === row.material_id || (m.name && row.material_name && m.name.toLowerCase().trim() === row.material_name.toLowerCase().trim()))
+    const faltante = Math.max(0, (row.qty_required || 0) - (row.qty_purchased || 0))
+    const stockAvailable = Number(matched?.current_stock) || 0
+
+    setAssignTarget({ ...row, matchedMaterial: matched, stockAvailable, faltante })
+    setAssignQty(faltante > 0 ? (stockAvailable > 0 ? Math.min(faltante, stockAvailable).toString() : '') : '')
+    setAssignNotes(`Asignado al contrato`)
+    setAssignError(null)
+  }
+
+  async function handleConfirmAssign() {
+    if (!assignTarget || !assignTarget.matchedMaterial) {
+      setAssignError('Este material aún no está enlazado a un producto del catálogo de inventario.')
+      return
+    }
+    const qty = parseFloat(assignQty)
+    if (isNaN(qty) || qty <= 0) {
+      setAssignError('Ingresa una cantidad mayor a 0.')
+      return
+    }
+    if (qty > assignTarget.stockAvailable) {
+      setAssignError(`La cantidad excede el stock disponible en almacén (${assignTarget.stockAvailable} ${assignTarget.unit}).`)
+      return
+    }
+
+    setAssigning(true)
+    setAssignError(null)
+    try {
+      const mat = assignTarget.matchedMaterial
+      const unitCost = parseFloat(mat.unit_price) || parseFloat(assignTarget.unit_cost) || 0
+
+      // 1. Insertar movimiento en inventory_movements (tipo: asignacion)
+      const { error: errMov } = await supabase.from('inventory_movements').insert({
+        user_id: user.id,
+        material_id: mat.id,
+        contract_id: contractId,
+        movement_type: 'asignacion',
+        quantity: qty,
+        unit_cost: unitCost,
+        total_cost: qty * unitCost,
+        reference: `Contrato ${contractId.slice(0, 8)}`,
+        notes: assignNotes.trim() || `Asignación a contrato`,
+        date: new Date().toISOString().split('T')[0]
+      })
+      if (errMov) throw errMov
+
+      // 2. Actualizar stock en materials (fallback si trigger no está activo)
+      const newStock = Math.max(0, (Number(mat.current_stock) || 0) - qty)
+      await supabase.from('materials').update({ current_stock: newStock }).eq('id', mat.id)
+
+      // 3. Actualizar contract_material_purchases
+      const newPurchased = (Number(assignTarget.qty_purchased) || 0) + qty
+      const newStatus = newPurchased >= assignTarget.qty_required ? 'recibido' : 'parcial'
+      const { error: errPurch } = await supabase.from('contract_material_purchases').update({
+        qty_purchased: newPurchased,
+        status: newStatus,
+        material_id: mat.id
+      }).eq('id', assignTarget.id)
+      if (errPurch) throw errPurch
+
+      setAssignTarget(null)
+      onRefresh()
+      fetchCatalog()
+    } catch (e) {
+      console.error('Error al asignar material del almacén:', e)
+      setAssignError(`Error: ${e.message}`)
+    } finally {
+      setAssigning(false)
+    }
   }
 
   const totalCost = rows.reduce((s, r) => s + ((r.unit_cost || 0) * (r.qty_purchased || 0)), 0)
@@ -642,32 +764,66 @@ function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-primary">shopping_cart</span>
+          <span className="material-symbols-outlined text-primary">inventory_2</span>
           <div>
-            <h3 className="font-bold text-on-surface">Compras de Materiales</h3>
-            <p className="text-[11px] text-on-surface-variant">{rows.length} materiales · Total invertido: <span className="text-primary font-mono font-bold">{formatCurrency(totalCost)}</span></p>
+            <h3 className="font-bold text-on-surface">Materiales e Insumos del Contrato</h3>
+            <p className="text-[11px] text-on-surface-variant">
+              {rows.length} materiales requeridos · Asignado/Invertido: <span className="text-primary font-mono font-bold">{formatCurrency(totalCost)}</span>
+            </p>
           </div>
         </div>
-        <button onClick={() => setEditId('new')} className="neu-button-primary px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-[16px]">add</span> Agregar
+        <button onClick={() => { setEditId('new'); setForm({ material_id: null, material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' }) }} className="neu-button-primary px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[16px]">add</span> Agregar Material
         </button>
       </div>
 
-      <ProgressBar value={totalPct} label="Progreso de Compras" />
+      <ProgressBar value={totalPct} label="Cobertura de Materiales" />
 
-      {/* Form inline */}
+      {/* Formulario Agregar / Editar */}
       {(editId === 'new' || editId) && (
-        <div className="neu-surface p-4 space-y-3">
-          <h4 className="text-sm font-bold text-primary">{editId === 'new' ? 'Agregar Material' : 'Editar Material'}</h4>
+        <div className="neu-surface p-4 space-y-3 border border-primary/20">
+          <h4 className="text-sm font-bold text-primary">{editId === 'new' ? 'Agregar Requerimiento de Material' : 'Editar Requerimiento de Material'}</h4>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Material *</label>
-              <input type="text" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" placeholder="Ej: Tela algodón 60/40" value={form.material_name} onChange={e => setForm(f => ({ ...f, material_name: e.target.value }))} />
+              <label className="block text-[10px] font-bold text-primary uppercase tracking-widest mb-1">
+                Vincular con Catálogo de Almacén (Opcional)
+              </label>
+              <select
+                className="w-full px-3 py-2 neu-pressed bg-surface-container-high border-none rounded-xl text-sm text-on-surface outline-none"
+                value={form.material_id || ''}
+                onChange={e => {
+                  const mId = e.target.value
+                  const found = materialsCatalog.find(m => m.id === mId)
+                  if (found) {
+                    setForm(f => ({
+                      ...f,
+                      material_id: found.id,
+                      material_name: found.name,
+                      unit: found.usage_unit || found.purchase_unit || f.unit,
+                      unit_cost: found.unit_price || f.unit_cost
+                    }))
+                  } else {
+                    setForm(f => ({ ...f, material_id: null }))
+                  }
+                }}
+              >
+                <option value="">-- Ingresar manualmente o elegir del catálogo --</option>
+                {materialsCatalog.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.category}) · Stock Almacén: {m.current_stock ?? 0} {m.usage_unit || ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Nombre del Material *</label>
+              <input type="text" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" placeholder="Ej: Lona 600D Negra" value={form.material_name} onChange={e => setForm(f => ({ ...f, material_name: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Unidad</label>
+              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Unidad de Medida</label>
               <select className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none appearance-none" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
-                {['metro', 'kg', 'unidad', 'rollo', 'yarda', 'litro'].map(u => <option key={u} value={u} className="bg-surface">{u}</option>)}
+                {['metro', 'rollo', 'kg', 'unidad', 'caja', 'paquete', 'yarda', 'litro'].map(u => <option key={u} value={u} className="bg-surface">{u}</option>)}
               </select>
             </div>
             <div>
@@ -675,7 +831,7 @@ function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
               <input type="number" min="0" step="0.01" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none" placeholder="0" value={form.qty_required} onChange={e => setForm(f => ({ ...f, qty_required: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Cantidad Comprada</label>
+              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Cantidad Asignada / Comprada</label>
               <input type="number" min="0" step="0.01" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none" placeholder="0" value={form.qty_purchased} onChange={e => setForm(f => ({ ...f, qty_purchased: e.target.value }))} />
             </div>
             <div>
@@ -683,23 +839,15 @@ function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
               <input type="number" min="0" step="0.01" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface font-mono outline-none" placeholder="0.00" value={form.unit_cost} onChange={e => setForm(f => ({ ...f, unit_cost: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Proveedor</label>
-              <input type="text" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" placeholder="Nombre del proveedor" value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} />
+              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Proveedor / Observaciones</label>
+              <input type="text" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" placeholder="Proveedor o referencia" value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Fecha de Compra</label>
-              <input type="date" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" value={form.purchase_date} onChange={e => setForm(f => ({ ...f, purchase_date: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Nro. Factura/Recibo</label>
-              <input type="text" className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none" placeholder="Opcional" value={form.receipt_number} onChange={e => setForm(f => ({ ...f, receipt_number: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Estado</label>
+              <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Estado de Cobertura</label>
               <select className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none appearance-none" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                 <option value="pendiente" className="bg-surface">Pendiente</option>
-                <option value="parcial" className="bg-surface">Compra Parcial</option>
-                <option value="recibido" className="bg-surface">Recibido Completo</option>
+                <option value="parcial" className="bg-surface">Asignación Parcial</option>
+                <option value="recibido" className="bg-surface">Cubierto Completo</option>
               </select>
             </div>
           </div>
@@ -712,34 +860,83 @@ function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
         </div>
       )}
 
-      {/* Rows */}
+      {/* Lista de Filas de Materiales */}
       {rows.length === 0 ? (
         <div className="text-center py-12 text-on-surface-variant">
-          <span className="material-symbols-outlined text-4xl block mb-2 opacity-30">shopping_cart</span>
-          <p className="text-sm">No hay materiales registrados</p>
-          <p className="text-xs mt-1">Agrega los materiales que necesitas comprar para este contrato</p>
+          <span className="material-symbols-outlined text-4xl block mb-2 opacity-30">inventory_2</span>
+          <p className="text-sm">No hay materiales registrados para este contrato</p>
+          <p className="text-xs mt-1">Los materiales cotizados se importan automáticamente al crear el contrato.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {rows.map(row => {
             const pct = row.qty_required > 0 ? Math.min(100, (row.qty_purchased / row.qty_required) * 100) : 0
-            const faltante = Math.max(0, row.qty_required - row.qty_purchased)
+            const faltante = Math.max(0, (row.qty_required || 0) - (row.qty_purchased || 0))
             const s = STATUS_MAP[row.status] || STATUS_MAP.pendiente
+
+            // Buscar en catálogo de inventario
+            const matched = materialsCatalog.find(m => m.id === row.material_id || (m.name && row.material_name && m.name.toLowerCase().trim() === row.material_name.toLowerCase().trim()))
+            const stockAvailable = Number(matched?.current_stock) || 0
+
             return (
-              <div key={row.id} className="neu-surface p-4 space-y-3">
+              <div key={row.id} className="neu-surface p-4 space-y-3 border border-outline-variant/30">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-on-surface text-sm">{row.material_name}</p>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${s.cls}`}>{s.label}</span>
                     </div>
-                    <p className="text-[11px] text-on-surface-variant mt-0.5">
-                      {row.supplier_name && <>{row.supplier_name} · </>}
-                      {row.purchase_date && <>{formatDate(row.purchase_date)} · </>}
-                      {row.receipt_number && <>Recibo: {row.receipt_number}</>}
-                    </p>
+
+                    {/* Badge de disponibilidad en Almacén */}
+                    {matched ? (
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-[11px] text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px] text-primary">warehouse</span>
+                          Stock en almacén: <strong className={stockAvailable >= faltante && faltante > 0 ? 'text-emerald-400 font-mono' : stockAvailable > 0 ? 'text-amber-400 font-mono' : 'text-error font-mono'}>{stockAvailable} {matched.usage_unit || row.unit}</strong>
+                        </span>
+                        {stockAvailable >= faltante && faltante > 0 && (
+                          <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-md font-bold">
+                            ✓ Cubre faltante
+                          </span>
+                        )}
+                        {stockAvailable < faltante && stockAvailable > 0 && (
+                          <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-md font-bold">
+                            ⚠️ Stock parcial
+                          </span>
+                        )}
+                        {stockAvailable <= 0 && faltante > 0 && (
+                          <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-md font-bold">
+                            Sin stock
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-on-surface-variant/60 italic mt-0.5">
+                        Sin vincular al catálogo de almacén (edita para vincular)
+                      </p>
+                    )}
+
+                    {row.notes && <p className="text-[11px] text-on-surface-variant/80 mt-1">{row.notes}</p>}
                   </div>
+
                   <div className="flex items-center gap-2">
+                    {/* Botón Asignar desde Almacén si hay stock y faltante */}
+                    {faltante > 0 && (
+                      <button
+                        onClick={() => openAssignModal(row)}
+                        disabled={!matched || stockAvailable <= 0}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all ${
+                          matched && stockAvailable > 0
+                            ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm cursor-pointer'
+                            : 'bg-surface-container-high text-on-surface-variant/50 cursor-not-allowed'
+                        }`}
+                        title={matched && stockAvailable > 0 ? "Asignar stock desde almacén" : "Sin stock disponible en almacén para asignar"}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">output</span>
+                        Asignar Almacén
+                      </button>
+                    )}
+
                     <button onClick={() => startEdit(row)} className="p-1.5 rounded-lg neu-raised-sm text-on-surface-variant hover:text-primary transition-colors">
                       <span className="material-symbols-outlined text-[16px]">edit</span>
                     </button>
@@ -748,31 +945,127 @@ function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
                     </button>
                   </div>
                 </div>
+
+                {/* Métricas de cantidades */}
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="neu-pressed rounded-xl p-2">
                     <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Requerido</p>
                     <p className="font-mono font-bold text-on-surface text-sm">{row.qty_required} {row.unit}</p>
                   </div>
                   <div className="neu-pressed rounded-xl p-2">
-                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Comprado</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Cubierto/Asignado</p>
                     <p className="font-mono font-bold text-emerald-400 text-sm">{row.qty_purchased} {row.unit}</p>
                   </div>
                   <div className="neu-pressed rounded-xl p-2">
                     <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Faltante</p>
-                    <p className={`font-mono font-bold text-sm ${faltante > 0 ? 'text-error' : 'text-emerald-400'}`}>{faltante > 0 ? `${faltante} ${row.unit}` : '✓ Completo'}</p>
+                    <p className={`font-mono font-bold text-sm ${faltante > 0 ? 'text-error' : 'text-emerald-400'}`}>
+                      {faltante > 0 ? `${faltante} ${row.unit}` : '✓ Completo'}
+                    </p>
                   </div>
                 </div>
+
                 <div className="space-y-1">
                   <ProgressBar value={pct} />
                   {row.unit_cost > 0 && (
                     <p className="text-[10px] text-right text-on-surface-variant font-mono">
-                      Total compra: <span className="text-primary font-bold">{formatCurrency(row.unit_cost * row.qty_purchased)}</span>
+                      Costo estimado asignado: <span className="text-primary font-bold">{formatCurrency(row.unit_cost * row.qty_purchased)}</span>
                     </p>
                   )}
                 </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Modal: Asignar Material de Almacén al Contrato */}
+      {assignTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="neu-surface max-w-md w-full p-6 rounded-2xl space-y-4 border border-outline-variant/40 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/30">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-xl">output</span>
+                <h3 className="font-bold text-on-surface text-base">Asignar Material desde Almacén</h3>
+              </div>
+              <button onClick={() => setAssignTarget(null)} className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface">
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="p-3 bg-surface-container-high rounded-xl space-y-1.5 text-xs">
+              <p className="font-bold text-on-surface text-sm">{assignTarget.material_name}</p>
+              <div className="grid grid-cols-2 gap-2 text-on-surface-variant font-mono pt-1">
+                <div>Faltante en contrato: <strong className="text-error">{assignTarget.faltante} {assignTarget.unit}</strong></div>
+                <div>Disponible en almacén: <strong className="text-emerald-400">{assignTarget.stockAvailable} {assignTarget.unit}</strong></div>
+              </div>
+            </div>
+
+            {assignError && (
+              <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">warning</span>
+                <span>{assignError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                  Cantidad a Transferir / Asignar ({assignTarget.unit}) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    max={assignTarget.stockAvailable}
+                    value={assignQty}
+                    onChange={e => setAssignQty(e.target.value)}
+                    className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-base text-on-surface font-mono font-bold outline-none"
+                    placeholder="0.00"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAssignQty(Math.min(assignTarget.faltante, assignTarget.stockAvailable).toString())}
+                    className="absolute right-2 top-2 px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/30"
+                  >
+                    Máx. sugerido
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                  Notas de Entrega / Asignación
+                </label>
+                <input
+                  type="text"
+                  value={assignNotes}
+                  onChange={e => setAssignNotes(e.target.value)}
+                  placeholder="Ej: Entregado a taller de corte / lote 1..."
+                  className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-xs text-on-surface outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/30">
+              <button
+                type="button"
+                onClick={() => setAssignTarget(null)}
+                className="px-4 py-2 rounded-xl neu-raised-sm text-xs font-bold text-on-surface-variant hover:text-on-surface"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAssign}
+                disabled={assigning}
+                className="neu-button-primary px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">check</span>
+                {assigning ? 'Asignando...' : 'Confirmar Asignación'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

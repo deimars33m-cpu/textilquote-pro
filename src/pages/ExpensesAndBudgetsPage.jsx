@@ -447,41 +447,7 @@ export default function ExpensesAndBudgetsPage() {
   // productionAvg usado en UI future para cálculo de costo unitario de overhead
   const [providers, setProviders] = useState([])
   const [dependientes, setDependientes] = useState([])
-  const [terceroType, setTerceroType] = useState('proveedor') // 'proveedor' o 'dependiente' o 'pedido'
-  const [selectedQuoteForExpense, setSelectedQuoteForExpense] = useState(null)
-  const [loadingQuoteForExpense, setLoadingQuoteForExpense] = useState(false)
-  const [selectedQuoteItem, setSelectedQuoteItem] = useState(null) // para saber si elegimos un material o un proceso
-
-  const fetchOrderQuoteDetails = async (orderId, quoteId) => {
-    if (!quoteId) return;
-    setLoadingQuoteForExpense(true);
-    setSelectedQuoteForExpense(null);
-    try {
-      const { data, error } = await supabase
-        .from('quotes')
-        .select(`
-          *,
-          quote_items (
-            quantity,
-            quote_materials (
-              *,
-              materials (*)
-            ),
-            quote_processes (*)
-          )
-        `)
-        .eq('id', quoteId)
-        .single();
-      
-      if (!error && data) {
-        setSelectedQuoteForExpense(data);
-      }
-    } catch (e) {
-      console.error('Error fetching quote details:', e);
-    } finally {
-      setLoadingQuoteForExpense(false);
-    }
-  };
+  const [terceroType, setTerceroType] = useState('proveedor') // 'proveedor' o 'dependiente'
 
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
@@ -612,16 +578,11 @@ export default function ExpensesAndBudgetsPage() {
 
   const suggestions = useMemo(() => {
     const q = form.providerName.trim().toLowerCase()
-    
-    const actualTerceroType = terceroType === 'pedido' 
-      ? (selectedQuoteItem?.type === 'proceso' ? 'dependiente' : 'proveedor') 
-      : terceroType;
-
-    const genericName = actualTerceroType === 'proveedor' ? 'proveedor genérico' : 'empleado genérico'
+    const genericName = terceroType === 'proveedor' ? 'proveedor genérico' : 'empleado genérico'
     if (!q || q === genericName) return []
-    const list = actualTerceroType === 'proveedor' ? providers : dependientes
+    const list = terceroType === 'proveedor' ? providers : dependientes
     return list.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
-  }, [providers, dependientes, form.providerName, terceroType, selectedQuoteItem])
+  }, [providers, dependientes, form.providerName, terceroType])
 
   const updateForm = (field, value) => {
     setForm(prev => {
@@ -726,15 +687,11 @@ export default function ExpensesAndBudgetsPage() {
     setSaving(true)
     setError(null)
     try {
-      const actualTerceroType = terceroType === 'pedido'
-        ? (selectedQuoteItem?.type === 'proceso' ? 'dependiente' : 'proveedor')
-        : terceroType;
-
-      const defaultGenericName = actualTerceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
+      const defaultGenericName = terceroType === 'proveedor' ? 'Proveedor Genérico' : 'Empleado Genérico'
       const trimmedProvider = form.providerName.trim() || defaultGenericName
       let providerId = null
 
-      const list = actualTerceroType === 'proveedor' ? providers : dependientes
+      const list = terceroType === 'proveedor' ? providers : dependientes
       const existing = list.find(p => p.name.toLowerCase() === trimmedProvider.toLowerCase())
       if (existing) {
         providerId = existing.id
@@ -745,17 +702,17 @@ export default function ExpensesAndBudgetsPage() {
             .insert({
               user_id: user.id,
               name: trimmedProvider,
-              role: actualTerceroType,
+              role: terceroType,
               phone: form.providerPhone?.trim() || null,
               email: form.providerEmail?.trim() || null,
-              notes: form.providerNit ? (actualTerceroType === 'proveedor' ? `NIT: ${form.providerNit}` : `CI: ${form.providerNit}`) : null,
-              client_type: actualTerceroType === 'proveedor' ? 'otro' : 'dependiente'
+              notes: form.providerNit ? (terceroType === 'proveedor' ? `NIT: ${form.providerNit}` : `CI: ${form.providerNit}`) : null,
+              client_type: terceroType === 'proveedor' ? 'otro' : 'dependiente'
             })
             .select()
             .single()
           if (!errProv && newProv) {
             providerId = newProv.id
-            if (actualTerceroType === 'proveedor') {
+            if (terceroType === 'proveedor') {
               setProviders(prev => [...prev, newProv])
             } else {
               setDependientes(prev => [...prev, newProv])
@@ -813,8 +770,6 @@ export default function ExpensesAndBudgetsPage() {
         materialId: ''
       })
       setTerceroType('proveedor')
-      setSelectedQuoteForExpense(null)
-      setSelectedQuoteItem(null)
       setCurrentStep(1)
       setSuccess('Transacción registrada con éxito')
       setFormOpen(false) // Cerrar modal si está en móvil
@@ -1454,25 +1409,9 @@ export default function ExpensesAndBudgetsPage() {
                   <span className="material-symbols-outlined text-[14px]">badge</span>
                   Dependiente
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTerceroType('pedido')
-                  }}
-                  className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
-                    terceroType === 'pedido'
-                      ? 'bg-[#ff5c00] text-white shadow-sm'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">inventory_2</span>
-                  Pedido Cotizado
-                </button>
               </div>
 
-              {terceroType !== 'pedido' ? (
-                <>
-                  <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
+              <div className="flex justify-between items-center bg-surface-container-low px-2.5 py-1.5 rounded-lg border border-outline-variant/60">
                     <p className="text-[10px] text-on-surface-variant/80">
                       {terceroType === 'proveedor' ? '¿Proveedor rápido?' : '¿Empleado rápido?'}
                     </p>
@@ -1547,36 +1486,6 @@ export default function ExpensesAndBudgetsPage() {
                   />
                 </div>
               </div>
-            </>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-[10px] text-on-surface-variant/80">Selecciona el pedido activo al cual deseas asignarle este gasto:</p>
-                  <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                    {orders.filter(o => o.quote_id && ['pendiente', 'en_proceso'].includes(o.status)).length === 0 ? (
-                      <div className="text-xs italic text-on-surface-variant p-4 text-center">No hay pedidos cotizados activos.</div>
-                    ) : (
-                      orders.filter(o => o.quote_id && ['pendiente', 'en_proceso'].includes(o.status)).map(o => (
-                        <button
-                          key={o.id}
-                          type="button"
-                          onClick={() => {
-                            updateForm('orderId', o.id);
-                            fetchOrderQuoteDetails(o.id, o.quote_id);
-                            setCurrentStep(2.5); // 2.5 is the new special step
-                          }}
-                          className="w-full text-left p-3 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-primary/50 transition-colors flex items-center justify-between group"
-                        >
-                          <div>
-                            <span className="text-sm font-bold text-on-surface block group-hover:text-primary transition-colors">#{o.order_number ? o.order_number.toString().padStart(4, '0') : 'S/N'} - {o.terceros?.name || 'Cliente'}</span>
-                            <span className="text-[10px] text-on-surface-variant uppercase font-mono">{o.status}</span>
-                          </div>
-                          <span className="material-symbols-outlined text-primary text-[18px]">chevron_right</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -1615,166 +1524,7 @@ export default function ExpensesAndBudgetsPage() {
             </div>
           )}
 
-          {/* PASO 2.5: Selección de Ítems Cotizados (Solo para modo "Pedido") */}
-          {currentStep === 2.5 && (
-            <div className="space-y-6 animate-fade-in">
-              {loadingQuoteForExpense ? (
-                <div className="flex justify-center p-8"><span className="material-symbols-outlined animate-spin text-primary text-3xl">refresh</span></div>
-              ) : selectedQuoteForExpense ? (
-                <div className="space-y-6">
-                  <div className="bg-primary/10 border border-primary/30 p-3 rounded-lg flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Cotización Vinculada</span>
-                      <p className="text-sm font-bold text-on-surface">#{selectedQuoteForExpense.quote_number ? selectedQuoteForExpense.quote_number.toString().padStart(4, '0') : 'S/N'} - {selectedQuoteForExpense.project_name}</p>
-                    </div>
-                  </div>
 
-                  {/* Materiales */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono text-primary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">inventory_2</span> Materia Prima a Comprar</label>
-                    <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
-                      {(() => {
-                        const quoteMats = (selectedQuoteForExpense.quote_items || []).flatMap(item => {
-                          const itemQty = Number(item.quantity) || 1;
-                          return (item.quote_materials || []).map(m => {
-                            const qtyReq = parseFloat(m.quantity_per_unit) || 0;
-                            const price = parseFloat(m.unit_price) || 0;
-                            const waste = parseFloat(m.waste_pct) || 0;
-                            const baseTotal = qtyReq * itemQty;
-                            const totalRequired = baseTotal + (baseTotal * waste / 100);
-                            const packQty = parseFloat(m.materials?.purchase_quantity) || 1;
-                            const toBuy = Math.ceil(totalRequired / packQty);
-                            return { 
-                              ...m, 
-                              estimated_qty: toBuy * packQty, 
-                              estimated_cost: toBuy * packQty * price,
-                              raw_required: totalRequired,
-                              pack_qty: packQty,
-                              pack_unit: m.materials?.purchase_unit || m.materials?.usage_unit || 'uds',
-                              usage_unit: m.materials?.usage_unit || 'uds'
-                            };
-                          });
-                        });
-
-                        return quoteMats.length === 0 ? (
-                          <p className="text-xs text-on-surface-variant italic">No hay materiales cotizados.</p>
-                        ) : quoteMats.map((mat, idx) => (
-                          <button
-                            key={`mat-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              const catKeyLower = mat.materials?.category?.toLowerCase() || '';
-                              let categoryKey = 'PRODUCCION';
-                              if (catKeyLower.includes('insumo') || catKeyLower.includes('consumible') || catKeyLower.includes('quimico') || catKeyLower.includes('tinta') || catKeyLower.includes('papel') || catKeyLower.includes('repuesto')) {
-                                categoryKey = 'INSUMOS';
-                              }
-                              const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
-                              let subcategory = subcats[0] || 'Materia Prima (Telas y Accesorios)';
-                              if (categoryKey === 'PRODUCCION') {
-                                subcategory = subcats.find(s => s.toLowerCase().includes('materia prima') || s.toLowerCase().includes('tela')) || subcats[0];
-                              } else {
-                                subcategory = subcats.find(s => s.toLowerCase().includes('sublimaci') || s.toLowerCase().includes('otros')) || subcats[0];
-                              }
-                              
-                              updateForm('categoryKey', categoryKey);
-                              updateForm('subcategory', subcategory);
-                              updateForm('specificItem', mat.material_name);
-                              updateForm('materialId', mat.material_id);
-                              updateForm('quantity', '');
-                              updateForm('unitPrice', (mat.estimated_cost / mat.estimated_qty).toFixed(2) || 0);
-                              setCalculatorPacks('');
-                              setCalculatorPricePerPack('');
-                              setSelectedQuoteItem({ type: 'material', data: mat });
-                              setCurrentStep(5);
-                            }}
-                            className="w-full text-left p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-primary/50 transition-colors group"
-                          >
-                            <div className="flex justify-between items-start">
-                              <span className="text-[12px] font-bold text-on-surface group-hover:text-primary transition-colors">{mat.material_name}</span>
-                              <span className="text-[10px] font-mono text-on-surface-variant">{mat.estimated_qty} uds</span>
-                            </div>
-                            <div className="flex justify-between items-end mt-1">
-                              <span className="text-[10px] text-on-surface-variant line-clamp-1">Est. {mat.estimated_cost.toFixed(2)} Bs</span>
-                              <span className="material-symbols-outlined text-primary text-[14px]">arrow_forward</span>
-                            </div>
-                          </button>
-                        ))
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Mano de Obra */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-mono text-secondary uppercase tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">badge</span> Procesos (Mano de Obra)</label>
-                    <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
-                      {(() => {
-                        const quoteProcs = (selectedQuoteForExpense.quote_items || []).flatMap(item => {
-                          return (item.quote_processes || []).map(p => ({ ...p, estimated_cost: Number(p.total_cost) || 0 }));
-                        });
-
-                        return quoteProcs.length === 0 ? (
-                          <p className="text-xs text-on-surface-variant italic">No hay procesos cotizados.</p>
-                        ) : quoteProcs.map((proc, idx) => (
-                          <button
-                            key={`proc-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              const procNameLower = (proc.process_name || proc.name || '').toLowerCase();
-                              const categoryKey = 'PRODUCCION';
-                              const subcats = Object.keys(expenseStructure[categoryKey]?.subcategories || {});
-                              let subcategory = subcats[0] || 'Mano de Obra (Confección y Destajo)';
-                              if (procNameLower.includes('sublimac') || procNameLower.includes('borda') || procNameLower.includes('estampa') || procNameLower.includes('corte') || procNameLower.includes('dtf')) {
-                                subcategory = subcats.find(s => s.toLowerCase().includes('embellecimiento')) || subcats[0];
-                              } else {
-                                subcategory = subcats.find(s => s.toLowerCase().includes('mano de obra') || s.toLowerCase().includes('confección')) || subcats[0];
-                              }
-                              
-                              updateForm('categoryKey', categoryKey);
-                              updateForm('subcategory', subcategory);
-                              updateForm('specificItem', proc.process_name || proc.name);
-                              const itemQty = selectedQuoteForExpense.quote_items?.[0]?.quantity || 1;
-                              let qty = itemQty;
-                              if (proc.cost_type === 'por_hora') {
-                                qty = ((Number(proc.time_minutes) || 0) / 60) * itemQty;
-                              } else if (proc.cost_type === 'fijo_por_pedido') {
-                                qty = 1;
-                              }
-                              updateForm('quantity', qty);
-                              updateForm('unitPrice', proc.cost || 0);
-                              setSelectedQuoteItem({ type: 'proceso', data: proc });
-                              setCurrentStep(5);
-                            }}
-                            className="w-full text-left p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/40 hover:border-secondary/50 transition-colors group"
-                          >
-                            <div className="flex justify-between items-start">
-                              <span className="text-[12px] font-bold text-on-surface group-hover:text-secondary transition-colors">{proc.process_name || proc.name}</span>
-                              <span className="text-[10px] font-mono text-on-surface-variant">Est. {proc.estimated_cost.toFixed(2)} Bs</span>
-                            </div>
-                          </button>
-                        ))
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Varios / Otros */}
-                  <div className="pt-2 border-t border-outline-variant/30">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedQuoteItem({ type: 'otros', data: null });
-                        setCurrentStep(2); // Jump back to regular category selection, but keeping orderId
-                      }}
-                      className="w-full text-center p-2 rounded-lg bg-surface-container border border-outline-variant/50 hover:bg-white/[0.02] text-xs font-bold text-on-surface-variant hover:text-on-surface transition-colors"
-                    >
-                      Asignar un Gasto Vario a este Pedido (Ej. Transporte)
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-error">Error al cargar la cotización.</p>
-              )}
-            </div>
-          )}
 
           {/* PASO 3: Subcategoría */}
           {currentStep === 3 && (
@@ -1867,71 +1617,11 @@ export default function ExpensesAndBudgetsPage() {
                 onChange={(e) => updateForm('date', e.target.value)}
               />
 
-              {terceroType === 'pedido' && selectedQuoteItem?.type !== 'otros' && (
-                <div className="bg-surface-container-high p-3 rounded-lg border border-outline-variant/30 space-y-3">
-                  <label className="text-[11px] font-bold text-on-surface-variant">
-                    {selectedQuoteItem?.type === 'material' ? '¿A qué proveedor se le compró?' : '¿A qué dependiente se le pagó?'}
-                  </label>
-                  <div className="relative">
-                    <Input
-                      value={form.providerName}
-                      onChange={e => updateForm('providerName', e.target.value)}
-                      placeholder={selectedQuoteItem?.type === 'material' ? "Proveedor Genérico" : "Empleado Genérico"}
-                      error={error && !form.providerName ? 'Requerido' : null}
-                    />
-                    {suggestions.length > 0 && (
-                      <div className="absolute z-30 w-full mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-outline-variant/30">
-                        {suggestions.map(prov => (
-                          <div
-                            key={prov.id}
-                            className="p-3 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
-                            onClick={() => {
-                              updateForm('providerName', prov.name)
-                              updateForm('providerNit', prov.notes?.match(/NIT:\s*([^\s,]+)/)?.[1] || prov.notes?.match(/CI:\s*([^\s,]+)/)?.[1] || '')
-                              updateForm('providerPhone', prov.phone || '')
-                              updateForm('providerEmail', prov.email || '')
-                            }}
-                          >
-                            <span className="font-semibold text-left block">{prov.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {terceroType === 'pedido' && selectedQuoteItem?.type === 'material' && selectedQuoteItem.data?.raw_required && (
-                <div className="bg-primary/5 p-3 rounded-lg border border-primary/20 flex flex-col gap-1 text-[11px] text-on-surface-variant">
-                  <div className="flex justify-between items-center pb-1 border-b border-primary/10">
-                    <span className="font-bold text-primary flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">info</span> Referencia de Compra (Datos Cotizados)</span>
-                    <span className="font-mono text-[10px] uppercase tracking-wider">{selectedQuoteItem.data.material_name}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider opacity-70">Total Requerido:</span>
-                      <span className="font-bold text-on-surface">{Number(selectedQuoteItem.data.raw_required).toFixed(2)} {selectedQuoteItem.data.usage_unit}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider opacity-70">Empaque DB:</span>
-                      <span className="font-bold text-on-surface">{selectedQuoteItem.data.pack_qty} {selectedQuoteItem.data.usage_unit} / {selectedQuoteItem.data.pack_unit}</span>
-                    </div>
-                  </div>
-                  <div className="mt-1 pt-2 border-t border-primary/10 flex justify-between items-center text-xs">
-                    <span className="opacity-70 text-[9px] uppercase tracking-wider">Por Mayor Sugerido:</span>
-                    <span className="font-bold text-primary">{Math.ceil(selectedQuoteItem.data.raw_required / selectedQuoteItem.data.pack_qty)} {selectedQuoteItem.data.pack_unit}(s)</span>
-                  </div>
-                </div>
-              )}
-
               {(() => {
-                const currentMaterial = selectedQuoteItem?.type === 'material' 
-                  ? selectedQuoteItem.data 
-                  : materials.find(m => m.id === form.materialId);
-
-                const packQty = currentMaterial?.pack_qty || currentMaterial?.purchase_quantity || 1;
-                const packUnit = currentMaterial?.pack_unit || currentMaterial?.purchase_unit || 'Caja/Rollo';
-                const showWholesale = selectedQuoteItem?.type === 'material' || form.materialId;
+                const currentMaterial = materials.find(m => m.id === form.materialId);
+                const packQty = currentMaterial?.purchase_quantity || 1;
+                const packUnit = currentMaterial?.purchase_unit || 'Caja/Rollo';
+                const showWholesale = !!form.materialId;
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
