@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { useCategories } from '@/context/CategoryContext'
 import { calculateQuote, calcTotalMonthlyExpenses, roundUpPrice, formatProductionTime, parseContractDurationToMonths, VOLUME_TIERS, getVolumeTierMargin, calculatePricingTiers } from '@/lib/calculations'
-import { formatCurrency, formatPercent, processCategories } from '@/lib/formatters'
-import { Card, Input, Select, Textarea, Button, AlertBanner, LoadingSpinner, Modal } from '@/components/ui/index.jsx'
+import { formatCurrency, formatPercent, processCategories, usageUnits } from '@/lib/formatters'
+import { Card, Input, Select, Textarea, Button, AlertBanner, LoadingSpinner, Modal, SearchInput } from '@/components/ui/index.jsx'
 
 
 // ─── Cost Breakdown Panel (right sidebar) ──────────────────────────────────
@@ -410,10 +411,17 @@ export default function QuoterPage() {
   const navigate = useNavigate()
 
   // Data sources
+  const { categoryMap } = useCategories()
   const [clients, setClients] = useState([])
   const [templates, setTemplates] = useState([])
+  const [catalogMaterials, setCatalogMaterials] = useState([])
   const [totalMonthlyExpenses, setTotalMonthlyExpenses] = useState(0)
   const [initialLoading, setInitialLoading] = useState(true)
+
+  // Material selection modal & filter states
+  const [materialModalOpen, setMaterialModalOpen] = useState(false)
+  const [materialSearch, setMaterialSearch] = useState('')
+  const [materialCategoryFilter, setMaterialCategoryFilter] = useState('')
 
   // Form state
   const [clientId, setClientId] = useState('')
@@ -433,20 +441,56 @@ export default function QuoterPage() {
   // Tabs state
   const [activeTab, setActiveTab] = useState('pricing') // 'pricing' | 'materials'
 
+  // Group catalog materials by category for selectors
+  const groupedMaterialOptions = useMemo(() => {
+    const groups = {}
+    for (const m of catalogMaterials) {
+      const cat = m.category || 'otro'
+      if (!groups[cat]) groups[cat] = []
+      groups[cat].push(m)
+    }
 
+    const sortedCats = Object.keys(groups).sort((a, b) => {
+      const nameA = categoryMap[a] || a
+      const nameB = categoryMap[b] || b
+      return nameA.localeCompare(nameB)
+    })
+
+    return sortedCats.map(cat => ({
+      label: categoryMap[cat] || cat,
+      options: groups[cat].map(m => ({
+        value: m.id,
+        label: `${m.name} — ${formatCurrency(m.unit_price || 0)}/${usageUnits[m.usage_unit] || m.usage_unit || 'ud'}`
+      }))
+    }))
+  }, [catalogMaterials, categoryMap])
+
+  // Filtered materials for catalog modal
+  const filteredCatalogMaterials = useMemo(() => {
+    return catalogMaterials.filter(m => {
+      const term = materialSearch.trim().toLowerCase()
+      const matchesSearch = !term ||
+        m.name?.toLowerCase().includes(term) ||
+        (categoryMap[m.category] || m.category || '').toLowerCase().includes(term)
+      const matchesCategory = !materialCategoryFilter || m.category === materialCategoryFilter
+      return matchesSearch && matchesCategory
+    })
+  }, [catalogMaterials, materialSearch, materialCategoryFilter, categoryMap])
 
   // Load initial data function
   async function loadInitialData() {
     setInitialLoading(true)
     try {
-      const [clientsRes, templatesRes, expensesRes] = await Promise.all([
+      const [clientsRes, templatesRes, expensesRes, materialsRes] = await Promise.all([
         supabase.from('terceros').select('id, name').eq('user_id', user.id).eq('role', 'cliente').order('name'),
         supabase.from('product_templates').select('id, name, suggested_margin').eq('user_id', user.id).order('name'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id),
+        supabase.from('materials').select('*').eq('user_id', user.id).order('name'),
       ])
 
       setClients(clientsRes.data || [])
       setTemplates(templatesRes.data || [])
+      setCatalogMaterials(materialsRes.data || [])
 
       const expenses = expensesRes.data || []
       setTotalMonthlyExpenses(calcTotalMonthlyExpenses(expenses))
@@ -558,16 +602,71 @@ export default function QuoterPage() {
     setMaterials(prev => prev.filter(m => m.id !== id))
   }
 
-  function addMaterial() {
+  function changeMaterialRow(rowId, newMaterialId) {
+    if (!newMaterialId) return
+    if (newMaterialId === 'custom') {
+      // Keep existing properties, disconnect from catalog ID so it's custom
+      setMaterials(prev => prev.map(m =>
+        m.id === rowId ? { ...m, material_id: null } : m
+      ))
+      return
+    }
+
+    const selected = catalogMaterials.find(m => m.id === newMaterialId)
+    if (!selected) return
+
+    setMaterials(prev => prev.map(m => {
+      if (m.id !== rowId) return m
+      return {
+        ...m,
+        material_id: selected.id,
+        material_name: selected.name,
+        unit_price: selected.unit_price != null ? parseFloat(selected.unit_price) : 0,
+        waste_pct: selected.default_waste_pct != null ? parseFloat(selected.default_waste_pct) : (m.waste_pct || 0),
+        usage_unit: selected.usage_unit || 'unidad',
+        purchase_quantity: selected.purchase_quantity || 1,
+        purchase_unit: selected.purchase_unit || 'unidad',
+        price_updated_at: selected.price_updated_at,
+        // Keeps previous m.quantity_per_unit!
+      }
+    }))
+  }
+
+  function addMaterialFromCatalog(materialId) {
+    if (!materialId) return
+    const selected = catalogMaterials.find(m => m.id === materialId)
+    if (!selected) return
+
+    setMaterials(prev => [...prev, {
+      id: crypto.randomUUID(),
+      material_id: selected.id,
+      material_name: selected.name,
+      quantity_per_unit: 1,
+      unit_price: selected.unit_price != null ? parseFloat(selected.unit_price) : 0,
+      waste_pct: selected.default_waste_pct != null ? parseFloat(selected.default_waste_pct) : 0,
+      usage_unit: selected.usage_unit || 'unidad',
+      purchase_quantity: selected.purchase_quantity || 1,
+      purchase_unit: selected.purchase_unit || 'unidad',
+      price_updated_at: selected.price_updated_at,
+    }])
+  }
+
+  function addManualMaterial() {
     setMaterials(prev => [...prev, {
       id: crypto.randomUUID(),
       material_id: null,
-      material_name: 'Nuevo material',
-      quantity_per_unit: 0,
+      material_name: 'Nuevo material personalizado',
+      quantity_per_unit: 1,
       unit_price: 0,
       waste_pct: 0,
       usage_unit: 'unidad',
+      purchase_quantity: 1,
+      purchase_unit: 'unidad',
     }])
+  }
+
+  function addMaterial() {
+    setMaterialModalOpen(true)
   }
 
   // ─── Process editor helpers ─────────────────────────────────────────
@@ -847,31 +946,70 @@ export default function QuoterPage() {
 
           {/* Materials editor */}
           <Card className="p-0">
-            <div className="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
-              <h3 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
-                Materiales
-              </h3>
-              <Button variant="ghost" size="sm" onClick={addMaterial}>
-                <span className="material-symbols-outlined text-[16px]">add</span>
-                Agregar
-              </Button>
+            <div className="px-5 py-4 border-b border-outline-variant flex flex-wrap items-center justify-between gap-3 bg-surface-container-high/20">
+              <div className="flex items-center gap-2">
+                <h3 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px]">inventory_2</span>
+                  Materiales
+                </h3>
+                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold">
+                  {materials.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setMaterialModalOpen(true)}>
+                  <span className="material-symbols-outlined text-[16px]">menu_book</span>
+                  Catálogo ({catalogMaterials.length})
+                </Button>
+                <Button variant="ghost" size="sm" onClick={addManualMaterial} title="Agregar fila manual sin catálogo">
+                  <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                  Manual
+                </Button>
+              </div>
             </div>
+
+            {/* Quick Add Bar from Catalog with Quoted Prices */}
+            <div className="px-5 py-3 bg-surface-container-high/30 border-b border-outline-variant/40 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex-1">
+                <Select
+                  options={groupedMaterialOptions}
+                  placeholder="⚡ Agregar material del catálogo con precio cotizado..."
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      addMaterialFromCatalog(e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                  className="w-full text-xs"
+                />
+              </div>
+            </div>
+
             {materials.length === 0 ? (
-              <div className="px-5 py-8 text-center text-on-surface-variant text-body-md">
-                Selecciona una plantilla o agrega materiales manualmente.
+              <div className="px-5 py-10 text-center text-on-surface-variant text-body-md">
+                <span className="material-symbols-outlined text-[32px] block mb-2 opacity-40">inventory_2</span>
+                Selecciona una plantilla o agrega materiales desde el catálogo arriba.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full zebra-table">
                   <thead>
-                    <tr className="border-b border-outline-variant">
-                      <th className="text-left px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">Material</th>
-                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-24">Cant/Ud</th>
-                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">Precio Unit.</th>
-
-                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-20">Merma %</th>
-                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">Subtotal</th>
+                    <tr className="border-b border-outline-variant bg-surface-container-high/30">
+                      <th className="text-left px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant">
+                        Material (Base de Datos / Nombre)
+                      </th>
+                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">
+                        Cant/Ud
+                      </th>
+                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-32">
+                        Precio Unit.
+                      </th>
+                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-24">
+                        Merma %
+                      </th>
+                      <th className="text-right px-4 py-3 text-label-caps font-mono uppercase tracking-wider text-on-surface-variant w-28">
+                        Subtotal
+                      </th>
                       <th className="w-10"></th>
                     </tr>
                   </thead>
@@ -884,62 +1022,111 @@ export default function QuoterPage() {
                       const waste = matCost * wastePct / 100
                       const subTotal = matCost + waste
                       const hasNoPrice = !m.unit_price || subPrice <= 0
+                      const isLinkedToCatalog = Boolean(m.material_id && catalogMaterials.some(cm => cm.id === m.material_id))
 
                       return (
                         <tr key={m.id} className={hasNoPrice ? 'bg-error-container/10' : ''}>
-                          <td className="px-4 py-2">
-                            <input
-                              type="text"
-                              value={m.material_name}
-                              onChange={e => updateMaterial(m.id, 'material_name', e.target.value)}
-                              className="w-full bg-transparent border-none text-body-md text-on-surface outline-none focus:text-primary"
-                            />
-                            {hasNoPrice && (
-                              <p className="text-xs text-error flex items-center gap-1 mt-0.5">
-                                <span className="material-symbols-outlined text-[12px]">error</span>
-                                Sin precio
-                              </p>
-                            )}
+                          <td className="px-4 py-2.5">
+                            <div className="flex flex-col gap-1.5 min-w-[220px]">
+                              {/* Selector para cambiar material de la BD (e.g. Lona Víbora -> Lona Americana) */}
+                              <div className="relative">
+                                <select
+                                  value={isLinkedToCatalog ? m.material_id : 'custom'}
+                                  onChange={e => changeMaterialRow(m.id, e.target.value)}
+                                  className="w-full bg-surface-container-high/70 border border-outline-variant/60 rounded-lg px-2.5 py-1.5 text-xs text-on-surface font-semibold outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 cursor-pointer appearance-none pr-7 transition-colors"
+                                  title="Cambiar material por otro de la base de datos"
+                                >
+                                  {!isLinkedToCatalog && (
+                                    <option value="custom" className="bg-surface text-on-surface">
+                                      ✏️ {m.material_name || 'Material personalizado'}
+                                    </option>
+                                  )}
+                                  {groupedMaterialOptions.map(group => (
+                                    <optgroup key={group.label} label={group.label} className="bg-surface text-on-surface font-bold text-primary">
+                                      {group.options.map(opt => (
+                                        <option key={opt.value} value={opt.value} className="bg-surface text-on-surface font-normal">
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                  <option value="custom" className="bg-surface text-on-surface text-secondary font-medium">
+                                    ✏️ Convertir a personalizado / manual
+                                  </option>
+                                </select>
+                                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">
+                                  expand_more
+                                </span>
+                              </div>
+
+                              {/* Especificación / Nombre detallado editable */}
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={m.material_name}
+                                  onChange={e => updateMaterial(m.id, 'material_name', e.target.value)}
+                                  placeholder="Detalle o variante (color, espesor...)"
+                                  className="text-xs bg-transparent border-b border-outline-variant/30 px-1 py-0.5 text-on-surface-variant focus:text-on-surface focus:border-primary outline-none flex-1 font-sans placeholder-on-surface-variant/40"
+                                  title="Especificación del material en este presupuesto"
+                                />
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant shrink-0" title="Unidad de consumo">
+                                  {usageUnits[m.usage_unit] || m.usage_unit || 'ud'}
+                                </span>
+                              </div>
+
+                              {hasNoPrice && (
+                                <p className="text-[11px] text-error flex items-center gap-1 font-medium mt-0.5">
+                                  <span className="material-symbols-outlined text-[13px]">warning</span>
+                                  Sin precio cotizado en catálogo
+                                </p>
+                              )}
+                            </div>
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2.5">
                             <input
                               type="number"
-                              step="1"
+                              step="any"
                               min="0"
                               value={m.quantity_per_unit}
                               onChange={e => updateMaterial(m.id, 'quantity_per_unit', e.target.value)}
-                              className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1 text-sm font-mono text-on-surface outline-none focus:border-primary"
+                              className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1.5 text-sm font-mono text-on-surface outline-none focus:border-primary"
+                              title={`Cantidad por unidad (${usageUnits[m.usage_unit] || m.usage_unit || 'ud'})`}
                             />
                           </td>
-                          <td className="px-4 py-2">
-                            <input
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={m.unit_price}
-                              onChange={e => updateMaterial(m.id, 'unit_price', e.target.value)}
-                              className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1 text-sm font-mono text-on-surface outline-none focus:border-primary"
-                            />
+                          <td className="px-4 py-2.5">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={m.unit_price}
+                                onChange={e => updateMaterial(m.id, 'unit_price', e.target.value)}
+                                className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1.5 text-sm font-mono text-on-surface outline-none focus:border-primary"
+                                title={`Precio unitario por ${usageUnits[m.usage_unit] || m.usage_unit || 'ud'}`}
+                              />
+                            </div>
                           </td>
 
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2.5">
                             <input
                               type="number"
-                              step="1"
+                              step="any"
                               min="0"
                               max="100"
                               value={m.waste_pct}
                               onChange={e => updateMaterial(m.id, 'waste_pct', e.target.value)}
-                              className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1 text-sm font-mono text-on-surface outline-none focus:border-primary"
+                              className="w-full text-right bg-transparent border border-outline-variant rounded px-2 py-1.5 text-sm font-mono text-on-surface outline-none focus:border-primary"
+                              title="Porcentaje de merma"
                             />
                           </td>
-                          <td className="px-4 py-2 text-right font-mono text-data-mono-md text-on-surface">
+                          <td className="px-4 py-2.5 text-right font-mono text-data-mono-md text-on-surface">
                             {formatCurrency(subTotal)}
                           </td>
-                          <td className="px-2 py-2">
+                          <td className="px-2 py-2.5">
                             <button
                               onClick={() => removeMaterial(m.id)}
                               className="p-1 rounded hover:bg-error-container/20 text-on-surface-variant hover:text-error transition-colors"
+                              title="Eliminar material"
                             >
                               <span className="material-symbols-outlined text-[16px]">close</span>
                             </button>
@@ -1299,6 +1486,124 @@ export default function QuoterPage() {
         </div>
       </div>
 
+      {/* ── Modal Catálogo de Materiales ── */}
+      <Modal
+        isOpen={materialModalOpen}
+        onClose={() => {
+          setMaterialModalOpen(false)
+          setMaterialSearch('')
+          setMaterialCategoryFilter('')
+        }}
+        title="Catálogo de Materiales e Insumos"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-on-surface-variant">
+            Selecciona cualquier materia prima o insumo de tu catálogo para agregarlo a esta cotización con su precio cotizado, unidad y merma estándar.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <SearchInput
+                value={materialSearch}
+                onChange={setMaterialSearch}
+                placeholder="Buscar por nombre o categoría..."
+              />
+            </div>
+            <div className="w-full sm:w-56">
+              <select
+                value={materialCategoryFilter}
+                onChange={e => setMaterialCategoryFilter(e.target.value)}
+                className="w-full px-3 py-2.5 neu-pressed bg-transparent border-none rounded-xl text-xs text-on-surface outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer"
+              >
+                <option value="" className="bg-surface text-on-surface">Todas las categorías</option>
+                {Object.entries(categoryMap).map(([catCode, catName]) => (
+                  <option key={catCode} value={catCode} className="bg-surface text-on-surface">
+                    {catName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1 custom-modal-scrollbar">
+            {filteredCatalogMaterials.length === 0 ? (
+              <div className="py-12 text-center text-on-surface-variant text-sm">
+                <span className="material-symbols-outlined text-[36px] opacity-40 mb-2 block">inventory_2</span>
+                No se encontraron materiales que coincidan con la búsqueda.
+              </div>
+            ) : (
+              filteredCatalogMaterials.map(mat => {
+                const isAlreadyAdded = materials.some(m => m.material_id === mat.id)
+                return (
+                  <div
+                    key={mat.id}
+                    className="flex items-center justify-between p-3.5 rounded-xl neu-surface hover:bg-surface-container-high/40 border border-outline-variant/30 transition-all gap-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-on-surface truncate">
+                          {mat.name}
+                        </span>
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                          {categoryMap[mat.category] || mat.category}
+                        </span>
+                        {isAlreadyAdded && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-tertiary/15 text-tertiary shrink-0">
+                            ✓ En cotización
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-on-surface-variant font-mono flex-wrap">
+                        <span>
+                          Precio: <strong className="text-on-surface">{formatCurrency(mat.unit_price)}</strong> / {usageUnits[mat.usage_unit] || mat.usage_unit}
+                        </span>
+                        <span>•</span>
+                        <span>Merma: {mat.default_waste_pct || 0}%</span>
+                        {mat.purchase_unit && (
+                          <>
+                            <span>•</span>
+                            <span>Paquete: {mat.purchase_quantity || 1} {mat.purchase_unit}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={isAlreadyAdded ? 'secondary' : 'primary'}
+                      onClick={() => {
+                        addMaterialFromCatalog(mat.id)
+                      }}
+                      className="shrink-0 text-xs"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      {isAlreadyAdded ? 'Agregar otro' : 'Agregar'}
+                    </Button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-outline-variant/40 flex items-center justify-between gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                addManualMaterial()
+                setMaterialModalOpen(false)
+              }}
+              className="text-xs text-on-surface-variant"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit_note</span>
+              + Crear material personalizado manual
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setMaterialModalOpen(false)}>
+              Listo / Cerrar
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
     </div>
   )
