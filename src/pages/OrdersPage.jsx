@@ -553,6 +553,7 @@ export default function OrdersPage() {
     const saved = localStorage.getItem('orders_show_weekly_stats')
     return saved !== null ? saved === 'true' : true
   })
+  const [selectedDayModal, setSelectedDayModal] = useState(null)
 
   const toggleWeeklyStats = () => {
     setShowWeeklyStats(prev => {
@@ -1020,7 +1021,9 @@ export default function OrdersPage() {
         sales: 0,
         ordersCount: 0,
         orders: [],
-        sundayOrdersCount: 0
+        sundayOrdersCount: 0,
+        deliveriesCount: 0,
+        deliveryOrders: []
       })
     }
 
@@ -1050,55 +1053,60 @@ export default function OrdersPage() {
     orders.forEach(o => {
       if (o.status === 'cancelado') return
 
-      // Normalizar fechas de creación y entrega
-      const createdDate = parseDateToLocalYMD(o.created_at)
-      const deliveryDate = parseDateToLocalYMD(o.delivery_date)
-
-      // Identificar si corresponde a la semana en curso
-      let matchedDateStr = ''
-      if (createdDate && ((createdDate >= startDateStr && createdDate <= endDateStr) || createdDate === sundayDateStr)) {
-        matchedDateStr = createdDate
-      } else if (deliveryDate && ((deliveryDate >= startDateStr && deliveryDate <= endDateStr) || deliveryDate === sundayDateStr)) {
-        matchedDateStr = deliveryDate
-      }
-
-      if (!matchedDateStr) return
-
-      // Encontrar día correspondiente (si es domingo se asocia a sábado para no perder el pedido ni la venta)
-      const isSundayOrder = matchedDateStr === sundayDateStr
-      const dayObj = days.find(d => d.dateStr === matchedDateStr) || (isSundayOrder ? days[5] : null)
-
       const orderAmount = parseFloat(o.total_amount) || (o.order_items || []).reduce((sum, it) => sum + (parseFloat(it.total_price) || 0), 0)
-      totalWeeklySales += orderAmount
-      totalWeeklyOrdersCount++
 
-      if (dayObj) {
-        dayObj.sales += orderAmount
-        dayObj.ordersCount++
-        if (isSundayOrder) dayObj.sundayOrdersCount = (dayObj.sundayOrdersCount || 0) + 1
-        dayObj.orders.push(o)
+      // 1. VENTAS REALES: Fecha de venta/registro del pedido (created_at)
+      const orderDate = parseDateToLocalYMD(o.created_at)
+      const isSundaySale = orderDate === sundayDateStr
+      let matchedSaleDateStr = ''
+      if (orderDate && ((orderDate >= startDateStr && orderDate <= endDateStr) || isSundaySale)) {
+        matchedSaleDateStr = orderDate
       }
 
-      const items = o.order_items || []
-      if (items.length > 0) {
-        items.forEach(it => {
-          const itemPrice = parseFloat(it.total_price) || 0
-          const catInfo = resolveCategoryInfo(it.category || it.product_category)
+      if (matchedSaleDateStr) {
+        const dayObj = days.find(d => d.dateStr === matchedSaleDateStr) || (isSundaySale ? days[5] : null)
+        totalWeeklySales += orderAmount
+        totalWeeklyOrdersCount++
+
+        if (dayObj) {
+          dayObj.sales += orderAmount
+          dayObj.ordersCount++
+          if (isSundaySale) dayObj.sundayOrdersCount = (dayObj.sundayOrdersCount || 0) + 1
+          dayObj.orders.push(o)
+        }
+
+        const items = o.order_items || []
+        if (items.length > 0) {
+          items.forEach(it => {
+            const itemPrice = parseFloat(it.total_price) || 0
+            const catInfo = resolveCategoryInfo(it.category || it.product_category)
+            const catId = catInfo.id
+            if (!categoryTotals[catId]) {
+              categoryTotals[catId] = { id: catId, label: catInfo.label, icon: catInfo.icon, color: catInfo.color, amount: 0, count: 0 }
+            }
+            categoryTotals[catId].amount += itemPrice
+            categoryTotals[catId].count++
+          })
+        } else {
+          const catInfo = resolveCategoryInfo(o.category || o.order_type)
           const catId = catInfo.id
           if (!categoryTotals[catId]) {
             categoryTotals[catId] = { id: catId, label: catInfo.label, icon: catInfo.icon, color: catInfo.color, amount: 0, count: 0 }
           }
-          categoryTotals[catId].amount += itemPrice
+          categoryTotals[catId].amount += orderAmount
           categoryTotals[catId].count++
-        })
-      } else {
-        const catInfo = resolveCategoryInfo(o.category || o.order_type)
-        const catId = catInfo.id
-        if (!categoryTotals[catId]) {
-          categoryTotals[catId] = { id: catId, label: catInfo.label, icon: catInfo.icon, color: catInfo.color, amount: 0, count: 0 }
         }
-        categoryTotals[catId].amount += orderAmount
-        categoryTotals[catId].count++
+      }
+
+      // 2. ENTREGAS PROGRAMADAS: Seguimiento de compromisos de entrega para esta semana (delivery_date)
+      const deliveryDate = parseDateToLocalYMD(o.delivery_date)
+      const isSundayDelivery = deliveryDate === sundayDateStr
+      if (deliveryDate && ((deliveryDate >= startDateStr && deliveryDate <= endDateStr) || isSundayDelivery)) {
+        const deliveryDayObj = days.find(d => d.dateStr === deliveryDate) || (isSundayDelivery ? days[5] : null)
+        if (deliveryDayObj) {
+          deliveryDayObj.deliveriesCount++
+          deliveryDayObj.deliveryOrders.push(o)
+        }
       }
     })
 
@@ -3197,6 +3205,7 @@ export default function OrdersPage() {
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[15px] text-primary">view_week</span>
                   Ventas Diarias (Lunes a Sábado)
+                  <span className="text-[10px] text-on-surface-variant/70 font-sans font-normal lowercase">(clic en un día para ver detalle)</span>
                 </h4>
               </div>
 
@@ -3207,11 +3216,13 @@ export default function OrdersPage() {
                   return (
                     <div
                       key={day.dateStr}
-                      className={`p-3 rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden ${
+                      onClick={() => setSelectedDayModal(day)}
+                      className={`p-3 rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden cursor-pointer group hover:scale-[1.02] ${
                         day.isToday
                           ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,122,0,0.25)] ring-1 ring-primary/40'
-                          : 'bg-surface-container-high/40 border-outline-variant/30 hover:border-white/20'
+                          : 'bg-surface-container-high/40 border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container-high/70'
                       }`}
+                      title="Haz clic para ver los pedidos y entregas de este día"
                     >
                       {day.isToday && (
                         <div className="absolute top-0 right-0 bg-primary text-on-primary text-[8px] font-extrabold px-1.5 py-0.5 rounded-bl-lg uppercase tracking-wider shadow-sm">
@@ -3237,25 +3248,36 @@ export default function OrdersPage() {
                           }`}>
                             {formatCurrency(day.sales, 0)}
                           </p>
-                          <p className="text-[10px] text-on-surface-variant mt-0.5 font-sans">
-                            {day.ordersCount === 1 ? '1 pedido' : `${day.ordersCount} pedidos`}
-                            {day.sundayOrdersCount > 0 && (
-                              <span className="text-[9px] text-[#ff7a00] font-mono block font-semibold">
-                                (+{day.sundayOrdersCount} dom.)
-                              </span>
+                          <div className="text-[10px] text-on-surface-variant mt-0.5 font-sans space-y-0.5">
+                            <p>
+                              {day.ordersCount === 1 ? '1 venta' : `${day.ordersCount} ventas`}
+                              {day.sundayOrdersCount > 0 && (
+                                <span className="text-[9px] text-[#ff7a00] font-mono block font-semibold">
+                                  (+{day.sundayOrdersCount} dom.)
+                                </span>
+                              )}
+                            </p>
+                            {day.deliveriesCount > 0 && (
+                              <p className="text-[9px] text-secondary font-mono font-semibold flex items-center gap-0.5">
+                                <span className="material-symbols-outlined text-[11px]">local_shipping</span>
+                                {day.deliveriesCount} entrega{day.deliveriesCount > 1 ? 's' : ''}
+                              </p>
                             )}
-                          </p>
+                          </div>
                         </div>
                       </div>
 
                       {/* Micro barra de proporción */}
-                      <div className="mt-2.5 pt-1.5 border-t border-white/5">
-                        <div className="w-full bg-black/30 rounded-full h-1 overflow-hidden">
+                      <div className="mt-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
+                        <div className="flex-1 bg-black/30 rounded-full h-1 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${day.isToday ? 'bg-primary' : 'bg-white/40'}`}
                             style={{ width: `${dayPct}%` }}
                           />
                         </div>
+                        <span className="material-symbols-outlined text-[12px] text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                          open_in_new
+                        </span>
                       </div>
                     </div>
                   )
@@ -5317,6 +5339,170 @@ export default function OrdersPage() {
               }}
             >
               Guardar Meta
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+
+    {/* MODAL PARA VER DETALLE DE PEDIDOS Y ENTREGAS DEL DÍA */}
+    {selectedDayModal && (
+      <Modal
+        isOpen={Boolean(selectedDayModal)}
+        onClose={() => setSelectedDayModal(null)}
+        title={`Detalle del ${selectedDayModal.dayName} (${selectedDayModal.dateStr})`}
+        size="lg"
+      >
+        <div className="space-y-5 text-left">
+          {/* Tarjetas resumen */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-surface-container-high/40 border border-outline-variant/30">
+            <div className="p-2.5 rounded-xl bg-surface-container/60 border border-primary/20">
+              <span className="text-[10px] text-primary font-mono uppercase tracking-wider font-bold block flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">point_of_sale</span>
+                Ventas Registradas
+              </span>
+              <span className="text-xl font-bold font-mono text-white mt-1 block">
+                {formatCurrency(selectedDayModal.sales)}
+              </span>
+              <span className="text-[11px] text-on-surface-variant font-medium block">
+                {selectedDayModal.ordersCount === 1 ? '1 pedido vendido' : `${selectedDayModal.ordersCount} pedidos vendidos`}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-surface-container/60 border border-secondary/20">
+              <span className="text-[10px] text-secondary font-mono uppercase tracking-wider font-bold block flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">local_shipping</span>
+                Entregas Programadas
+              </span>
+              <span className="text-xl font-bold font-mono text-white mt-1 block">
+                {selectedDayModal.deliveriesCount || 0} pedidos
+              </span>
+              <span className="text-[11px] text-on-surface-variant font-medium block">
+                Fecha pactada de entrega
+              </span>
+            </div>
+          </div>
+
+          {/* Bloque 1: Ventas registradas en este día */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface font-mono flex items-center gap-1.5 border-b border-white/5 pb-1">
+              <span className="material-symbols-outlined text-primary text-[16px]">receipt_long</span>
+              Ventas Realizadas en esta Fecha ({selectedDayModal.orders.length})
+            </h4>
+            {selectedDayModal.orders.length === 0 ? (
+              <p className="text-xs text-on-surface-variant italic py-3 px-3 bg-surface-container/30 rounded-xl">
+                No se registraron nuevas ventas en esta fecha.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {selectedDayModal.orders.map(o => (
+                  <div
+                    key={o.id}
+                    className="p-3 rounded-xl bg-surface-container border border-outline-variant/30 flex items-center justify-between gap-3 text-xs hover:border-primary/40 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-primary">#{o.order_number?.toString().padStart(4, '0')}</span>
+                        <span className="font-semibold text-on-surface truncate">{o.terceros?.name || 'Cliente general'}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 font-mono text-on-surface-variant">
+                          {o.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant mt-1 truncate">
+                        {o.order_items?.map(it => it.name).join(', ') || 'Sin ítems especificados'}
+                      </p>
+                      {o.delivery_date && (
+                        <p className="text-[10px] text-[#ff7a00] font-mono mt-0.5">
+                          Entrega pactada: {formatDate(o.delivery_date)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono font-bold text-sm text-on-surface block">
+                        {formatCurrency(o.total_amount)}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-[10px] py-1 px-2.5 h-auto mt-1"
+                        onClick={() => {
+                          setSelectedDayModal(null)
+                          setSelectedOrder(o)
+                        }}
+                      >
+                        Ver ficha
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bloque 2: Entregas programadas */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface font-mono flex items-center gap-1.5 border-b border-white/5 pb-1">
+              <span className="material-symbols-outlined text-secondary text-[16px]">local_shipping</span>
+              Compromisos de Entrega para esta Fecha ({selectedDayModal.deliveryOrders?.length || 0})
+            </h4>
+            {(!selectedDayModal.deliveryOrders || selectedDayModal.deliveryOrders.length === 0) ? (
+              <p className="text-xs text-on-surface-variant italic py-3 px-3 bg-surface-container/30 rounded-xl">
+                No hay pedidos programados para entregar en esta fecha.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                <p className="text-[11px] text-on-surface-variant/80 pb-1">
+                  Pedidos registrados con anterioridad cuya fecha prometida de entrega corresponde a este día:
+                </p>
+                {selectedDayModal.deliveryOrders.map(o => (
+                  <div
+                    key={o.id}
+                    className="p-3 rounded-xl bg-surface-container border border-outline-variant/30 flex items-center justify-between gap-3 text-xs hover:border-secondary/40 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-secondary">#{o.order_number?.toString().padStart(4, '0')}</span>
+                        <span className="font-semibold text-on-surface truncate">{o.terceros?.name || 'Cliente general'}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 font-mono text-on-surface-variant">
+                          {o.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant mt-1 truncate">
+                        {o.order_items?.map(it => it.name).join(', ') || 'Sin ítems especificados'}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant/70 font-mono mt-0.5">
+                        Registrado el: {formatDate(o.created_at)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono font-bold text-sm text-on-surface block">
+                        {formatCurrency(o.total_amount)}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-[10px] py-1 px-2.5 h-auto mt-1"
+                        onClick={() => {
+                          setSelectedDayModal(null)
+                          setSelectedOrder(o)
+                        }}
+                      >
+                        Ver ficha
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-white/10">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setSelectedDayModal(null)}
+            >
+              Cerrar
             </Button>
           </div>
         </div>
