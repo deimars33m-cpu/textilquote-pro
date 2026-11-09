@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '@/context/NotificationContext'
 import { formatCurrency } from '@/lib/formatters'
@@ -12,8 +13,13 @@ export default function NotificationRightSidebar() {
     setSidebarCollapsed
   } = useNotifications()
 
-  const { overdue, dueSoon, totalPendingAmount } = fixedExpensesNotifications
-  const { overdueOrders, dueSoonOrders } = orderNotifications
+  const { overdue = [], dueSoon = [], completed = [], totalPendingAmount = 0 } = fixedExpensesNotifications
+  const { overdueOrders = [], dueSoonOrders = [] } = orderNotifications
+  const [showCompleted, setShowCompleted] = useState(false)
+
+  const handlePayExpense = (item) => {
+    navigate('/expenses', { state: { quickPayItem: item } })
+  }
 
   if (sidebarCollapsed) {
     return (
@@ -35,7 +41,7 @@ export default function NotificationRightSidebar() {
   }
 
   return (
-    <aside className="hidden xl:flex fixed right-0 top-16 h-[calc(100vh-64px)] w-[280px] bg-surface-container/95 backdrop-blur-md border-l border-outline-variant flex-col py-4 px-3 z-40 transition-all duration-300 select-none">
+    <aside className="hidden xl:flex fixed right-0 top-16 h-[calc(100vh-64px)] w-[290px] bg-surface-container/95 backdrop-blur-md border-l border-outline-variant flex-col py-4 px-3 z-40 transition-all duration-300 select-none">
       {/* Header Sidebar */}
       <div className="flex items-center justify-between pb-3 border-b border-outline-variant/50 mb-3 px-1">
         <div className="flex items-center gap-2">
@@ -65,7 +71,7 @@ export default function NotificationRightSidebar() {
 
       {/* Notificaciones Scrollable Body */}
       <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-        {totalAlertsCount === 0 ? (
+        {totalAlertsCount === 0 && completed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center text-on-surface-variant gap-2 neu-pressed p-4 rounded-2xl">
             <span className="material-symbols-outlined text-emerald-400 text-3xl">check_circle</span>
             <p className="text-xs font-bold text-white">¡Todo al día!</p>
@@ -82,26 +88,57 @@ export default function NotificationRightSidebar() {
                 {overdue.map(item => (
                   <div
                     key={`overdue-${item.id}`}
-                    className="p-3 rounded-xl bg-error/10 border border-error/30 space-y-1.5 hover:border-error/50 transition-all text-left"
+                    className="p-3 rounded-xl bg-error/10 border border-error/30 space-y-2 hover:border-error/50 transition-all text-left shadow-sm"
                   >
-                    <div className="flex justify-between items-start">
-                      <span className="text-[9px] font-bold uppercase text-error font-mono">
-                        Vencido (Día {item.dueDay})
-                      </span>
-                      <span className="text-[10px] font-mono font-bold text-white">
-                        {formatCurrency(item.amount)}
-                      </span>
+                    <div className="flex justify-between items-start gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[9px] font-bold uppercase text-error font-mono">
+                          Vencido (Día {item.dueDay})
+                        </span>
+                        {item.isPartial && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono text-[8px] font-bold border border-amber-500/30">
+                            Parcial ({item.percentagePaid}%)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[11px] font-mono font-bold text-white block">
+                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                        </span>
+                        {item.isPartial && (
+                          <span className="text-[8px] font-mono text-on-surface-variant block">
+                            de {formatCurrency(item.amount)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+
                     <p className="text-xs font-bold text-white truncate" title={item.concept}>
                       {item.concept}
                     </p>
+
+                    {item.isPartial && (
+                      <div className="space-y-1 py-0.5">
+                        <div className="w-full bg-surface-container-highest rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-amber-400 h-1.5 rounded-full transition-all"
+                            style={{ width: `${item.percentagePaid}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between items-center text-[8.5px] font-mono">
+                          <span className="text-emerald-400 font-medium">Pagado: {formatCurrency(item.paidAmount)}</span>
+                          <span className="text-error font-bold">Resta: {formatCurrency(item.remainingAmount)}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex justify-between items-center pt-1 border-t border-error/20">
                       <span className="text-[9px] text-error/80 font-mono">Hace {item.daysOverdue} día(s)</span>
                       <button
-                        onClick={() => navigate('/expenses')}
-                        className="px-2 py-1 rounded bg-error text-white font-bold text-[9px] hover:brightness-110 transition-all cursor-pointer"
+                        onClick={() => handlePayExpense(item)}
+                        className="px-2.5 py-1 rounded bg-error text-white font-bold text-[9px] hover:brightness-110 transition-all cursor-pointer shadow-sm"
                       >
-                        Pagar
+                        {item.isPartial ? 'Pagar Saldo' : 'Pagar'}
                       </button>
                     </div>
                   </div>
@@ -109,7 +146,7 @@ export default function NotificationRightSidebar() {
               </div>
             )}
 
-            {/* SECCIÓN 2: GASTOS FIJOS PRÓXIMOS A VENCER */}
+            {/* SECCIÓN 2: GASTOS FIJOS PRÓXIMOS A VENCER / EN CURSO */}
             {dueSoon.length > 0 && (
               <div className="space-y-2">
                 <span className="text-[9px] font-mono font-bold text-amber-400 uppercase tracking-wider block px-1">
@@ -118,26 +155,57 @@ export default function NotificationRightSidebar() {
                 {dueSoon.map(item => (
                   <div
                     key={`duesoon-${item.id}`}
-                    className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5 hover:border-amber-500/50 transition-all text-left"
+                    className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 hover:border-amber-500/50 transition-all text-left shadow-sm"
                   >
-                    <div className="flex justify-between items-start">
-                      <span className="text-[9px] font-bold uppercase text-amber-400 font-mono">
-                        {item.daysLeft === 0 ? 'Vence Hoy' : `En ${item.daysLeft} día(s)`}
-                      </span>
-                      <span className="text-[10px] font-mono font-bold text-white">
-                        {formatCurrency(item.amount)}
-                      </span>
+                    <div className="flex justify-between items-start gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[9px] font-bold uppercase text-amber-400 font-mono">
+                          {item.daysLeft === 0 ? 'Vence Hoy' : item.daysLeft < 0 ? `Vencido (${Math.abs(item.daysLeft)}d)` : `En ${item.daysLeft} día(s)`}
+                        </span>
+                        {item.isPartial && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[8px] font-bold border border-amber-500/30">
+                            Parcial ({item.percentagePaid}%)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[11px] font-mono font-bold text-white block">
+                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                        </span>
+                        {item.isPartial && (
+                          <span className="text-[8px] font-mono text-on-surface-variant block">
+                            de {formatCurrency(item.amount)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+
                     <p className="text-xs font-bold text-white truncate" title={item.concept}>
                       {item.concept}
                     </p>
+
+                    {item.isPartial && (
+                      <div className="space-y-1 py-0.5">
+                        <div className="w-full bg-surface-container-highest rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-amber-400 h-1.5 rounded-full transition-all"
+                            style={{ width: `${item.percentagePaid}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between items-center text-[8.5px] font-mono">
+                          <span className="text-emerald-400 font-medium">Pagado: {formatCurrency(item.paidAmount)}</span>
+                          <span className="text-amber-400 font-bold">Resta: {formatCurrency(item.remainingAmount)}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex justify-between items-center pt-1 border-t border-amber-500/20">
                       <span className="text-[9px] text-amber-300/80 font-mono">Día {item.dueDay}</span>
                       <button
-                        onClick={() => navigate('/expenses')}
-                        className="px-2 py-1 rounded bg-amber-500 text-black font-bold text-[9px] hover:brightness-110 transition-all cursor-pointer"
+                        onClick={() => handlePayExpense(item)}
+                        className="px-2.5 py-1 rounded bg-amber-500 text-black font-bold text-[9px] hover:brightness-110 transition-all cursor-pointer shadow-sm"
                       >
-                        Registrar
+                        {item.isPartial ? 'Completar Saldo' : 'Registrar'}
                       </button>
                     </div>
                   </div>
@@ -200,6 +268,48 @@ export default function NotificationRightSidebar() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* SECCIÓN 4: GASTOS FIJOS PAGADOS COMPLETAMENTE ESTE MES */}
+            {completed.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-outline-variant/30">
+                <button
+                  onClick={() => setShowCompleted(prev => !prev)}
+                  className="w-full flex items-center justify-between px-1 py-1 text-left cursor-pointer hover:bg-white/5 rounded-lg transition-colors group"
+                >
+                  <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                    Pagados del Mes ({completed.length})
+                  </span>
+                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant group-hover:text-white transition-transform duration-200" style={{ transform: showCompleted ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                    expand_more
+                  </span>
+                </button>
+
+                {showCompleted && (
+                  <div className="space-y-1.5 pt-1">
+                    {completed.map(item => (
+                      <div
+                        key={`comp-${item.id}`}
+                        className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-left"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-semibold text-white truncate max-w-[170px]" title={item.concept}>
+                            {item.concept}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-emerald-400">
+                            {formatCurrency(item.paidAmount)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[8.5px] font-mono text-emerald-300/70">
+                          <span>Cubierto 100%</span>
+                          <span>{item.matchingExpensesCount} registro(s)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>

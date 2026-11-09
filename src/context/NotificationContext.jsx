@@ -6,15 +6,26 @@ import { useAuth } from '@/context/AuthContext'
 
 const NotificationContext = createContext(null)
 
+const cleanText = (str) => {
+  if (!str) return ''
+  return String(str)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
 export function NotificationProvider({ children }) {
   const { user } = useAuth()
   const { settings } = useGlobalSettings()
   const [mobileModalOpen, setMobileModalOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  // 1. Obtener gastos del mes para validar pagos de gastos fijos
+  // 1. Obtener gastos del mes actual para validar pagos de gastos fijos
+  // Se usa ['expenses', 'notifications', user?.id] para invalidarse automáticamente
+  // cuando useCRUD('expenses') registra o actualiza un gasto.
   const { data: expenses = [] } = useQuery({
-    queryKey: ['notifications_expenses', user?.id],
+    queryKey: ['expenses', 'notifications', user?.id],
     queryFn: async () => {
       if (!user) return []
       const now = new Date()
@@ -23,30 +34,39 @@ export function NotificationProvider({ children }) {
         .from('expenses')
         .select('*')
         .gte('date', startOfMonth)
-      if (error) return []
+        .order('date', { ascending: false })
+      if (error) {
+        console.error('Error fetching expenses for notifications:', error)
+        return []
+      }
       return data || []
     },
     enabled: !!user,
-    staleTime: 1000 * 60 * 2, // 2 mins
+    staleTime: 1000 * 30, // 30 segundos
+    refetchOnWindowFocus: true,
   })
 
   // 2. Obtener pedidos activos para verificar fechas de entrega
   const { data: activeOrders = [] } = useQuery({
-    queryKey: ['notifications_orders', user?.id],
+    queryKey: ['orders', 'notifications', user?.id],
     queryFn: async () => {
       if (!user) return []
       const { data, error } = await supabase
         .from('orders')
         .select('id, order_number, delivery_date, status, total_amount, paid_amount, terceros(name)')
         .not('status', 'in', '("entregado","cancelado")')
-      if (error) return []
+      if (error) {
+        console.error('Error fetching orders for notifications:', error)
+        return []
+      }
       return data || []
     },
     enabled: !!user,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
   })
 
-  // 3. Analizar notificaciones de Gastos Fijos
+  // 3. Analizar notificaciones de Gastos Fijos (pagos parciales, totales, saldos)
   const fixedExpensesNotifications = useMemo(() => {
     const fixedExpenses = settings?.fixedExpenses || []
     const today = new Date()
@@ -57,39 +77,149 @@ export function NotificationProvider({ children }) {
 
     const activeItems = fixedExpenses.filter(item => item && item.active !== false)
 
-    const overdue = []
-    const dueSoon = []
-    let totalPendingAmount = 0
+    // Filtrar gastos del mes actual
+    const currentMonthExpenses = (expenses || []).filter(exp => {
+      if (!exp) return false
+      const expDate = exp.date || exp.created_at || ''
+      return expDate.startsWith(monthStr)
+    })
 
-    activeItems.forEach(item => {
-      const isPaid = (expenses || []).some(exp => {
-        if (!exp) return false
-        const expDate = exp.date || exp.created_at || ''
-        const matchesMonth = expDate.startsWith(monthStr)
-        const expCategory = (exp.category_key || exp.categoryKey || '')
-        const matchesCat = expCategory === 'GASTOS_FIJOS' || expCategory.toLowerCase() === (item.subcategory || item.category || '').toLowerCase()
-        const itemSubcat = (item.subcategory || item.category || '').toLowerCase()
-        const itemSpecific = (item.specificItem || item.concept || '').toLowerCase()
-        const matchesSubcat = (exp.subcategory || '').toLowerCase() === itemSubcat
-        const matchesSpecific = (exp.specific_item || exp.specificItem || '').toLowerCase() === itemSpecific
-        const fallbackMatch = itemSpecific && (exp.description || '').toLowerCase().includes(itemSpecific)
+    // Mapa de gastos asignados a cada ítem de gasto fijo
+    const assignedExpenses = new Map()
+    activeItems.forEach(item => assignedExpenses.set(item.id, []))
 
-        return matchesMonth && matchesCat && ((matchesSubcat && matchesSpecific) || fallbackMatch)
+    currentMonthExpenses.forEach(exp => {
+      const expCategory = (exp.category_key || exp.categoryKey || '').toUpperCase()
+      const expCatLabel = cleanText(exp.category_label || '')
+      const isFixedCat = expCategory === 'GASTOS_FIJOS' || expCatLabel.includes('fijo') || expCatLabel.includes('fijos')
+
+      const expSub = cleanText(exp.subcategory)
+      const expSpec = cleanText(exp.specific_item || exp.specificItem)
+      const expDesc = cleanText(exp.description)
+      const expProv = cleanText(exp.provider)
+
+      let bestItem = null
+      let bestScore = 0
+
+      activeItems.forEach(item => {
+        const itemSub = cleanText(item.subcategory || item.category)
+        const itemSpec = cleanText(item.specificItem)
+        const itemConcept = cleanText(item.concept)
+        const itemProv = cleanText(item.provider_name)
+
+        let score = 0
+
+        // 1. Direct match por ID si estuviera guardado
+        if (exp.fixed_expense_id && String(exp.fixed_expense_id) === String(item.id)) {
+          score = 100
+        }
+        // 2. Coincidencia por subcategoría e ítem específico
+        else if (itemSub && expSub && itemSub === expSub) {
+          if (itemSpec && expSpec && itemSpec === expSpec) {
+            score = 95
+          } else if (itemSpec && expSpec && (itemSpec.includes(expSpec) || expSpec.includes(itemSpec))) {
+            score = 90
+          } else if (itemConcept && expSpec && (itemConcept.includes(expSpec) || expSpec.includes(itemConcept))) {
+            score = 85
+          } else if (itemConcept && expDesc && (expDesc.includes(itemConcept) || itemConcept.includes(expDesc))) {
+            score = 80
+          } else if (itemSpec && expDesc && (expDesc.includes(itemSpec) || itemSpec.includes(expDesc))) {
+            score = 80
+          } else if (
+            // Caso genérico: Servicios Básicos
+            itemSub.includes('servicio') ||
+            itemConcept.includes('servicio') ||
+            itemSpec.includes('servicio') ||
+            !itemSpec ||
+            itemSpec === 'otro' ||
+            itemSpec === itemSub
+          ) {
+            score = 70
+          } else {
+            // Mismo subcat pero específicos distintos (ej. Luz vs Agua)
+            score = 25
+          }
+        }
+        // 3. Coincidencia por concepto / texto libre aunque subcat no sea idéntica
+        else if (isFixedCat || itemSub.includes('servicio') || expSub.includes('servicio')) {
+          if (itemConcept && (expDesc.includes(itemConcept) || expSpec.includes(itemConcept))) {
+            score = 75
+          } else if (itemSpec && (expDesc.includes(itemSpec) || expSpec.includes(itemSpec))) {
+            score = 75
+          } else if (itemProv && expProv && itemProv === expProv) {
+            score = 65
+          } else {
+            // Ver si comparten palabras clave como "luz", "agua", "alquiler", "internet", etc.
+            const keywords = ['luz', 'agua', 'gas', 'electricidad', 'energia', 'internet', 'alquiler', 'sueldo', 'salario', 'telefono', 'telefonia']
+            const hasCommonKeyword = keywords.some(kw =>
+              (itemConcept.includes(kw) || itemSpec.includes(kw) || itemSub.includes(kw)) &&
+              (expDesc.includes(kw) || expSpec.includes(kw) || expSub.includes(kw) || expProv.includes(kw))
+            )
+            if (hasCommonKeyword) {
+              score = 60
+            }
+          }
+        }
+
+        if (score > bestScore && score >= 50) {
+          bestScore = score
+          bestItem = item
+        }
       })
 
-      if (!isPaid) {
-        totalPendingAmount += Number(item.amount) || 0
-        const daysDiff = item.dueDay - currentDay
+      if (bestItem) {
+        assignedExpenses.get(bestItem.id).push(exp)
+      }
+    })
 
-        if (currentDay > item.dueDay) {
+    const overdue = []
+    const dueSoon = []
+    const completed = []
+    let totalPendingAmount = 0
+    let totalPaidThisMonth = 0
+
+    activeItems.forEach(item => {
+      const itemExpenses = assignedExpenses.get(item.id) || []
+      const paidAmount = itemExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
+      const expectedAmount = Number(item.amount) || 0
+      const remainingAmount = Math.max(0, expectedAmount - paidAmount)
+      const isFullyPaid = expectedAmount > 0 ? paidAmount >= expectedAmount : paidAmount > 0
+      const isPartial = paidAmount > 0 && remainingAmount > 0
+      const percentagePaid = expectedAmount > 0 ? Math.min(100, Math.round((paidAmount / expectedAmount) * 100)) : (isFullyPaid ? 100 : 0)
+
+      totalPaidThisMonth += paidAmount
+
+      const itemData = {
+        ...item,
+        expectedAmount,
+        paidAmount,
+        remainingAmount,
+        isFullyPaid,
+        isPartial,
+        percentagePaid,
+        matchingExpensesCount: itemExpenses.length,
+        matchingExpenses: itemExpenses
+      }
+
+      if (isFullyPaid) {
+        completed.push({
+          ...itemData,
+          type: 'fixed_expense_completed'
+        })
+      } else {
+        totalPendingAmount += remainingAmount
+        const dueDay = Number(item.dueDay) || 1
+        const daysDiff = dueDay - currentDay
+
+        if (currentDay > dueDay) {
           overdue.push({
-            ...item,
+            ...itemData,
             type: 'fixed_expense_overdue',
-            daysOverdue: currentDay - item.dueDay
+            daysOverdue: currentDay - dueDay
           })
-        } else if (daysDiff >= 0 && daysDiff <= 5) {
+        } else if (daysDiff >= 0 && (daysDiff <= 5 || isPartial)) {
           dueSoon.push({
-            ...item,
+            ...itemData,
             type: 'fixed_expense_duesoon',
             daysLeft: daysDiff
           })
@@ -97,7 +227,7 @@ export function NotificationProvider({ children }) {
       }
     })
 
-    return { overdue, dueSoon, totalPendingAmount }
+    return { overdue, dueSoon, completed, totalPendingAmount, totalPaidThisMonth }
   }, [settings?.fixedExpenses, expenses])
 
   // 4. Analizar notificaciones de Pedidos

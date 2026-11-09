@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure, parseLocalDate } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
@@ -431,6 +432,7 @@ const calculateItemMetrics = (sizeDistribution) => {
 }
 
 export default function ExpensesAndBudgetsPage() {
+  const location = useLocation()
   const [activeTab, setActiveTab] = useState('registro') // 'registro', 'dashboard', 'analisis'
   const [sublimationPeriod, setSublimationPeriod] = useState('mes') // 'hoy', 'mes', 'ano', 'todos'
   const [analysisSubTab, setAnalysisSubTab] = useState('general') // 'general', 'produccion_textil', 'servicios_sublimacion', 'servicios_bordado', 'servicios_corte', 'servicios_dtf', 'servicios_uv_dtf'
@@ -608,20 +610,27 @@ export default function ExpensesAndBudgetsPage() {
   }
 
   const handleQuickPayFixedExpense = (fixedItem) => {
+    if (!fixedItem) return
+    const payAmount = (fixedItem.remainingAmount !== undefined && Number(fixedItem.remainingAmount) > 0)
+      ? Number(fixedItem.remainingAmount)
+      : Number(fixedItem.amount) || 0
+
     setForm({
       providerName: fixedItem.provider_name || '',
       providerNit: '',
       providerPhone: '',
       providerEmail: '',
       categoryKey: 'GASTOS_FIJOS',
-      subcategory: fixedItem.subcategory || fixedItem.category || 'Alquileres',
-      specificItem: fixedItem.specificItem || fixedItem.concept,
+      subcategory: fixedItem.subcategory || fixedItem.category || 'Servicios Básicos',
+      specificItem: fixedItem.specificItem || fixedItem.concept || '',
       date: getTodayStr(),
-      description: `Pago mensual de gasto fijo: ${fixedItem.concept || fixedItem.specificItem}`,
+      description: fixedItem.isPartial
+        ? `Pago saldo de gasto fijo: ${fixedItem.concept || fixedItem.specificItem}`
+        : `Pago mensual de gasto fijo: ${fixedItem.concept || fixedItem.specificItem}`,
       quantity: 1,
-      unitPrice: fixedItem.amount,
-      amount: fixedItem.amount,
-      advanceAmount: fixedItem.amount,
+      unitPrice: payAmount,
+      amount: payAmount,
+      advanceAmount: payAmount,
       paymentMethod: 'transferencia',
       orderId: '',
       materialId: ''
@@ -631,6 +640,13 @@ export default function ExpensesAndBudgetsPage() {
       setFormOpen(true)
     }
   }
+
+  useEffect(() => {
+    if (location?.state?.quickPayItem) {
+      handleQuickPayFixedExpense(location.state.quickPayItem)
+      window.history.replaceState({}, document.title)
+    }
+  }, [location?.state])
 
   const validateStep = (step) => {
     if (step === 1) {
