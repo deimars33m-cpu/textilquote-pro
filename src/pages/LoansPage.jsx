@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, Input, Button, AlertBanner, Modal, Select } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
@@ -23,15 +23,18 @@ export default function LoansPage() {
   const [loans, setLoans] = useState([])
   const [payments, setPayments] = useState([])
   const [creditors, setCreditors] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  // UI Control State
-  const [selectedLoan, setSelectedLoan] = useState(null)
+  // UI Control State - Store only the ID to prevent stale references & flickering
+  const [selectedLoanId, setSelectedLoanId] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [showEditLoanModal, setShowEditLoanModal] = useState(false)
+  const [showEditPaymentModal, setShowEditPaymentModal] = useState(false)
+  const [editingPayment, setEditingPayment] = useState(null)
   const [activeTab, setActiveTab] = useState('activo') // 'activo' | 'pagado'
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -49,6 +52,21 @@ export default function LoansPage() {
     notes: ''
   })
 
+  const [editLoanForm, setEditLoanForm] = useState({
+    id: '',
+    creditor_id: '',
+    creditor_name: '',
+    loan_type: 'banco',
+    principal_amount: '',
+    interest_rate: '',
+    interest_period: 'mensual',
+    term_months: '',
+    start_date: getTodayStr(),
+    monthly_payment: '',
+    notes: '',
+    status: 'activo'
+  })
+
   const [newPayment, setNewPayment] = useState({
     amount: '',
     principal_component: '',
@@ -58,57 +76,55 @@ export default function LoansPage() {
     notes: ''
   })
 
-  // Fetch Data
-  const fetchData = async () => {
+  const [editPaymentForm, setEditPaymentForm] = useState({
+    id: '',
+    loan_id: '',
+    expense_id: null,
+    amount: '',
+    principal_component: '',
+    interest_component: '',
+    payment_date: getTodayStr(),
+    payment_method: 'transferencia',
+    notes: ''
+  })
+
+  // Auto-dismiss success notification
+  useEffect(() => {
+    if (!successMsg) return
+    const t = setTimeout(() => setSuccessMsg(''), 4000)
+    return () => clearTimeout(t)
+  }, [successMsg])
+
+  // Fetch Data - isSilent avoids unmounting the UI or showing the whole-page loader
+  const fetchData = useCallback(async (isSilent = false) => {
     if (!user) return
-    setLoading(true)
+    if (!isSilent) setInitialLoading(true)
     setErrorMsg('')
     try {
-      // 1. Fetch Loans
-      const { data: loansData, error: loansError } = await supabase
-        .from('loans')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [loansRes, paymentsRes, creditorsRes] = await Promise.all([
+        supabase.from('loans').select('*').order('created_at', { ascending: false }),
+        supabase.from('loan_payments').select('*').order('payment_date', { ascending: false }),
+        supabase.from('terceros').select('*').eq('role', 'acreedor').order('name', { ascending: true })
+      ])
 
-      if (loansError) throw loansError
+      if (loansRes.error) throw loansRes.error
+      if (paymentsRes.error) throw paymentsRes.error
+      if (creditorsRes.error) throw creditorsRes.error
 
-      // 2. Fetch Payments
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('loan_payments')
-        .select('*')
-        .order('payment_date', { ascending: false })
-
-      if (paymentsError) throw paymentsError
-
-      // 3. Fetch Creditors (terceros with role 'acreedor')
-      const { data: creditorsData, error: creditorsError } = await supabase
-        .from('terceros')
-        .select('*')
-        .eq('role', 'acreedor')
-        .order('name', { ascending: true })
-
-      if (creditorsError) throw creditorsError
-
-      setLoans(loansData || [])
-      setPayments(paymentsData || [])
-      setCreditors(creditorsData || [])
-
-      // Update selected loan reference if active
-      if (selectedLoan) {
-        const updated = loansData.find(l => l.id === selectedLoan.id)
-        setSelectedLoan(updated || null)
-      }
+      setLoans(loansRes.data || [])
+      setPayments(paymentsRes.data || [])
+      setCreditors(creditorsRes.data || [])
     } catch (err) {
       console.error("Error loading loan data:", err)
       setErrorMsg('No se pudieron cargar los datos de préstamos: ' + (err.message || 'Por favor reintenta.'))
     } finally {
-      setLoading(false)
+      if (!isSilent) setInitialLoading(false)
     }
-  }
+  }, [user])
 
   useEffect(() => {
-    fetchData()
-  }, [user])
+    fetchData(false)
+  }, [fetchData])
 
   // --- Calculations & Memos ---
   const loanStats = useMemo(() => {
@@ -162,16 +178,22 @@ export default function LoansPage() {
     })
   }, [loans, payments])
 
+  // Derive selectedLoan from the metrics array so it always has updated calculations without stale state
+  const selectedLoan = useMemo(() => {
+    if (!selectedLoanId) return null
+    return loansWithMetrics.find(l => l.id === selectedLoanId) || null
+  }, [loansWithMetrics, selectedLoanId])
+
   const filteredLoans = useMemo(() => {
     return loansWithMetrics.filter(loan => {
       const matchesTab = loan.status === activeTab
-      const matchesSearch = loan.creditor_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const matchesSearch = (loan.creditor_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                             (loan.notes || '').toLowerCase().includes(searchQuery.toLowerCase())
       return matchesTab && matchesSearch
     })
   }, [loansWithMetrics, activeTab, searchQuery])
 
-  // --- Handlers ---
+  // --- Handlers: Loans ---
   const handleCreateLoan = async (e) => {
     e.preventDefault()
     
@@ -190,7 +212,6 @@ export default function LoansPage() {
       let creditorName = ''
 
       if (isNewCreditor) {
-        // Create the creditor in terceros table first
         const { data: thirdData, error: thirdError } = await supabase
           .from('terceros')
           .insert({
@@ -246,7 +267,10 @@ export default function LoansPage() {
         monthly_payment: '',
         notes: ''
       })
-      await fetchData()
+      if (data && data[0]) {
+        setSelectedLoanId(data[0].id)
+      }
+      await fetchData(true)
     } catch (err) {
       console.error("Error creating loan:", err)
       setErrorMsg('No se pudo registrar el préstamo: ' + (err.message || 'Revisa tu conexión.'))
@@ -255,37 +279,137 @@ export default function LoansPage() {
     }
   }
 
-  // Smart amortisation calculator helper
-  const handleAmountChange = (val) => {
-    const totalPay = Number(val) || 0
-    if (!selectedLoan) return
+  const handleOpenEditLoan = (loan) => {
+    setEditLoanForm({
+      id: loan.id,
+      creditor_id: loan.creditor_id || '',
+      creditor_name: loan.creditor_name,
+      loan_type: loan.loan_type,
+      principal_amount: loan.principal_amount,
+      interest_rate: loan.interest_rate,
+      interest_period: loan.interest_period,
+      term_months: loan.term_months,
+      start_date: loan.start_date,
+      monthly_payment: loan.monthly_payment,
+      notes: loan.notes || '',
+      status: loan.status
+    })
+    setShowEditLoanModal(true)
+  }
 
-    // Suggest interest component based on current outstanding principal
-    const outstanding = selectedLoan.remainingPrincipal
-    const rateFraction = (Number(selectedLoan.interest_rate || 0) / 100)
+  const handleUpdateLoan = async (e) => {
+    e.preventDefault()
+    if (!editLoanForm.id) return
+
+    setSaving(true)
+    setErrorMsg('')
+    try {
+      let creditorName = editLoanForm.creditor_name
+      if (editLoanForm.creditor_id && editLoanForm.creditor_id !== 'new') {
+        const found = creditors.find(c => c.id === editLoanForm.creditor_id)
+        if (found) creditorName = found.name
+      }
+
+      const { error } = await supabase
+        .from('loans')
+        .update({
+          creditor_id: editLoanForm.creditor_id || null,
+          creditor_name: creditorName,
+          loan_type: editLoanForm.loan_type,
+          principal_amount: Number(editLoanForm.principal_amount),
+          interest_rate: Number(editLoanForm.interest_rate || 0),
+          interest_period: editLoanForm.interest_period,
+          term_months: Number(editLoanForm.term_months || 12),
+          start_date: editLoanForm.start_date,
+          monthly_payment: Number(editLoanForm.monthly_payment),
+          notes: editLoanForm.notes,
+          status: editLoanForm.status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editLoanForm.id)
+
+      if (error) throw error
+
+      setSuccessMsg('Préstamo actualizado correctamente.')
+      setShowEditLoanModal(false)
+      await fetchData(true)
+    } catch (err) {
+      console.error("Error updating loan:", err)
+      setErrorMsg('No se pudo actualizar el préstamo: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteLoan = async (loanId) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este préstamo? Esto borrará también sus amortizaciones (los registros de egresos se conservarán).')) return
+    
+    setErrorMsg('')
+    try {
+      const { error } = await supabase
+        .from('loans')
+        .delete()
+        .eq('id', loanId)
+
+      if (error) throw error
+
+      setSuccessMsg('Préstamo eliminado de la base de datos.')
+      setSelectedLoanId(null)
+      await fetchData(true)
+    } catch (err) {
+      console.error("Error deleting loan:", err)
+      setErrorMsg('No se pudo borrar el préstamo.')
+    }
+  }
+
+  // --- Helpers for payment calculation ---
+  const calculateAmortization = (val, targetLoan) => {
+    const totalPay = Number(val) || 0
+    if (!targetLoan) return { principal: val, interest: '0' }
+
+    const outstanding = targetLoan.remainingPrincipal
+    const rateFraction = (Number(targetLoan.interest_rate || 0) / 100)
     
     let suggestedInterest = 0
-    if (selectedLoan.interest_period === 'mensual') {
+    if (targetLoan.interest_period === 'mensual') {
       suggestedInterest = Math.min(totalPay, outstanding * rateFraction)
     } else {
-      // Annual rate divided by 12
       suggestedInterest = Math.min(totalPay, outstanding * (rateFraction / 12))
     }
 
-    // Round to 2 decimals
     suggestedInterest = Math.round(suggestedInterest * 100) / 100
     const suggestedPrincipal = Math.min(outstanding, Math.max(0, totalPay - suggestedInterest))
 
+    return {
+      principal: suggestedPrincipal.toString(),
+      interest: suggestedInterest.toString()
+    }
+  }
+
+  const handleAmountChange = (val) => {
+    const res = calculateAmortization(val, selectedLoan)
     setNewPayment(prev => ({
       ...prev,
       amount: val,
-      interest_component: suggestedInterest.toString(),
-      principal_component: suggestedPrincipal.toString()
+      interest_component: res.interest,
+      principal_component: res.principal
     }))
   }
 
+  const handleEditAmountChange = (val) => {
+    const res = calculateAmortization(val, selectedLoan)
+    setEditPaymentForm(prev => ({
+      ...prev,
+      amount: val,
+      interest_component: res.interest,
+      principal_component: res.principal
+    }))
+  }
+
+  // --- Handlers: Payments / Transactions ---
   const handleCreatePayment = async (e) => {
     e.preventDefault()
+    if (!selectedLoan) return
     if (!newPayment.amount || !newPayment.principal_component || !newPayment.interest_component) {
       setErrorMsg('Por favor completa todos los importes del pago.')
       return
@@ -366,7 +490,7 @@ export default function LoansPage() {
         payment_method: 'transferencia',
         notes: ''
       })
-      await fetchData()
+      await fetchData(true)
     } catch (err) {
       console.error("Error creating payment:", err)
       setErrorMsg('No se pudo procesar la amortización: ' + (err.message || 'Verifica la base de datos.'))
@@ -375,29 +499,156 @@ export default function LoansPage() {
     }
   }
 
-  const handleDeleteLoan = async (loanId) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este préstamo? Esto borrará también sus amortizaciones (los registros de egresos se conservarán).')) return
-    
+  const handleOpenEditPayment = (payment) => {
+    setEditingPayment(payment)
+    setEditPaymentForm({
+      id: payment.id,
+      loan_id: payment.loan_id,
+      expense_id: payment.expense_id,
+      amount: payment.amount.toString(),
+      principal_component: payment.principal_component.toString(),
+      interest_component: payment.interest_component.toString(),
+      payment_date: payment.payment_date,
+      payment_method: 'transferencia',
+      notes: payment.notes || ''
+    })
+    setShowEditPaymentModal(true)
+  }
+
+  const handleUpdatePayment = async (e) => {
+    e.preventDefault()
+    if (!editPaymentForm.id || !selectedLoan) return
+
+    const payAmount = Number(editPaymentForm.amount)
+    const principalComp = Number(editPaymentForm.principal_component)
+    const interestComp = Number(editPaymentForm.interest_component)
+
+    if (Math.abs(payAmount - (principalComp + interestComp)) > 0.05) {
+      setErrorMsg('La suma del Capital y los Intereses debe ser igual al Monto Total.')
+      return
+    }
+
+    setSaving(true)
     setErrorMsg('')
     try {
-      const { error } = await supabase
-        .from('loans')
-        .delete()
-        .eq('id', loanId)
+      // 1. Update loan_payments row
+      const { error: payError } = await supabase
+        .from('loan_payments')
+        .update({
+          payment_date: editPaymentForm.payment_date,
+          amount: payAmount,
+          principal_component: principalComp,
+          interest_component: interestComp,
+          notes: editPaymentForm.notes
+        })
+        .eq('id', editPaymentForm.id)
 
-      if (error) throw error
+      if (payError) throw payError
 
-      setSuccessMsg('Préstamo eliminado de la base de datos.')
-      setSelectedLoan(null)
-      await fetchData()
+      // 2. Update linked expense if it exists
+      if (editPaymentForm.expense_id) {
+        await supabase
+          .from('expenses')
+          .update({
+            date: editPaymentForm.payment_date,
+            unit_price: payAmount,
+            amount: payAmount,
+            payment_method: editPaymentForm.payment_method,
+            description: `Cuota préstamo. Amortización Capital: Bs ${formatCurrency(principalComp, 0)} | Intereses: Bs ${formatCurrency(interestComp, 0)}. ${editPaymentForm.notes || ''}`
+          })
+          .eq('id', editPaymentForm.expense_id)
+      }
+
+      // 3. Recalculate if loan is 'pagado' or 'activo'
+      const otherPaymentsPrincipal = selectedLoan.paymentsList
+        .filter(p => p.id !== editPaymentForm.id)
+        .reduce((sum, p) => sum + Number(p.principal_component || 0), 0)
+      const newTotalPrincipal = otherPaymentsPrincipal + principalComp
+      const isPaid = newTotalPrincipal >= Number(selectedLoan.principal_amount)
+      const targetStatus = isPaid ? 'pagado' : 'activo'
+
+      if (targetStatus !== selectedLoan.status) {
+        await supabase
+          .from('loans')
+          .update({ status: targetStatus })
+          .eq('id', selectedLoan.id)
+      }
+
+      setSuccessMsg('Transacción de amortización actualizada con éxito.')
+      setShowEditPaymentModal(false)
+      setEditingPayment(null)
+      await fetchData(true)
     } catch (err) {
-      console.error("Error deleting loan:", err)
-      setErrorMsg('No se pudo borrar el préstamo.')
+      console.error("Error updating payment:", err)
+      setErrorMsg('Error al actualizar la transacción: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeletePayment = async (payment) => {
+    if (!window.confirm(`¿Estás seguro de eliminar este pago de Bs ${formatCurrency(payment.amount)}? Se borrará también el registro de egreso vinculado.`)) return
+
+    setErrorMsg('')
+    try {
+      // 1. Delete payment
+      const { error: delError } = await supabase
+        .from('loan_payments')
+        .delete()
+        .eq('id', payment.id)
+
+      if (delError) throw delError
+
+      // 2. Delete linked expense
+      if (payment.expense_id) {
+        await supabase
+          .from('expenses')
+          .delete()
+          .eq('id', payment.expense_id)
+      }
+
+      // 3. Check if loan status needs reverting from 'pagado' to 'activo'
+      if (selectedLoan && selectedLoan.status === 'pagado') {
+        const remainingPaidPrincipal = selectedLoan.paymentsList
+          .filter(p => p.id !== payment.id)
+          .reduce((sum, p) => sum + Number(p.principal_component || 0), 0)
+        
+        if (remainingPaidPrincipal < Number(selectedLoan.principal_amount)) {
+          await supabase
+            .from('loans')
+            .update({ status: 'activo' })
+            .eq('id', selectedLoan.id)
+        }
+      }
+
+      setSuccessMsg('Transacción de pago eliminada y saldo recalibrado.')
+      await fetchData(true)
+    } catch (err) {
+      console.error("Error deleting payment:", err)
+      setErrorMsg('No se pudo eliminar el pago: ' + err.message)
     }
   }
 
   return (
-    <div className="space-y-6 pb-12 animate-fade-in text-left">
+    <div className="space-y-6 pb-12 text-left">
+      {/* Toast notifications container (non-layout shifting) */}
+      <div className="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-md pointer-events-none">
+        {errorMsg && (
+          <div className="pointer-events-auto shadow-2xl">
+            <AlertBanner type="error" onClose={() => setErrorMsg('')}>
+              {errorMsg}
+            </AlertBanner>
+          </div>
+        )}
+        {successMsg && (
+          <div className="pointer-events-auto shadow-2xl">
+            <AlertBanner type="success" onClose={() => setSuccessMsg('')}>
+              {successMsg}
+            </AlertBanner>
+          </div>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -409,24 +660,12 @@ export default function LoansPage() {
         </div>
         <Button 
           onClick={() => setShowAddModal(true)} 
-          className="btn-3d bg-primary hover:bg-primary/95 text-white flex items-center gap-1.5 self-start md:self-auto"
+          className="btn-3d bg-primary hover:bg-primary/95 text-white flex items-center gap-1.5 self-start md:self-auto cursor-pointer"
         >
           <span className="material-symbols-outlined text-[18px]">add_circle</span>
           Registrar Préstamo
         </Button>
       </div>
-
-      {/* Messages */}
-      {errorMsg && (
-        <AlertBanner type="error" onClose={() => setErrorMsg('')}>
-          {errorMsg}
-        </AlertBanner>
-      )}
-      {successMsg && (
-        <AlertBanner type="success" onClose={() => setSuccessMsg('')}>
-          {successMsg}
-        </AlertBanner>
-      )}
 
       {/* Dashboard KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -508,8 +747,8 @@ export default function LoansPage() {
             {/* Filter Tabs */}
             <div className="flex bg-surface rounded-xl p-1 border border-outline-variant/30 shrink-0">
               <button
-                onClick={() => { setActiveTab('activo'); setSelectedLoan(null); }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                onClick={() => { setActiveTab('activo'); setSelectedLoanId(null); }}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
                   activeTab === 'activo'
                     ? 'bg-primary text-white shadow-md'
                     : 'text-on-surface-variant hover:text-white'
@@ -518,8 +757,8 @@ export default function LoansPage() {
                 Activos ({loansWithMetrics.filter(l => l.status === 'activo').length})
               </button>
               <button
-                onClick={() => { setActiveTab('pagado'); setSelectedLoan(null); }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                onClick={() => { setActiveTab('pagado'); setSelectedLoanId(null); }}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
                   activeTab === 'pagado'
                     ? 'bg-primary text-white shadow-md'
                     : 'text-on-surface-variant hover:text-white'
@@ -542,7 +781,7 @@ export default function LoansPage() {
             </div>
           </div>
 
-          {loading ? (
+          {initialLoading ? (
             <div className="py-20 flex flex-col items-center justify-center text-center">
               <div className="w-8 h-8 border-2 border-surface-container-high border-t-primary rounded-full animate-spin mb-2" />
               <p className="text-xs text-on-surface-variant italic">Buscando financiamientos...</p>
@@ -561,8 +800,8 @@ export default function LoansPage() {
                 return (
                   <div
                     key={loan.id}
-                    onClick={() => setSelectedLoan(loan)}
-                    className={`text-left p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[170px] ${
+                    onClick={() => setSelectedLoanId(loan.id)}
+                    className={`text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[170px] ${
                       isSelected
                         ? 'bg-primary/5 border-primary shadow-[0_0_12px_rgba(255,92,0,0.1)] scale-[1.01]'
                         : 'bg-surface-container-low border-outline-variant/30 hover:border-primary/45 hover:bg-white/[0.01]'
@@ -608,7 +847,7 @@ export default function LoansPage() {
                       </div>
                       <div className="h-1.5 w-full bg-white/[0.04] rounded-full overflow-hidden p-[1px] border border-white/[0.02]">
                         <div
-                          className="h-full rounded-full bg-primary shadow-[0_0_6px_rgba(255,92,0,0.4)] transition-all duration-500"
+                          className="h-full rounded-full bg-primary shadow-[0_0_6px_rgba(255,92,0,0.4)] transition-all duration-300"
                           style={{ width: `${loan.progressPercent}%` }}
                         />
                       </div>
@@ -623,7 +862,7 @@ export default function LoansPage() {
         {/* Right Side: Loan Details / Actions Panel */}
         <div className="space-y-6">
           {selectedLoan ? (
-            <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 text-left relative overflow-hidden space-y-5 animate-fade-in">
+            <div className="neu-surface p-5 rounded-2xl border border-outline-variant/30 text-left relative overflow-hidden space-y-5">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(255,92,0,0.02),transparent)] pointer-events-none" />
 
               {/* Title & Actions */}
@@ -632,13 +871,22 @@ export default function LoansPage() {
                   <h3 className="text-sm font-bold text-white line-clamp-1">{selectedLoan.creditor_name}</h3>
                   <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider">Ficha de Seguimiento</span>
                 </div>
-                <button
-                  onClick={() => handleDeleteLoan(selectedLoan.id)}
-                  className="p-1.5 hover:bg-error-container/20 text-on-surface-variant hover:text-error rounded-xl transition-colors shrink-0"
-                  title="Eliminar Préstamo"
-                >
-                  <span className="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleOpenEditLoan(selectedLoan)}
+                    className="p-1.5 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded-xl transition-colors cursor-pointer"
+                    title="Editar datos del préstamo"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteLoan(selectedLoan.id)}
+                    className="p-1.5 hover:bg-error-container/20 text-on-surface-variant hover:text-error rounded-xl transition-colors cursor-pointer"
+                    title="Eliminar Préstamo"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
               </div>
 
               {/* Progress Detail */}
@@ -649,7 +897,7 @@ export default function LoansPage() {
                 </div>
                 <div className="h-2 w-full bg-white/[0.04] rounded-full overflow-hidden p-[1px] border border-white/[0.02] mb-3">
                   <div
-                    className="h-full rounded-full bg-primary shadow-[0_0_8px_rgba(255,92,0,0.4)]"
+                    className="h-full rounded-full bg-primary shadow-[0_0_8px_rgba(255,92,0,0.4)] transition-all duration-300"
                     style={{ width: `${selectedLoan.progressPercent}%` }}
                   />
                 </div>
@@ -695,7 +943,7 @@ export default function LoansPage() {
               {selectedLoan.status === 'activo' && (
                 <Button
                   onClick={() => setShowPaymentModal(true)}
-                  className="btn-3d w-full bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1 text-xs py-2 rounded-xl"
+                  className="btn-3d w-full bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1 text-xs py-2 rounded-xl cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">price_check</span>
                   Registrar Pago de Cuota (Amortizar)
@@ -704,21 +952,45 @@ export default function LoansPage() {
 
               {/* Amortization Payment History list */}
               <div className="space-y-2">
-                <span className="text-[9px] font-mono font-bold text-on-surface-variant uppercase tracking-wider block">Historial de Pagos</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono font-bold text-on-surface-variant uppercase tracking-wider block">Historial de Pagos</span>
+                  <span className="text-[9px] font-mono text-on-surface-variant">{selectedLoan.paymentsList.length} cuota{selectedLoan.paymentsList.length !== 1 ? 's' : ''}</span>
+                </div>
                 
                 {selectedLoan.paymentsList.length === 0 ? (
                   <p className="text-[10px] text-on-surface-variant italic py-3 text-center bg-surface-container-low/30 rounded-xl border border-outline-variant/10">No se han registrado pagos para este préstamo.</p>
                 ) : (
-                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                     {selectedLoan.paymentsList.map(pay => (
-                      <div key={pay.id} className="p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/10 flex items-center justify-between gap-2 text-[11px] font-mono">
-                        <div>
+                      <div key={pay.id} className="p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/10 flex items-center justify-between gap-2 text-[11px] font-mono group hover:border-outline-variant/30 transition-colors">
+                        <div className="min-w-0">
                           <span className="text-white font-bold block">{formatCurrency(pay.amount)}</span>
                           <span className="text-[9px] text-on-surface-variant/70 block">{formatDate(pay.payment_date)}</span>
+                          {pay.notes && (
+                            <span className="text-[9px] text-on-surface-variant/60 italic block truncate max-w-[140px]">{pay.notes}</span>
+                          )}
                         </div>
-                        <div className="text-right">
-                          <span className="text-[9px] text-on-surface-variant block">Cap: {formatCurrency(pay.principal_component)}</span>
-                          <span className="text-[9px] text-amber-500/80 block">Int: {formatCurrency(pay.interest_component)}</span>
+                        <div className="text-right flex items-center gap-2">
+                          <div>
+                            <span className="text-[9px] text-on-surface-variant block">Cap: {formatCurrency(pay.principal_component)}</span>
+                            <span className="text-[9px] text-amber-500/80 block">Int: {formatCurrency(pay.interest_component)}</span>
+                          </div>
+                          <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleOpenEditPayment(pay)}
+                              className="p-1 hover:bg-surface-container text-on-surface-variant hover:text-primary rounded-lg transition-colors cursor-pointer"
+                              title="Editar este pago"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeletePayment(pay)}
+                              className="p-1 hover:bg-error-container/20 text-on-surface-variant hover:text-error rounded-lg transition-colors cursor-pointer"
+                              title="Eliminar este pago"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -728,7 +1000,7 @@ export default function LoansPage() {
             </div>
           ) : (
             <div className="neu-surface p-8 text-center rounded-2xl border border-outline-variant/30 flex flex-col items-center justify-center min-h-[300px]">
-              <span className="material-symbols-outlined text-[36px] text-on-surface-variant/20 mb-2 block animate-pulse">info</span>
+              <span className="material-symbols-outlined text-[36px] text-on-surface-variant/20 mb-2 block">info</span>
               <h4 className="text-sm font-bold text-on-surface-variant/80">Selecciona un Préstamo</h4>
               <p className="text-xs text-on-surface-variant/60 mt-1 max-w-[200px] mx-auto">Haz clic en cualquier préstamo para ver el detalle de amortización y registrar pagos.</p>
             </div>
@@ -812,8 +1084,8 @@ export default function LoansPage() {
                 value={newLoan.interest_period}
                 onChange={e => setNewLoan(prev => ({ ...prev, interest_period: e.target.value }))}
                 options={[
-                  { id: 'mensual', label: 'Mensual' },
-                  { id: 'anual', label: 'Anual' }
+                  { value: 'mensual', label: 'Mensual' },
+                  { value: 'anual', label: 'Anual' }
                 ]}
               />
 
@@ -846,11 +1118,124 @@ export default function LoansPage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/30">
-              <Button type="button" onClick={() => setShowAddModal(false)} className="btn-3d-raised text-on-surface-variant hover:text-white">
+              <Button type="button" onClick={() => setShowAddModal(false)} className="btn-3d-raised text-on-surface-variant hover:text-white cursor-pointer">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white">
+              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white cursor-pointer">
                 {saving ? 'Registrando...' : 'Registrar Préstamo'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* MODAL: Edit Loan */}
+      {showEditLoanModal && (
+        <Modal
+          isOpen={showEditLoanModal}
+          onClose={() => setShowEditLoanModal(false)}
+          title={`Editar Préstamo: ${editLoanForm.creditor_name}`}
+        >
+          <form onSubmit={handleUpdateLoan} className="space-y-4 text-left">
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                label="Acreedor *"
+                value={editLoanForm.creditor_id}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, creditor_id: e.target.value }))}
+                options={[
+                  ...creditors.map(c => ({ value: c.id, label: c.name }))
+                ]}
+              />
+
+              <Select
+                label="Tipo de Préstamo"
+                value={editLoanForm.loan_type}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, loan_type: e.target.value }))}
+                options={LOAN_TYPES}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Monto Principal (Bs) *"
+                type="number"
+                step="0.01"
+                value={editLoanForm.principal_amount}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, principal_amount: e.target.value }))}
+                required
+              />
+
+              <Input
+                label="Cuota Mensual Pactada (Bs) *"
+                type="number"
+                step="0.01"
+                value={editLoanForm.monthly_payment}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, monthly_payment: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Input
+                label="Tasa Interés (%)"
+                type="number"
+                step="0.01"
+                value={editLoanForm.interest_rate}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, interest_rate: e.target.value }))}
+              />
+
+              <Select
+                label="Frecuencia Interés"
+                value={editLoanForm.interest_period}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, interest_period: e.target.value }))}
+                options={[
+                  { value: 'mensual', label: 'Mensual' },
+                  { value: 'anual', label: 'Anual' }
+                ]}
+              />
+
+              <Input
+                label="Plazo (Meses)"
+                type="number"
+                value={editLoanForm.term_months}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, term_months: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Fecha de Desembolso"
+                type="date"
+                value={editLoanForm.start_date}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, start_date: e.target.value }))}
+              />
+
+              <Select
+                label="Estado del Préstamo"
+                value={editLoanForm.status}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, status: e.target.value }))}
+                options={[
+                  { value: 'activo', label: 'Activo' },
+                  { value: 'pagado', label: 'Pagado' }
+                ]}
+              />
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-xs font-bold text-on-surface-variant mb-1.5 uppercase font-mono">Notas del Préstamo</label>
+              <textarea
+                value={editLoanForm.notes}
+                onChange={e => setEditLoanForm(prev => ({ ...prev, notes: e.target.value }))}
+                className="w-full bg-surface-container border border-outline-variant/40 rounded-xl px-3.5 py-2.5 text-xs text-on-surface outline-none focus:border-primary/50 transition-colors h-[70px] resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/30">
+              <Button type="button" onClick={() => setShowEditLoanModal(false)} className="btn-3d-raised text-on-surface-variant hover:text-white cursor-pointer">
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white cursor-pointer">
+                {saving ? 'Guardando...' : 'Guardar Cambios'}
               </Button>
             </div>
           </form>
@@ -865,7 +1250,6 @@ export default function LoansPage() {
           title={`Registrar Pago: ${selectedLoan.creditor_name}`}
         >
           <form onSubmit={handleCreatePayment} className="space-y-4 text-left">
-            
             {/* Outstandings warning */}
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex justify-between items-center text-xs font-mono">
               <span className="text-on-surface-variant">Deuda Restante:</span>
@@ -933,11 +1317,91 @@ export default function LoansPage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/30">
-              <Button type="button" onClick={() => setShowPaymentModal(false)} className="btn-3d-raised text-on-surface-variant hover:text-white">
+              <Button type="button" onClick={() => setShowPaymentModal(false)} className="btn-3d-raised text-on-surface-variant hover:text-white cursor-pointer">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white">
+              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white cursor-pointer">
                 {saving ? 'Registrando...' : 'Registrar Amortización'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* MODAL: Edit Payment / Transaction */}
+      {showEditPaymentModal && (
+        <Modal
+          isOpen={showEditPaymentModal}
+          onClose={() => { setShowEditPaymentModal(false); setEditingPayment(null); }}
+          title="Editar Transacción de Pago / Amortización"
+        >
+          <form onSubmit={handleUpdatePayment} className="space-y-4 text-left">
+            <div className="grid grid-cols-1">
+              <Input
+                label="Monto Total Pagado (Bs) *"
+                type="number"
+                step="0.01"
+                value={editPaymentForm.amount}
+                onChange={e => handleEditAmountChange(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Amortización a Capital (Bs) *"
+                type="number"
+                step="0.01"
+                value={editPaymentForm.principal_component}
+                onChange={e => setEditPaymentForm(prev => ({ ...prev, principal_component: e.target.value }))}
+                required
+              />
+
+              <Input
+                label="Pago de Intereses (Bs) *"
+                type="number"
+                step="0.01"
+                value={editPaymentForm.interest_component}
+                onChange={e => setEditPaymentForm(prev => ({ ...prev, interest_component: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Fecha de Pago"
+                type="date"
+                value={editPaymentForm.payment_date}
+                onChange={e => setEditPaymentForm(prev => ({ ...prev, payment_date: e.target.value }))}
+              />
+
+              <Select
+                label="Método de Pago"
+                value={editPaymentForm.payment_method}
+                onChange={e => setEditPaymentForm(prev => ({ ...prev, payment_method: e.target.value }))}
+                options={PAYMENT_METHODS}
+              />
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-xs font-bold text-on-surface-variant mb-1.5 uppercase font-mono">Notas del Pago</label>
+              <textarea
+                value={editPaymentForm.notes}
+                onChange={e => setEditPaymentForm(prev => ({ ...prev, notes: e.target.value }))}
+                className="w-full bg-surface-container border border-outline-variant/40 rounded-xl px-3.5 py-2.5 text-xs text-on-surface outline-none focus:border-primary/50 transition-colors h-[60px] resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/30">
+              <Button 
+                type="button" 
+                onClick={() => { setShowEditPaymentModal(false); setEditingPayment(null); }} 
+                className="btn-3d-raised text-on-surface-variant hover:text-white cursor-pointer"
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving} className="btn-3d bg-primary hover:bg-primary/95 text-white cursor-pointer">
+                {saving ? 'Guardando...' : 'Guardar Cambios'}
               </Button>
             </div>
           </form>
