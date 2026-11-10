@@ -179,18 +179,50 @@ export function NotificationProvider({ children }) {
     let totalPaidThisMonth = 0
 
     activeItems.forEach(item => {
+      const itemSub = cleanText(item.subcategory || item.category)
+      const itemConcept = cleanText(item.concept)
+      const itemSpec = cleanText(item.specificItem)
+      const isVariable = item.isVariable !== undefined 
+        ? Boolean(item.isVariable) 
+        : (itemSub.includes('servicio') || itemConcept.includes('servicio') || itemConcept.includes('luz') || itemConcept.includes('electric') || itemConcept.includes('energia') || itemConcept.includes('agua') || itemConcept.includes('gas') || itemSpec.includes('luz') || itemSpec.includes('agua') || itemSpec.includes('gas'))
+
       const itemExpenses = assignedExpenses.get(item.id) || []
       const paidAmount = itemExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
       const expectedAmount = Number(item.amount) || 0
-      const remainingAmount = Math.max(0, expectedAmount - paidAmount)
-      const isFullyPaid = expectedAmount > 0 ? paidAmount >= expectedAmount : paidAmount > 0
-      const isPartial = paidAmount > 0 && remainingAmount > 0
-      const percentagePaid = expectedAmount > 0 ? Math.min(100, Math.round((paidAmount / expectedAmount) * 100)) : (isFullyPaid ? 100 : 0)
+
+      let isFullyPaid = false
+      let remainingAmount = 0
+      let isPartial = false
+      let percentagePaid = 0
+
+      if (isVariable) {
+        // En gastos de costo variable (ej. Servicios Básicos / Energía Eléctrica / Luz / Agua),
+        // el monto configurado es solamente especulativo o referencial.
+        // Al registrar una cancelación en el mes, ésta representa el 100% del costo real del mes.
+        if (paidAmount > 0) {
+          isFullyPaid = true
+          remainingAmount = 0
+          isPartial = false
+          percentagePaid = 100
+        } else {
+          isFullyPaid = false
+          remainingAmount = expectedAmount
+          isPartial = false
+          percentagePaid = 0
+        }
+      } else {
+        // Gasto fijo estándar (contrato de monto definido, ej. alquiler, crédito)
+        remainingAmount = Math.max(0, expectedAmount - paidAmount)
+        isFullyPaid = expectedAmount > 0 ? paidAmount >= expectedAmount : paidAmount > 0
+        isPartial = paidAmount > 0 && remainingAmount > 0
+        percentagePaid = expectedAmount > 0 ? Math.min(100, Math.round((paidAmount / expectedAmount) * 100)) : (isFullyPaid ? 100 : 0)
+      }
 
       totalPaidThisMonth += paidAmount
 
       const itemData = {
         ...item,
+        isVariable,
         expectedAmount,
         paidAmount,
         remainingAmount,

@@ -95,6 +95,11 @@ export default function NotificationRightSidebar() {
                         <span className="text-[9px] font-bold uppercase text-error font-mono">
                           Vencido (Día {item.dueDay})
                         </span>
+                        {item.isVariable && (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[8px] font-bold border border-purple-500/30">
+                            Variable
+                          </span>
+                        )}
                         {item.isPartial && (
                           <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono text-[8px] font-bold border border-amber-500/30">
                             Parcial ({item.percentagePaid}%)
@@ -103,7 +108,9 @@ export default function NotificationRightSidebar() {
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-[11px] font-mono font-bold text-white block">
-                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                          {item.isVariable && !item.isPartial
+                            ? `Ref: ${formatCurrency(item.amount)}`
+                            : formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
                         </span>
                         {item.isPartial && (
                           <span className="text-[8px] font-mono text-on-surface-variant block">
@@ -162,6 +169,11 @@ export default function NotificationRightSidebar() {
                         <span className="text-[9px] font-bold uppercase text-amber-400 font-mono">
                           {item.daysLeft === 0 ? 'Vence Hoy' : item.daysLeft < 0 ? `Vencido (${Math.abs(item.daysLeft)}d)` : `En ${item.daysLeft} día(s)`}
                         </span>
+                        {item.isVariable && (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[8px] font-bold border border-purple-500/30">
+                            Variable
+                          </span>
+                        )}
                         {item.isPartial && (
                           <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[8px] font-bold border border-amber-500/30">
                             Parcial ({item.percentagePaid}%)
@@ -170,7 +182,9 @@ export default function NotificationRightSidebar() {
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-[11px] font-mono font-bold text-white block">
-                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                          {item.isVariable && !item.isPartial
+                            ? `Ref: ${formatCurrency(item.amount)}`
+                            : formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
                         </span>
                         {item.isPartial && (
                           <span className="text-[8px] font-mono text-on-surface-variant block">
@@ -303,7 +317,9 @@ export default function NotificationRightSidebar() {
                           </span>
                         </div>
                         <div className="flex justify-between items-center text-[8.5px] font-mono text-emerald-300/70">
-                          <span>Cubierto 100%</span>
+                          <span>
+                            100% cancelado {item.isVariable && item.amount ? `• Ref: ${formatCurrency(item.amount)}` : ''}
+                          </span>
                           <span>{item.matchingExpensesCount} registro(s)</span>
                         </div>
                       </div>

@@ -63,6 +63,11 @@ export default function MobileNotificationModal() {
                         <span className="text-[9px] font-bold text-error font-mono uppercase">
                           VENCIDO HACE {item.daysOverdue} DÍA(S) (Día {item.dueDay})
                         </span>
+                        {item.isVariable && (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[8px] font-bold border border-purple-500/30">
+                            Variable
+                          </span>
+                        )}
                         {item.isPartial && (
                           <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono text-[8px] font-bold border border-amber-500/30">
                             Parcial ({item.percentagePaid}%)
@@ -71,7 +76,9 @@ export default function MobileNotificationModal() {
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-xs font-mono font-bold text-error block">
-                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                          {item.isVariable && !item.isPartial
+                            ? `Ref: ${formatCurrency(item.amount)}`
+                            : formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
                         </span>
                         {item.isPartial && (
                           <span className="text-[8px] font-mono text-on-surface-variant block">
@@ -127,6 +134,11 @@ export default function MobileNotificationModal() {
                         <span className="text-[9px] font-bold text-amber-400 font-mono uppercase">
                           {item.daysLeft === 0 ? 'VENCE HOY' : item.daysLeft < 0 ? `VENCIDO (${Math.abs(item.daysLeft)}d)` : `VENCE EN ${item.daysLeft} DÍA(S)`} (Día {item.dueDay})
                         </span>
+                        {item.isVariable && (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[8px] font-bold border border-purple-500/30">
+                            Variable
+                          </span>
+                        )}
                         {item.isPartial && (
                           <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[8px] font-bold border border-amber-500/30">
                             Parcial ({item.percentagePaid}%)
@@ -135,7 +147,9 @@ export default function MobileNotificationModal() {
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-xs font-mono font-bold text-amber-400 block">
-                          {formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
+                          {item.isVariable && !item.isPartial
+                            ? `Ref: ${formatCurrency(item.amount)}`
+                            : formatCurrency(item.remainingAmount > 0 ? item.remainingAmount : item.amount)}
                         </span>
                         {item.isPartial && (
                           <span className="text-[8px] font-mono text-on-surface-variant block">
@@ -255,7 +269,7 @@ export default function MobileNotificationModal() {
                         <div>
                           <span className="text-xs font-bold text-white block">{item.concept}</span>
                           <span className="text-[9px] font-mono text-emerald-300/70">
-                            Cubierto 100% ({item.matchingExpensesCount} pago(s))
+                            100% cancelado {item.isVariable && item.amount ? `• Ref: ${formatCurrency(item.amount)}` : ''} ({item.matchingExpensesCount} pago(s))
                           </span>
                         </div>
                         <span className="text-xs font-mono font-bold text-emerald-400">

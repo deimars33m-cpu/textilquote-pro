@@ -1699,17 +1699,18 @@ function FixedExpensesEditor() {
     amount: '',
     dueDay: 5,
     active: true,
+    isVariable: false,
     notes: ''
   })
 
   // Sugerencias prestablecidas para agregados en 1 clic
   const SUGGESTIONS = [
-    { subcategory: 'Alquileres', specificItem: 'Alquiler Taller', defaultAmount: 1500, dueDay: 5 },
-    { subcategory: 'Alquileres', specificItem: 'Alquiler Tienda', defaultAmount: 1200, dueDay: 5 },
-    { subcategory: 'Servicios Básicos', specificItem: 'Luz', defaultAmount: 350, dueDay: 10 },
-    { subcategory: 'Servicios Básicos', specificItem: 'Agua', defaultAmount: 80, dueDay: 12 },
-    { subcategory: 'Telecomunicaciones', specificItem: 'Internet', defaultAmount: 220, dueDay: 15 },
-    { subcategory: 'Dependientes', specificItem: 'Sueldos', defaultAmount: 4500, dueDay: 30 }
+    { subcategory: 'Alquileres', specificItem: 'Alquiler Taller', defaultAmount: 1500, dueDay: 5, isVariable: false },
+    { subcategory: 'Alquileres', specificItem: 'Alquiler Tienda', defaultAmount: 1200, dueDay: 5, isVariable: false },
+    { subcategory: 'Servicios Básicos', specificItem: 'Luz', defaultAmount: 350, dueDay: 10, isVariable: true },
+    { subcategory: 'Servicios Básicos', specificItem: 'Agua', defaultAmount: 80, dueDay: 12, isVariable: true },
+    { subcategory: 'Telecomunicaciones', specificItem: 'Internet', defaultAmount: 220, dueDay: 15, isVariable: false },
+    { subcategory: 'Dependientes', specificItem: 'Sueldos', defaultAmount: 4500, dueDay: 30, isVariable: false }
   ]
 
   const totalMonthly = fixedExpenses
@@ -1727,11 +1728,13 @@ function FixedExpensesEditor() {
         amount: preset.defaultAmount,
         dueDay: preset.dueDay,
         active: true,
+        isVariable: preset.isVariable || false,
         notes: ''
       })
     } else {
+      const defaultSub = Object.keys(fixedExpensesCats)[0] || ''
       setForm({
-        subcategory: Object.keys(fixedExpensesCats)[0] || '',
+        subcategory: defaultSub,
         specificItem: '',
         provider_id: '',
         provider_name: '',
@@ -1739,6 +1742,7 @@ function FixedExpensesEditor() {
         amount: '',
         dueDay: 5,
         active: true,
+        isVariable: defaultSub.toLowerCase().includes('servicio'),
         notes: ''
       })
     }
@@ -1748,6 +1752,9 @@ function FixedExpensesEditor() {
 
   const handleOpenEdit = (item) => {
     setEditingItem(item)
+    const isVar = item.isVariable !== undefined 
+      ? item.isVariable 
+      : (String(item.subcategory || item.category || '').toLowerCase().includes('servicio') || String(item.concept || '').toLowerCase().includes('luz'))
     setForm({
       subcategory: item.subcategory || item.category || Object.keys(fixedExpensesCats)[0] || '',
       specificItem: item.specificItem || item.concept || '',
@@ -1757,6 +1764,7 @@ function FixedExpensesEditor() {
       amount: item.amount || '',
       dueDay: item.dueDay || 5,
       active: item.active !== false,
+      isVariable: Boolean(isVar),
       notes: item.notes || ''
     })
     setShowModal(true)
@@ -1789,6 +1797,7 @@ function FixedExpensesEditor() {
       amount: Number(form.amount),
       dueDay: Number(form.dueDay) || 1,
       active: form.active,
+      isVariable: Boolean(form.isVariable),
       notes: form.notes.trim()
     }
 
@@ -1875,9 +1884,16 @@ function FixedExpensesEditor() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-1">
-                      {item.subcategory || item.category || 'Gastos Fijos'}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {item.subcategory || item.category || 'Gastos Fijos'}
+                      </span>
+                      {(item.isVariable || String(item.subcategory || item.category || '').toLowerCase().includes('servicio')) && (
+                        <span className="inline-block text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                          Costo Variable
+                        </span>
+                      )}
+                    </div>
                     <h4 className="font-bold text-white text-sm">{item.specificItem || item.concept}</h4>
                     {item.provider_name && (
                       <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
@@ -1913,7 +1929,11 @@ function FixedExpensesEditor() {
 
                 <div className="p-2.5 rounded-xl bg-surface-container-high/40 border border-white/5 flex items-center justify-between font-mono text-xs">
                   <div>
-                    <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">Monto Mensual</span>
+                    <span className="text-[9px] text-on-surface-variant block font-sans uppercase font-bold">
+                      {(item.isVariable || String(item.subcategory || item.category || '').toLowerCase().includes('servicio'))
+                        ? 'Monto Ref. / Estimado'
+                        : 'Monto Mensual'}
+                    </span>
                     <span className="font-bold text-emerald-400 text-sm">{formatCurrency(item.amount)}</span>
                   </div>
                   <div className="text-right">
@@ -1961,10 +1981,12 @@ function FixedExpensesEditor() {
                   value={form.subcategory}
                   onChange={e => {
                     const newSub = e.target.value
+                    const isService = newSub.toLowerCase().includes('servicio')
                     setForm({ 
                       ...form, 
                       subcategory: newSub, 
-                      specificItem: fixedExpensesCats[newSub]?.[0] || '' 
+                      specificItem: fixedExpensesCats[newSub]?.[0] || '',
+                      isVariable: isService ? true : form.isVariable
                     })
                   }}
                   options={Object.keys(fixedExpensesCats).map(cat => ({ value: cat, label: cat }))}
@@ -2020,7 +2042,7 @@ function FixedExpensesEditor() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
-                  Monto Mensual (Bs) *
+                  {form.isVariable ? 'Monto Referencial / Promedio (Bs) *' : 'Monto Mensual (Bs) *'}
                 </label>
                 <Input
                   type="number"
@@ -2059,6 +2081,24 @@ function FixedExpensesEditor() {
               <label htmlFor="activeCheck" className="text-xs font-bold text-on-surface cursor-pointer select-none">
                 Activar seguimiento de vencimiento
               </label>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface-container border border-outline-variant/40 space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isVariableCheck"
+                  checked={form.isVariable}
+                  onChange={e => setForm({ ...form, isVariable: e.target.checked })}
+                  className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
+                />
+                <label htmlFor="isVariableCheck" className="text-xs font-bold text-white cursor-pointer select-none">
+                  Costo Variable / Monto Referencial
+                </label>
+              </div>
+              <p className="text-[10px] text-on-surface-variant pl-6">
+                Para servicios básicos (energía eléctrica/luz, agua, etc.). Al registrar cualquier cancelación en el mes, se considera el 100% del servicio cancelado; el monto configurado es solo referencial o promedio estimado.
+              </p>
             </div>
 
             <div>
