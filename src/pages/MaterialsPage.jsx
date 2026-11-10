@@ -69,17 +69,17 @@ export default function MaterialsPage() {
   const [savingPurchase, setSavingPurchase] = useState(false)
   const [purchaseError, setPurchaseError] = useState(null)
 
-  // Modal Asignar a Contrato
+  // Modal Asignar a Pedido Activo / Contrato
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [assignForm, setAssignForm] = useState({
     material_id: '',
-    contract_id: '',
+    destination_key: '', // 'order:<id>' | 'contract:<id>'
     quantity: '',
     date: new Date().toISOString().split('T')[0],
     notes: '',
   })
-  const [activeContracts, setActiveContracts] = useState([])
-  const [loadingContracts, setLoadingContracts] = useState(false)
+  const [activeDestinations, setActiveDestinations] = useState({ orders: [], contracts: [] })
+  const [loadingDestinations, setLoadingDestinations] = useState(false)
   const [savingAssign, setSavingAssign] = useState(false)
   const [assignError, setAssignError] = useState(null)
 
@@ -111,21 +111,42 @@ export default function MaterialsPage() {
     }
   }, [user])
 
-  const fetchActiveContracts = useCallback(async () => {
+  const fetchActiveDestinations = useCallback(async () => {
     if (!user) return
-    setLoadingContracts(true)
+    setLoadingDestinations(true)
     try {
-      const { data, error } = await supabase
-        .from('contract_tracking')
-        .select('id, contract_name, client_name, total_units, status')
-        .eq('user_id', user.id)
-        .neq('status', 'entregado')
-        .order('created_at', { ascending: false })
-      if (!error && data) setActiveContracts(data)
+      const [contractsRes, ordersRes] = await Promise.all([
+        supabase
+          .from('contract_tracking')
+          .select('id, contract_name, client_name, total_units, status')
+          .eq('user_id', user.id)
+          .neq('status', 'entregado')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('orders')
+          .select(`
+            id,
+            order_number,
+            status,
+            total_amount,
+            delivery_date,
+            terceros (name),
+            order_items (name, quantity)
+          `)
+          .eq('user_id', user.id)
+          .not('status', 'in', '("entregado","cancelado")')
+          .order('created_at', { ascending: false })
+          .limit(30)
+      ])
+
+      setActiveDestinations({
+        contracts: contractsRes.data || [],
+        orders: ordersRes.data || []
+      })
     } catch (e) {
-      console.error('Error fetching active contracts:', e)
+      console.error('Error fetching active destinations:', e)
     } finally {
-      setLoadingContracts(false)
+      setLoadingDestinations(false)
     }
   }, [user])
 
@@ -143,9 +164,11 @@ export default function MaterialsPage() {
     return materials.filter((m) => {
       const matchSearch = !search || m.name?.toLowerCase().includes(search.toLowerCase())
       const matchCategory = !filterCategory || m.category === filterCategory
-      return matchSearch && matchCategory
+      // En la pestaña de Existencias en Almacén, mostrar ÚNICAMENTE existencias físicas (> 0)
+      const matchStock = activeTab === 'inventario' ? (Number(m.current_stock) || 0) > 0 : true
+      return matchSearch && matchCategory && matchStock
     })
-  }, [materials, search, filterCategory])
+  }, [materials, search, filterCategory, activeTab])
 
   const groupedMaterials = useMemo(() => {
     const groups = {}
@@ -168,7 +191,7 @@ export default function MaterialsPage() {
     }))
   }, [filtered, categoryMap])
 
-  // Resumen de Métricas de Almacén
+  // Resumen de Métricas de Almacén (Pestaña Existencias)
   const inventoryMetrics = useMemo(() => {
     let totalStockItems = 0
     let lowStockCount = 0
@@ -189,6 +212,27 @@ export default function MaterialsPage() {
 
     return { totalStockItems, lowStockCount, outOfStockCount, totalEstimatedValue }
   }, [materials])
+
+  // Resumen de Métricas del Catálogo Global de Precios
+  const catalogMetrics = useMemo(() => {
+    let outdatedCount = 0
+    let updatedCount = 0
+
+    materials.forEach(m => {
+      if (isPriceOutdated(m.price_updated_at)) {
+        outdatedCount++
+      } else {
+        updatedCount++
+      }
+    })
+
+    return {
+      totalMaterials: materials.length,
+      outdatedCount,
+      updatedCount,
+      totalCategories: categories.length
+    }
+  }, [materials, categories])
 
   const openCreate = () => {
     setEditingItem(null)
@@ -238,11 +282,14 @@ export default function MaterialsPage() {
   }
 
   const openAssignModal = (preselectedMaterial = null) => {
-    fetchActiveContracts()
-    const mat = preselectedMaterial || (materials.length > 0 ? materials[0] : null)
+    fetchActiveDestinations()
+    let mat = preselectedMaterial
+    if (!mat || (Number(mat.current_stock) || 0) <= 0) {
+      mat = materials.find(m => (Number(m.current_stock) || 0) > 0) || null
+    }
     setAssignForm({
       material_id: mat ? mat.id : '',
-      contract_id: '',
+      destination_key: '',
       quantity: '',
       date: new Date().toISOString().split('T')[0],
       notes: '',
@@ -389,82 +436,104 @@ export default function MaterialsPage() {
   }
 
   const handleSaveAssign = async () => {
-    if (!assignForm.material_id) return setAssignError('Selecciona un material')
-    if (!assignForm.contract_id) return setAssignError('Selecciona un contrato de destino')
+    if (!assignForm.material_id) return setAssignError('Selecciona un material con existencias')
+    if (!assignForm.destination_key) return setAssignError('Selecciona un pedido o contrato activo de destino')
     const qty = parseFloat(assignForm.quantity)
-    if (isNaN(qty) || qty <= 0) return setAssignError('La cantidad debe ser mayor a 0')
+    if (isNaN(qty) || qty <= 0) return setAssignError('La cantidad a transferir debe ser mayor a 0')
 
     const selectedMat = materials.find(m => m.id === assignForm.material_id)
     const currentStock = Number(selectedMat?.current_stock) || 0
     if (qty > currentStock) {
-      return setAssignError(`La cantidad a transferir (${qty}) supera el stock disponible en almacén (${currentStock}).`)
+      return setAssignError(`La cantidad a transferir (${qty}) supera el stock disponible en almacén (${currentStock} ${selectedMat?.usage_unit || ''}).`)
     }
 
     setSavingAssign(true)
     setAssignError(null)
     try {
-      const selectedContract = activeContracts.find(c => c.id === assignForm.contract_id)
+      const [destType, destId] = assignForm.destination_key.split(':')
       const unitCost = Number(selectedMat?.unit_price) || 0
+      let refText = ''
+      let notesText = assignForm.notes.trim()
+      let contractId = null
 
-      // 1. Insertar movimiento de asignación
+      if (destType === 'order') {
+        const order = activeDestinations.orders.find(o => o.id === destId)
+        const clientName = order?.terceros?.name || 'Cliente'
+        const orderNum = order?.order_number ? `#${order.order_number}` : `ID-${destId.slice(0, 6)}`
+        refText = `Pedido ${orderNum} - ${clientName}`
+        if (!notesText) {
+          notesText = `Asignación de almacén a Pedido ${orderNum} (${clientName})`
+        }
+      } else {
+        const contract = activeDestinations.contracts.find(c => c.id === destId)
+        contractId = destId
+        refText = `Contrato: ${contract?.contract_name || destId.slice(0, 8)} (${contract?.client_name || ''})`
+        if (!notesText) {
+          notesText = `Asignación de almacén a Contrato: ${contract?.contract_name || ''}`
+        }
+      }
+
+      // 1. Insertar movimiento de inventario (tipo 'asignacion' descuenta del inventario)
       const { error: errMov } = await supabase.from('inventory_movements').insert({
         user_id: user.id,
         material_id: assignForm.material_id,
-        contract_id: assignForm.contract_id,
+        contract_id: contractId,
         movement_type: 'asignacion',
         quantity: qty,
         unit_cost: unitCost,
         total_cost: qty * unitCost,
-        reference: `Contrato: ${selectedContract?.contract_name || assignForm.contract_id.slice(0, 8)}`,
-        notes: assignForm.notes.trim() || `Asignado a contrato ${selectedContract?.contract_name || ''}`,
+        reference: refText,
+        notes: notesText,
         date: assignForm.date || new Date().toISOString().split('T')[0],
       })
       if (errMov) throw errMov
 
-      // 2. Descontar stock en almacén
+      // 2. Descontar stock físico en almacén (materials)
       const newStock = Math.max(0, currentStock - qty)
       await supabase.from('materials').update({ current_stock: newStock }).eq('id', assignForm.material_id)
 
-      // 3. Registrar o actualizar en contract_material_purchases para ese contrato
-      const { data: existingRows } = await supabase
-        .from('contract_material_purchases')
-        .select('*')
-        .eq('contract_id', assignForm.contract_id)
-
-      const match = (existingRows || []).find(r => r.material_id === assignForm.material_id || (r.material_name && r.material_name.toLowerCase().trim() === selectedMat.name.toLowerCase().trim()))
-
-      if (match) {
-        const newPurchased = (Number(match.qty_purchased) || 0) + qty
-        const newStatus = newPurchased >= (match.qty_required || 0) ? 'recibido' : 'parcial'
-        await supabase
+      // 3. Si el destino es un contrato, registrar o actualizar contract_material_purchases
+      if (contractId) {
+        const { data: existingRows } = await supabase
           .from('contract_material_purchases')
-          .update({
-            qty_purchased: newPurchased,
-            status: newStatus,
-            material_id: assignForm.material_id
-          })
-          .eq('id', match.id)
-      } else {
-        await supabase
-          .from('contract_material_purchases')
-          .insert({
-            contract_id: assignForm.contract_id,
-            material_id: assignForm.material_id,
-            material_name: selectedMat.name,
-            unit: selectedMat.usage_unit || 'unidad',
-            qty_required: qty,
-            qty_purchased: qty,
-            unit_cost: unitCost,
-            status: 'recibido',
-            notes: `Asignado desde almacén el ${assignForm.date}`
-          })
+          .select('*')
+          .eq('contract_id', contractId)
+
+        const match = (existingRows || []).find(r => r.material_id === assignForm.material_id || (r.material_name && r.material_name.toLowerCase().trim() === selectedMat.name.toLowerCase().trim()))
+
+        if (match) {
+          const newPurchased = (Number(match.qty_purchased) || 0) + qty
+          const newStatus = newPurchased >= (match.qty_required || 0) ? 'recibido' : 'parcial'
+          await supabase
+            .from('contract_material_purchases')
+            .update({
+              qty_purchased: newPurchased,
+              status: newStatus,
+              material_id: assignForm.material_id
+            })
+            .eq('id', match.id)
+        } else {
+          await supabase
+            .from('contract_material_purchases')
+            .insert({
+              contract_id: contractId,
+              material_id: assignForm.material_id,
+              material_name: selectedMat.name,
+              unit: selectedMat.usage_unit || 'unidad',
+              qty_required: qty,
+              qty_purchased: qty,
+              unit_cost: unitCost,
+              status: 'recibido',
+              notes: `Asignado desde existencias el ${assignForm.date}`
+            })
+        }
       }
 
       setAssignModalOpen(false)
       if (refetchMaterials) refetchMaterials()
       if (activeTab === 'kardex') fetchMovements()
     } catch (e) {
-      console.error('Error assigning material to contract:', e)
+      console.error('Error assigning material:', e)
       setAssignError(e.message)
     } finally {
       setSavingAssign(false)
@@ -522,75 +591,155 @@ export default function MaterialsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-headline-md font-semibold text-on-surface flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-3xl">warehouse</span>
-            Gestión de Almacén e Inventarios
+            <span className="material-symbols-outlined text-primary text-3xl">
+              {activeTab === 'inventario' ? 'warehouse' : activeTab === 'catalogo' ? 'sell' : 'history'}
+            </span>
+            {activeTab === 'inventario'
+              ? 'Existencias en Almacén'
+              : activeTab === 'catalogo'
+              ? 'Catálogo de Precios y Fichas'
+              : 'Kardex de Movimientos'}
           </h1>
           <p className="text-body-md text-on-surface-variant mt-1">
-            Control de stock, compras progresivas y asignación directa a contratos de producción
+            {activeTab === 'inventario'
+              ? 'Existencias físicas de materiales comprados desde Gastos y asignación parcial a pedidos activos'
+              : activeTab === 'catalogo'
+              ? 'Base de datos global de precios de mercado de materiales e insumos para cotizaciones'
+              : 'Historial de compras, ingresos, asignaciones a pedidos y salidas de almacén'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => openPurchaseModal()} className="border-primary/40 text-primary">
-            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-            Registrar Compra / Entrada
-          </Button>
-          <Button variant="secondary" onClick={() => openAssignModal()} className="border-emerald-500/40 text-emerald-400">
-            <span className="material-symbols-outlined text-[18px]">output</span>
-            Asignar a Contrato
-          </Button>
-          <Button onClick={openCreate}>
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            Nuevo Material
-          </Button>
+          {activeTab === 'inventario' && (
+            <>
+              <Button variant="secondary" onClick={() => openPurchaseModal()} className="border-primary/40 text-primary">
+                <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                Registrar Compra / Entrada
+              </Button>
+              <Button onClick={() => openAssignModal()} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                <span className="material-symbols-outlined text-[18px]">output</span>
+                Asignar a Pedido / Contrato
+              </Button>
+            </>
+          )}
+          {activeTab === 'catalogo' && (
+            <>
+              <Button variant="secondary" onClick={() => setCategoriesModalOpen(true)} className="border-outline-variant/50">
+                <span className="material-symbols-outlined text-[18px]">category</span>
+                Categorías
+              </Button>
+              <Button onClick={openCreate}>
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                Nuevo Material
+              </Button>
+            </>
+          )}
+          {activeTab === 'kardex' && (
+            <>
+              <Button variant="secondary" onClick={() => openPurchaseModal()} className="border-primary/40 text-primary">
+                <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                Registrar Entrada
+              </Button>
+              <Button variant="secondary" onClick={() => openAssignModal()} className="border-emerald-500/40 text-emerald-400">
+                <span className="material-symbols-outlined text-[18px]">output</span>
+                Asignar a Pedido
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Tarjetas de Métricas de Almacén */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-xl">inventory_2</span>
+      {/* Tarjetas de Métricas - Diferenciadas por pestaña */}
+      {activeTab === 'inventario' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">warehouse</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">En Almacén</p>
+              <p className="text-lg font-bold text-on-surface font-mono">{inventoryMetrics.totalStockItems} <span className="text-xs text-on-surface-variant">ítem(s)</span></p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Con Stock</p>
-            <p className="text-lg font-bold text-on-surface font-mono">{inventoryMetrics.totalStockItems} <span className="text-xs text-on-surface-variant">ítem(s)</span></p>
-          </div>
-        </div>
 
-        <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-xl">payments</span>
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">payments</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Valor Existencias</p>
+              <p className="text-lg font-bold text-emerald-400 font-mono">{formatCurrency(inventoryMetrics.totalEstimatedValue)}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Valor Almacén</p>
-            <p className="text-lg font-bold text-emerald-400 font-mono">{formatCurrency(inventoryMetrics.totalEstimatedValue)}</p>
-          </div>
-        </div>
 
-        <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-xl">warning</span>
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">warning</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Stock Bajo</p>
+              <p className={`text-lg font-bold font-mono ${inventoryMetrics.lowStockCount > 0 ? 'text-amber-400' : 'text-on-surface'}`}>
+                {inventoryMetrics.lowStockCount} <span className="text-xs text-on-surface-variant">ítem(s)</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Stock Bajo</p>
-            <p className={`text-lg font-bold font-mono ${inventoryMetrics.lowStockCount > 0 ? 'text-amber-400' : 'text-on-surface'}`}>
-              {inventoryMetrics.lowStockCount} <span className="text-xs text-on-surface-variant">ítem(s)</span>
-            </p>
-          </div>
-        </div>
 
-        <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-xl">error</span>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Agotados</p>
-            <p className={`text-lg font-bold font-mono ${inventoryMetrics.outOfStockCount > 0 ? 'text-red-400' : 'text-on-surface'}`}>
-              {inventoryMetrics.outOfStockCount} <span className="text-xs text-on-surface-variant">ítem(s)</span>
-            </p>
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-500/10 text-on-surface-variant flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">inventory_2</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Sin Existencias</p>
+              <p className="text-lg font-bold font-mono text-on-surface-variant">
+                {inventoryMetrics.outOfStockCount} <span className="text-xs text-on-surface-variant">en catálogo</span>
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : activeTab === 'catalogo' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">sell</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Materiales Registrados</p>
+              <p className="text-lg font-bold text-on-surface font-mono">{catalogMetrics.totalMaterials} <span className="text-xs text-on-surface-variant">fichas</span></p>
+            </div>
+          </div>
+
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">category</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Categorías</p>
+              <p className="text-lg font-bold text-blue-400 font-mono">{catalogMetrics.totalCategories} <span className="text-xs text-on-surface-variant">grupos</span></p>
+            </div>
+          </div>
+
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">check_circle</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Precios al Día</p>
+              <p className="text-lg font-bold text-emerald-400 font-mono">{catalogMetrics.updatedCount} <span className="text-xs text-on-surface-variant">recientes</span></p>
+            </div>
+          </div>
+
+          <div className="neu-surface p-3.5 rounded-2xl border border-outline-variant/30 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-xl">schedule</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant font-mono">Revisar Precios</p>
+              <p className={`text-lg font-bold font-mono ${catalogMetrics.outdatedCount > 0 ? 'text-amber-400' : 'text-on-surface'}`}>
+                {catalogMetrics.outdatedCount} <span className="text-xs text-on-surface-variant">{'>'} 30 días</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Pestañas de Vista */}
       <div className="flex items-center justify-between border-b border-outline-variant/30 pb-1">
@@ -604,7 +753,7 @@ export default function MaterialsPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">warehouse</span>
-            Inventario y Stock
+            Existencias en Almacén
           </button>
           <button
             onClick={() => setActiveTab('catalogo')}
@@ -615,7 +764,7 @@ export default function MaterialsPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">sell</span>
-            Catálogo y Precios
+            Catálogo de Precios
           </button>
           <button
             onClick={() => setActiveTab('kardex')}
@@ -626,7 +775,7 @@ export default function MaterialsPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">history</span>
-            Kardex / Movimientos
+            Kardex de Movimientos
           </button>
         </div>
 
@@ -742,12 +891,16 @@ export default function MaterialsPage() {
                                 <span className="font-bold text-primary">
                                   {mov.contract_tracking.contract_name} ({mov.contract_tracking.client_name})
                                 </span>
+                              ) : mov.reference?.startsWith('Pedido') ? (
+                                <span className="font-bold text-emerald-400">
+                                  {mov.reference}
+                                </span>
                               ) : (
                                 <span className="text-on-surface-variant/50 italic">Almacén General</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-on-surface-variant">
-                              {mov.supplier_name || mov.reference || '—'}
+                              {mov.supplier_name || (!mov.reference?.startsWith('Pedido') ? mov.reference : '') || '—'}
                             </td>
                             <td className="px-4 py-3 text-on-surface-variant text-[11px] max-w-xs truncate">
                               {mov.notes || '—'}
@@ -761,15 +914,15 @@ export default function MaterialsPage() {
             </div>
           )}
         </div>
-      ) : (
-        /* VISTAS DE INVENTARIO Y CATÁLOGO */
+      ) : activeTab === 'inventario' ? (
+        /* VISTA 1: EXISTENCIAS EN ALMACÉN (Sólo materiales con stock físico > 0) */
         <>
           {/* Filtros */}
           <div className="flex flex-col sm:flex-row gap-3">
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Buscar material..."
+              placeholder="Buscar existencias en almacén..."
             />
             <Select
               options={categoryOptions}
@@ -782,15 +935,21 @@ export default function MaterialsPage() {
 
           {filtered.length === 0 ? (
             <EmptyState
-              icon="inventory_2"
-              title="Sin materiales"
-              message={search || filterCategory ? 'No se encontraron materiales con esos filtros.' : 'Agrega tu primer material para comenzar.'}
-              action={!search && !filterCategory && (
-                <Button onClick={openCreate}>
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                  Agregar Material
-                </Button>
-              )}
+              icon="warehouse"
+              title="Sin existencias en almacén"
+              message={
+                search || filterCategory
+                  ? 'No se encontraron materiales con existencias para estos filtros.'
+                  : 'Actualmente no hay existencias físicas en almacén. Registra una compra o entrada de materiales para alimentar el stock.'
+              }
+              action={
+                !search && !filterCategory && (
+                  <Button onClick={() => openPurchaseModal()}>
+                    <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                    Registrar Ingreso de Compra
+                  </Button>
+                )
+              }
             />
           ) : (
             <div className="space-y-6">
@@ -804,139 +963,91 @@ export default function MaterialsPage() {
                         <span className="text-sm uppercase tracking-wider font-mono font-bold">{group.categoryName}</span>
                       </div>
                       <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold ${color.badge}`}>
-                        {group.items.length} material{group.items.length !== 1 ? 'es' : ''}
+                        {group.items.length} material{group.items.length !== 1 ? 'es con stock' : ' con stock'}
                       </span>
                     </div>
 
                     <div className="overflow-x-auto">
-                      <table className="w-full zebra-table">
+                      <table className="w-full zebra-table text-xs">
                         <thead>
                           <tr className="bg-surface-container-high/40">
-                            <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Nombre</th>
-                            <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Unidad</th>
-                            
-                            {activeTab === 'inventario' ? (
-                              <>
-                                <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Stock en Almacén</th>
-                                <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Stock Mínimo</th>
-                                <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Valor Estimado</th>
-                              </>
-                            ) : (
-                              <>
-                                <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Precio Unit.</th>
-                                <th className="text-right px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Merma %</th>
-                                <th className="text-left px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Última Actualización</th>
-                              </>
-                            )}
-
-                            <th className="text-center px-4 py-3 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones</th>
+                            <th className="text-left px-4 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Material / Insumo</th>
+                            <th className="text-left px-3 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Unidad</th>
+                            <th className="text-right px-4 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Stock en Almacén</th>
+                            <th className="text-right px-3 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Stock Mínimo</th>
+                            <th className="text-right px-4 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Costo Ref. (Bs)</th>
+                            <th className="text-right px-4 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Valor en Almacén</th>
+                            <th className="text-center px-4 py-2.5 font-mono text-label-caps uppercase tracking-wider text-on-surface-variant">Acciones de Almacén</th>
                           </tr>
                         </thead>
                         <tbody>
                           {group.items.map((m) => {
-                            const outdated = isPriceOutdated(m.price_updated_at)
                             const currentStock = Number(m.current_stock) || 0
                             const minStock = Number(m.min_stock) || 0
                             const isLowStock = minStock > 0 && currentStock <= minStock
-                            const isOutOfStock = currentStock <= 0
+                            const unitPrice = Number(m.unit_price) || 0
 
                             return (
-                              <tr key={m.id} className="border-t border-outline-variant/30">
-                                <td className="px-4 py-3 text-sm text-on-surface font-medium">
-                                  <div className="flex items-center gap-2">
-                                    <span>{m.name}</span>
-                                    {outdated && (
-                                      <span className="material-symbols-outlined text-primary text-[16px]" title="Precio desactualizado (>30 días)">
-                                        warning
+                              <tr key={m.id} className="border-t border-outline-variant/30 hover:bg-white/[0.02] transition-colors">
+                                <td className="px-4 py-2.5 font-semibold text-on-surface">
+                                  <span>{m.name}</span>
+                                </td>
+                                <td className="px-3 py-2.5 text-on-surface-variant">
+                                  {usageUnits[m.usage_unit] || m.usage_unit}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <span className={`font-bold text-sm ${isLowStock ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                      {currentStock}
+                                    </span>
+                                    {isLowStock ? (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                        Bajo
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                        Disponible
                                       </span>
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-4 py-3 text-sm text-on-surface-variant">
-                                  {usageUnits[m.usage_unit] || m.usage_unit}
+                                <td className="px-3 py-2.5 text-right font-mono text-on-surface-variant">
+                                  {minStock > 0 ? minStock : '—'}
                                 </td>
-
-                                {activeTab === 'inventario' ? (
-                                  <>
-                                    <td className="px-4 py-3 text-right">
-                                      <div className="flex items-center justify-end gap-1.5 font-mono">
-                                        <span className={`font-bold text-sm ${isOutOfStock ? 'text-red-400' : isLowStock ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                          {currentStock}
-                                        </span>
-                                        {isOutOfStock ? (
-                                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                                            Agotado
-                                          </span>
-                                        ) : isLowStock ? (
-                                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                            Bajo
-                                          </span>
-                                        ) : (
-                                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                            Disponible
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right font-mono text-on-surface-variant">
-                                      {minStock > 0 ? minStock : '—'}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right font-mono text-on-surface font-bold">
-                                      {formatCurrency(currentStock * (m.unit_price || 0))}
-                                    </td>
-                                  </>
-                                ) : (
-                                  <>
-                                    <td className="px-4 py-3 text-sm text-right font-mono text-on-surface font-bold">
-                                      {formatCurrency(m.unit_price)}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right font-mono text-on-surface-variant">
-                                      {m.default_waste_pct ?? 0}%
-                                    </td>
-                                    <td className={`px-4 py-3 text-sm ${outdated ? 'text-primary font-medium' : 'text-on-surface-variant'}`}>
-                                      {formatDate(m.price_updated_at)}
-                                    </td>
-                                  </>
-                                )}
-
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5 text-right font-mono text-on-surface-variant">
+                                  {formatCurrency(unitPrice)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-400">
+                                  {formatCurrency(currentStock * unitPrice)}
+                                </td>
+                                <td className="px-4 py-2.5">
                                   <div className="flex items-center justify-center gap-1.5">
-                                    {/* Botón rápido Registrar Entrada */}
+                                    {/* Botón Asignar a Pedido */}
+                                    <button
+                                      onClick={() => openAssignModal(m)}
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                                      title="Asignar cantidad parcial a un pedido activo o contrato"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">output</span>
+                                      <span>Asignar</span>
+                                    </button>
+
+                                    {/* Botón Ingresar más Compra */}
                                     <button
                                       onClick={() => openPurchaseModal(m)}
-                                      className="p-1.5 rounded-lg neu-raised-sm text-primary hover:bg-primary/10 transition-colors"
-                                      title="Registrar Compra / Ingreso a Almacén"
+                                      className="p-1.5 rounded-lg neu-raised-sm text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                      title="Registrar Compra / Entrada adicional a Almacén"
                                     >
                                       <span className="material-symbols-outlined text-[16px]">add_shopping_cart</span>
                                     </button>
 
-                                    {/* Botón rápido Asignar a Contrato */}
-                                    <button
-                                      onClick={() => openAssignModal(m)}
-                                      disabled={currentStock <= 0}
-                                      className={`p-1.5 rounded-lg neu-raised-sm transition-colors ${
-                                        currentStock > 0
-                                          ? 'text-emerald-400 hover:bg-emerald-500/10 cursor-pointer'
-                                          : 'text-on-surface-variant/30 cursor-not-allowed'
-                                      }`}
-                                      title={currentStock > 0 ? "Asignar stock a Contrato" : "Sin stock para asignar"}
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">output</span>
-                                    </button>
-
+                                    {/* Botón Editar */}
                                     <button
                                       onClick={() => openEdit(m)}
-                                      className="p-1.5 rounded-lg neu-raised-sm text-on-surface-variant hover:text-on-surface transition-colors"
-                                      title="Editar"
+                                      className="p-1.5 rounded-lg neu-raised-sm text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                      title="Editar ficha / existencias"
                                     >
                                       <span className="material-symbols-outlined text-[16px]">edit</span>
-                                    </button>
-                                    <button
-                                      onClick={() => setDeleteTarget(m)}
-                                      className="p-1.5 rounded-lg neu-raised-sm text-on-surface-variant hover:text-error transition-colors"
-                                      title="Eliminar"
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">delete</span>
                                     </button>
                                   </div>
                                 </td>
@@ -950,7 +1061,151 @@ export default function MaterialsPage() {
                 )
               })}
               <div className="text-right text-xs text-on-surface-variant font-mono mt-2 pr-2">
-                Total materiales: {filtered.length}
+                Total materiales con existencias: {filtered.length}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* VISTA 2: CATÁLOGO Y PRECIOS (Base de datos global con espacios estrechos y compactos, sin existencias ni asignación) */
+        <>
+          {/* Filtros */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar en catálogo de precios..."
+            />
+            <Select
+              options={categoryOptions}
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              placeholder="Todas las categorías"
+              className="w-full sm:w-48"
+            />
+          </div>
+
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon="sell"
+              title="Sin materiales en catálogo"
+              message={
+                search || filterCategory
+                  ? 'No se encontraron materiales con esos filtros.'
+                  : 'Agrega materiales para construir tu base de datos global de precios de mercado.'
+              }
+              action={
+                !search && !filterCategory && (
+                  <Button onClick={openCreate}>
+                    <span className="material-symbols-outlined text-[18px]">add</span>
+                    Agregar Primer Material
+                  </Button>
+                )
+              }
+            />
+          ) : (
+            <div className="space-y-4">
+              {groupedMaterials.map((group) => {
+                const color = getCategoryColor(group.categoryName)
+                return (
+                  <Card key={group.category} className="p-0 overflow-hidden border border-outline-variant/30">
+                    {/* Header compacto de categoría */}
+                    <div className={`px-3 py-1.5 font-bold flex items-center justify-between border-b ${color.bg} ${color.border}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color.hex }}></span>
+                        <span className="text-xs uppercase tracking-wider font-mono font-bold">{group.categoryName}</span>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono font-bold ${color.badge}`}>
+                        {group.items.length} ítem{group.items.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      {/* Tabla estrecha / densa para catálogo de precios */}
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-surface-container-high/60 border-b border-outline-variant/30 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant">
+                            <th className="text-left px-3 py-1.5 font-bold">Material / Insumo</th>
+                            <th className="text-left px-2.5 py-1.5 font-bold">Unidad Base</th>
+                            <th className="text-left px-2.5 py-1.5 font-bold">Presentación de Compra</th>
+                            <th className="text-right px-2.5 py-1.5 font-bold">Precio Unit. Mercado</th>
+                            <th className="text-center px-2.5 py-1.5 font-bold">% Merma</th>
+                            <th className="text-left px-2.5 py-1.5 font-bold">Última Revisión</th>
+                            <th className="text-center px-2.5 py-1.5 font-bold w-20">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-outline-variant/15 font-sans">
+                          {group.items.map((m) => {
+                            const outdated = isPriceOutdated(m.price_updated_at)
+                            const packText = m.purchase_quantity
+                              ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
+                              : 'Al por menor'
+
+                            return (
+                              <tr key={m.id} className="hover:bg-white/[0.03] transition-colors">
+                                <td className="px-3 py-1.5 font-medium text-on-surface">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-xs">{m.name}</span>
+                                    {m.notes && (
+                                      <span className="text-[10px] text-on-surface-variant/70 truncate max-w-[150px] italic">
+                                        ({m.notes})
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px]">
+                                  {usageUnits[m.usage_unit] || m.usage_unit}
+                                </td>
+                                <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px] font-mono">
+                                  {packText}
+                                </td>
+                                <td className="px-2.5 py-1.5 text-right font-mono font-bold text-on-surface text-xs">
+                                  {formatCurrency(m.unit_price)}
+                                </td>
+                                <td className="px-2.5 py-1.5 text-center font-mono text-on-surface-variant text-[11px]">
+                                  {m.default_waste_pct ?? 0}%
+                                </td>
+                                <td className="px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    <span className={outdated ? 'text-amber-400 font-medium' : 'text-on-surface-variant'}>
+                                      {formatDate(m.price_updated_at)}
+                                    </span>
+                                    {outdated && (
+                                      <span className="material-symbols-outlined text-amber-400 text-[14px]" title="Precio desactualizado (>30 días)">
+                                        schedule
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-2.5 py-1.5 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => openEdit(m)}
+                                      className="p-1 rounded hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                      title="Editar precio de mercado y especificaciones"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteTarget(m)}
+                                      className="p-1 rounded hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                                      title="Eliminar del catálogo"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )
+              })}
+              <div className="text-right text-xs text-on-surface-variant font-mono mt-1 pr-2">
+                Total materiales en catálogo: {filtered.length}
               </div>
             </div>
           )}
@@ -1128,11 +1383,11 @@ export default function MaterialsPage() {
         </div>
       </Modal>
 
-      {/* Modal: Asignar Material a Contrato */}
+      {/* Modal: Asignar Material a Pedido Activo o Contrato */}
       <Modal
         isOpen={assignModalOpen}
         onClose={() => setAssignModalOpen(false)}
-        title="Asignar Material de Almacén a Contrato"
+        title="Asignar Existencias a Pedido o Contrato"
         size="md"
       >
         <div className="space-y-4">
@@ -1146,44 +1401,64 @@ export default function MaterialsPage() {
           <div className="space-y-3">
             <div>
               <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
-                Material a Asignar *
+                Material con Existencias *
               </label>
               <select
                 className="w-full px-3 py-2 neu-pressed bg-surface-container-high rounded-xl text-sm text-on-surface outline-none"
                 value={assignForm.material_id}
                 onChange={e => setAssignForm(f => ({ ...f, material_id: e.target.value }))}
               >
-                <option value="">-- Seleccionar material --</option>
-                {materials.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} · Stock en Almacén: {m.current_stock ?? 0} {m.usage_unit || ''}
-                  </option>
-                ))}
+                <option value="">-- Seleccionar material con existencias --</option>
+                {materials
+                  .filter(m => (Number(m.current_stock) || 0) > 0)
+                  .map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} · Stock disponible: {m.current_stock} {m.usage_unit || ''} ({formatCurrency(m.unit_price)}/u)
+                    </option>
+                  ))}
               </select>
             </div>
 
             <div>
               <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
-                Contrato de Destino *
+                Destino: Pedido Activo o Contrato de Confección *
               </label>
-              {loadingContracts ? (
-                <p className="text-xs text-on-surface-variant italic">Cargando contratos activos...</p>
-              ) : activeContracts.length === 0 ? (
-                <p className="text-xs text-amber-400 bg-amber-400/10 p-2 rounded-lg border border-amber-400/20">
-                  No hay contratos activos en proceso. Crea un contrato en la hoja de contratos primero.
+              {loadingDestinations ? (
+                <p className="text-xs text-on-surface-variant italic">Cargando pedidos y contratos activos...</p>
+              ) : (activeDestinations.orders?.length === 0 && activeDestinations.contracts?.length === 0) ? (
+                <p className="text-xs text-amber-400 bg-amber-400/10 p-2.5 rounded-xl border border-amber-400/20">
+                  No se encontraron pedidos ni contratos activos en proceso. Crea un pedido o contrato primero para asignarle existencias.
                 </p>
               ) : (
                 <select
                   className="w-full px-3 py-2 neu-pressed bg-surface-container-high rounded-xl text-sm text-on-surface outline-none"
-                  value={assignForm.contract_id}
-                  onChange={e => setAssignForm(f => ({ ...f, contract_id: e.target.value }))}
+                  value={assignForm.destination_key}
+                  onChange={e => setAssignForm(f => ({ ...f, destination_key: e.target.value }))}
                 >
-                  <option value="">-- Seleccionar contrato activo --</option>
-                  {activeContracts.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.contract_name} ({c.client_name}) · {c.total_units} prendas
-                    </option>
-                  ))}
+                  <option value="">-- Seleccionar Pedido o Contrato Activo --</option>
+                  {activeDestinations.orders?.length > 0 && (
+                    <optgroup label="📋 Pedidos Activos en Taller">
+                      {activeDestinations.orders.map(o => {
+                        const clientName = o.terceros?.name || 'Cliente sin nombre'
+                        const itemsSummary = o.order_items?.map(it => `${it.quantity || 1} ${it.name}`).join(', ') || 'Sin prendas especificadas'
+                        const orderNum = o.order_number ? `#${o.order_number}` : `ID-${o.id.slice(0, 5)}`
+                        return (
+                          <option key={'order:' + o.id} value={'order:' + o.id}>
+                            Pedido {orderNum} - {clientName} ({itemsSummary}) · [{o.status}]
+                          </option>
+                        )
+                      })}
+                    </optgroup>
+                  )}
+                  {activeDestinations.contracts?.length > 0 && (
+                    <optgroup label="📜 Contratos de Confección en Proceso">
+                      {activeDestinations.contracts.map(c => (
+                        <option key={'contract:' + c.id} value={'contract:' + c.id}>
+                          Contrato: {c.contract_name} ({c.client_name}) · {c.total_units} prendas · [{c.status}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               )}
             </div>
@@ -1191,7 +1466,7 @@ export default function MaterialsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
-                  Cantidad a Transferir *
+                  Cantidad a Asignar *
                 </label>
                 <input
                   type="number"
@@ -1223,7 +1498,7 @@ export default function MaterialsPage() {
               </label>
               <input
                 type="text"
-                placeholder="Ej: Entrega a taller de corte..."
+                placeholder="Ej: Entrega a taller de costura, remisión..."
                 value={assignForm.notes}
                 onChange={e => setAssignForm(f => ({ ...f, notes: e.target.value }))}
                 className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
@@ -1235,7 +1510,11 @@ export default function MaterialsPage() {
             <Button variant="secondary" onClick={() => setAssignModalOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSaveAssign} disabled={savingAssign || activeContracts.length === 0}>
+            <Button
+              onClick={handleSaveAssign}
+              disabled={savingAssign || (!activeDestinations.orders?.length && !activeDestinations.contracts?.length)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+            >
               {savingAssign ? 'Asignando...' : 'Confirmar Asignación'}
             </Button>
           </div>
