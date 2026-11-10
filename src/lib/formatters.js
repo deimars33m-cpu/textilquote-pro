@@ -184,15 +184,17 @@ export const expenseFrequencies = {
 export const expenseStructure = {
   PRODUCCION: {
     label: 'PRODUCCIÓN',
+    macroType: 'COSTOS DE PRODUCCION TEXTIL',
     subcategories: {
       'Materia Prima': ['Tela', 'Accesorios', 'Cierres', 'Otro'],
-      'Embellecimientos': ['Pago Bordado', 'Pago Sublimación', 'Otro'],
-      'Pagos a destajo': ['Mano de obra externa', 'Otro'],
+      'Embellecimiento': ['Pago Bordado', 'Pago Sublimación', 'Otro'],
+      'Pagos a destajo MOD': ['Mano de obra externa', 'Costura Destajo', 'Otro'],
       'Comisiones': ['Comisiones por Ventas', 'Otro']
     }
   },
   INSUMOS: {
     label: 'INSUMOS',
+    macroType: 'COSTOS DE SERVICIOS',
     subcategories: {
       'Sublimación': ['Tintas', 'Papel de Sublimación', 'Otro'],
       'Bordado': ['Hilos', 'Pellón', 'Agujas', 'Otro'],
@@ -202,6 +204,7 @@ export const expenseStructure = {
   },
   GASTOS_FIJOS: {
     label: 'GASTOS FIJOS',
+    macroType: 'GASTOS GENERALES',
     subcategories: {
       'Alquileres': ['Alquiler Taller', 'Alquiler Tienda', 'Otro'],
       'Dependientes': ['Sueldos', 'Anticipos', 'Otro'],
@@ -214,24 +217,29 @@ export const expenseStructure = {
   },
   INDIRECTOS: {
     label: 'INDIRECTOS',
+    macroType: 'GASTOS GENERALES',
     subcategories: {
       'Publicidad': ['Facebook Ads', 'Impresos', 'Otro'],
       'Transporte': ['Fletes', 'Envíos', 'Otro'],
-      'Mantenimientos': ['Mantenimiento Máquinas', 'Repuestos', 'Limpieza', 'Otro']
+      'Mantenimiento': ['Mantenimiento Máquinas', 'Repuestos', 'Limpieza', 'Otro']
     }
   },
   PERSONAL: {
     label: 'PERSONAL',
+    macroType: 'CAJA CHICA',
     subcategories: {
       'Alimentación': ['Comida Diaria', 'Supermercado', 'Otro'],
       'Crecimiento personal': ['Cursos', 'Libros', 'Otro'],
       'Esparcimiento': ['Salidas', 'Suscripciones', 'Otro'],
       'Compras': ['Ropa', 'Electrónicos', 'Otro'],
-      'Deudas': ['Tarjetas', 'Préstamos', 'Otro']
+      'Deudas': ['Tarjetas', 'Préstamos', 'Otro'],
+      'Entretenimiento': ['Cine', 'Streaming', 'Otro'],
+      'Vivienda': ['Reparaciones', 'Servicios Casa', 'Otro']
     }
   },
   CASA_FAMILIA: {
     label: 'CASA-FAMILIA',
+    macroType: 'CAJA CHICA',
     subcategories: {
       'Compras': ['Supermercado', 'Limpieza', 'Otro'],
       'Internet': ['Internet Casa', 'Otro'],

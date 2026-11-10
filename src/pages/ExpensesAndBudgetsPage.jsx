@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure, parseLocalDate } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
@@ -439,6 +440,7 @@ export default function ExpensesAndBudgetsPage() {
   const [selectedContractId, setSelectedContractId] = useState('')
 
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const { settings } = useGlobalSettings()
   const { data: expenses, loading: loadingExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useCRUD('expenses', {
     orderBy: 'date',
@@ -459,6 +461,7 @@ export default function ExpensesAndBudgetsPage() {
   // eslint-disable-next-line no-unused-vars
   const [_calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
   const [orders, setOrders] = useState([])
+  const [contracts, setContracts] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [materials, setMaterials] = useState([])
   const [, setLoadingMaterials] = useState(false)
@@ -493,9 +496,10 @@ export default function ExpensesAndBudgetsPage() {
       if (!user) return
       setLoadingMaterials(true)
       try {
-        const [tercerosRes, materialsRes] = await Promise.all([
+        const [tercerosRes, materialsRes, contractsRes] = await Promise.all([
           supabase.from('terceros').select('*').eq('user_id', user.id).in('role', ['proveedor', 'dependiente']).order('name'),
-          supabase.from('materials').select('*').eq('user_id', user.id).order('name')
+          supabase.from('materials').select('*').eq('user_id', user.id).order('name'),
+          supabase.from('contract_tracking').select('id, contract_name, client_name, order_id, status').eq('user_id', user.id).not('status', 'in', '("completado","cancelado")').order('created_at', { ascending: false })
         ])
         if (!tercerosRes.error && tercerosRes.data) {
           setProviders(tercerosRes.data.filter(t => t.role === 'proveedor'))
@@ -504,8 +508,11 @@ export default function ExpensesAndBudgetsPage() {
         if (!materialsRes.error && materialsRes.data) {
           setMaterials(materialsRes.data)
         }
+        if (!contractsRes.error && contractsRes.data) {
+          setContracts(contractsRes.data)
+        }
       } catch (err) {
-        console.error('Error fetching terceros and materials:', err)
+        console.error('Error fetching terceros, materials, contracts:', err)
       } finally {
         setLoadingMaterials(false)
       }
@@ -739,6 +746,13 @@ export default function ExpensesAndBudgetsPage() {
         }
       }
 
+      const isAssignableCat = ['PRODUCCION', 'INSUMOS'].includes(form.categoryKey)
+      const linkedOrderId = isAssignableCat ? (form.orderId || null) : null
+      const linkedMaterialId = isAssignableCat ? (form.materialId || null) : null
+      const finalQuantity = Number(form.wholesaleQuantity) > 0 ? Number(form.wholesaleQuantity) * Number(form.quantity) : Number(form.quantity)
+      const unitPriceNum = Number(form.unitPrice) || 0
+      const totalAmountNum = Number(form.amount) || (finalQuantity * unitPriceNum)
+
       const payload = {
         date: form.date,
         category_key: form.categoryKey,
@@ -748,9 +762,9 @@ export default function ExpensesAndBudgetsPage() {
         description: form.description.trim() || null,
         provider: trimmedProvider,
         provider_id: providerId,
-        quantity: Number(form.wholesaleQuantity) > 0 ? Number(form.wholesaleQuantity) * Number(form.quantity) : Number(form.quantity),
-        unit_price: Number(form.unitPrice),
-        amount: Number(form.amount),
+        quantity: finalQuantity,
+        unit_price: unitPriceNum,
+        amount: totalAmountNum,
         advance_amount: form.advanceAmount ? Number(form.advanceAmount) : 0,
         payment_method: form.paymentMethod,
         payment_history: form.advanceAmount && Number(form.advanceAmount) > 0 ? [{
@@ -760,11 +774,47 @@ export default function ExpensesAndBudgetsPage() {
           method: form.paymentMethod,
           note: 'Abono inicial'
         }] : [],
-        order_id: form.orderId || null,
-        material_id: form.materialId || null
+        order_id: linkedOrderId,
+        material_id: linkedMaterialId
       }
 
       await createExpense(payload)
+
+      // Si es PRODUCCIÓN o INSUMOS y está vinculado a un material del catálogo, reflejar en Inventario y Almacén
+      if (isAssignableCat && linkedMaterialId) {
+        try {
+          // 1. Insertar en inventory_movements (tipo: compra)
+          await supabase.from('inventory_movements').insert({
+            user_id: user.id,
+            material_id: linkedMaterialId,
+            movement_type: 'compra',
+            quantity: finalQuantity,
+            unit_cost: unitPriceNum,
+            total_cost: totalAmountNum,
+            reference: linkedOrderId ? 'Compra imputada a contrato/pedido' : 'Compra desde Hoja de Gastos',
+            supplier_name: trimmedProvider || null,
+            notes: form.description?.trim() || `Compra registrada desde Hoja de Gastos (${form.categoryKey})`,
+            date: form.date
+          })
+
+          // 2. Incrementar stock físico en materials
+          const selectedMat = materials.find(m => m.id === linkedMaterialId)
+          if (selectedMat) {
+            const currentStock = Number(selectedMat.current_stock) || 0
+            const newStock = currentStock + finalQuantity
+            const matUpdate = { current_stock: newStock }
+            if (unitPriceNum > 0) {
+              matUpdate.unit_price = unitPriceNum
+              matUpdate.price_updated_at = form.date
+            }
+            await supabase.from('materials').update(matUpdate).eq('id', linkedMaterialId)
+          }
+
+          queryClient.invalidateQueries({ queryKey: ['materials'] })
+        } catch (e) {
+          console.error('Error sincronizando inventario desde gasto:', e)
+        }
+      }
 
       // Reset wizard
       setForm({
@@ -862,6 +912,7 @@ export default function ExpensesAndBudgetsPage() {
     }
     setSavingEdit(true)
     try {
+      const isAssignableCat = ['PRODUCCION', 'INSUMOS'].includes(editForm.categoryKey)
       const payload = {
         category_key: editForm.categoryKey,
         category_label: expenseStructure[editForm.categoryKey]?.label || editForm.categoryKey,
@@ -874,8 +925,8 @@ export default function ExpensesAndBudgetsPage() {
         unit_price: Number(editForm.unitPrice) || Number(editForm.amount),
         payment_method: editForm.paymentMethod,
         description: editForm.description.trim() || null,
-        order_id: editForm.orderId || null,
-        material_id: editForm.materialId || null
+        order_id: isAssignableCat ? (editForm.orderId || null) : null,
+        material_id: isAssignableCat ? (editForm.materialId || null) : null
       }
 
       await updateExpense(editingExpense.id, payload)
@@ -1781,28 +1832,53 @@ export default function ExpensesAndBudgetsPage() {
                 onChange={(e) => updateForm('description', e.target.value)}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <Select
-                  label="Relacionar a Pedido (Opcional)"
-                  options={orders.filter(o => o.status !== 'cancelado' && o.status !== 'entregado').map(o => ({
-                    value: o.id,
-                    label: `#${o.order_number?.toString().padStart(4, '0')} - ${o.order_items?.[0]?.name || 'Producción'} (${o.terceros?.name || 'Cliente general'})`
-                  }))}
-                  value={form.orderId}
-                  onChange={(e) => updateForm('orderId', e.target.value)}
-                  placeholder="Ninguno (Gasto general)..."
-                />
-                <Select
-                  label="Relacionar a Material de Inventario (Opcional)"
-                  options={materials.map(m => ({
-                    value: m.id,
-                    label: `${m.name} (${m.category})`
-                  }))}
-                  value={form.materialId}
-                  onChange={(e) => updateForm('materialId', e.target.value)}
-                  placeholder="Ninguno (No es materia prima)..."
-                />
-              </div>
+              {['PRODUCCION', 'INSUMOS'].includes(form.categoryKey) ? (
+                <div className="space-y-3 pt-2 border-t border-outline-variant/30">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                    <span className="material-symbols-outlined text-[16px]">assignment_turned_in</span>
+                    <span>Asignación a Contrato / Almacén (Producción & Insumos)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Select
+                      label="Asignar a Contrato o Pedido (Opcional)"
+                      options={[
+                        ...contracts.map(c => ({
+                          value: c.order_id || c.id,
+                          label: `📦 CONTRATO: ${c.contract_name} (${c.client_name || 'Sin cliente'})`
+                        })),
+                        ...orders.filter(o => o.status !== 'cancelado' && o.status !== 'entregado').map(o => ({
+                          value: o.id,
+                          label: `🛍️ PEDIDO #${o.order_number?.toString().padStart(4, '0')} - ${o.order_items?.[0]?.name || 'Producción'}`
+                        }))
+                      ]}
+                      value={form.orderId}
+                      onChange={(e) => updateForm('orderId', e.target.value)}
+                      placeholder="Ninguno (Ingreso general a Almacén)..."
+                    />
+                    <Select
+                      label="Vincular a Catálogo de Materiales (Almacén)"
+                      options={materials.map(m => ({
+                        value: m.id,
+                        label: `${m.name} (${m.category})`
+                      }))}
+                      value={form.materialId}
+                      onChange={(e) => updateForm('materialId', e.target.value)}
+                      placeholder="Ninguno (No es materia prima/insumo)..."
+                    />
+                  </div>
+                  {form.materialId && (
+                    <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
+                      <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                      <span>Al registrarse, este gasto sumará automáticamente el stock físico en la <strong>Hoja de Materiales</strong>.</span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-surface-container/50 border border-white/5 text-[11px] text-on-surface-variant flex items-center gap-2 mt-2">
+                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant/70 shrink-0">lock</span>
+                  <span>Los gastos generales y de caja chica no son imputables a contratos ni mueven inventario de producción.</span>
+                </div>
+              )}
             </div>
           )}
         </div>

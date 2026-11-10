@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCRUD } from '@/hooks/useCRUD'
 import { useCategories } from '@/context/CategoryContext'
 import { useAuth } from '@/context/AuthContext'
@@ -33,6 +34,7 @@ const purchaseUnitOptions = Object.entries(purchaseUnits).map(([value, label]) =
 
 export default function MaterialsPage() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const { data: materials, loading: loadingMaterials, create, update, remove, refetch: refetchMaterials } = useCRUD('materials', {
     orderBy: 'name',
     orderAsc: true,
@@ -60,6 +62,7 @@ export default function MaterialsPage() {
     unit_cost: '',
     supplier_name: '',
     reference: '',
+    payment_method: 'efectivo',
     date: new Date().toISOString().split('T')[0],
     notes: '',
   })
@@ -226,6 +229,7 @@ export default function MaterialsPage() {
       unit_cost: mat ? (mat.unit_price || '') : '',
       supplier_name: '',
       reference: '',
+      payment_method: 'efectivo',
       date: new Date().toISOString().split('T')[0],
       notes: '',
     })
@@ -315,7 +319,51 @@ export default function MaterialsPage() {
       })
       if (errMov) throw errMov
 
-      // 2. Actualizar stock en materials
+      // 2. Determinar si es PRODUCCIÓN o INSUMOS según la categoría del material
+      const matCategory = (selectedMat?.category || '').toLowerCase()
+      const isServiceInsumo = ['sublimacion', 'sublimación', 'bordado', 'vinil', 'dtf', 'tinta', 'tintas', 'film', 'papel', 'hilos', 'pellon', 'pellón'].some(kw => matCategory.includes(kw))
+
+      const categoryKey = isServiceInsumo ? 'INSUMOS' : 'PRODUCCION'
+      const categoryLabel = isServiceInsumo ? 'INSUMOS' : 'PRODUCCIÓN'
+      const subcategory = isServiceInsumo
+        ? (matCategory.includes('sublim') ? 'Sublimación' : matCategory.includes('bordad') ? 'Bordado' : matCategory.includes('vinil') ? 'Vinil' : 'DTF')
+        : 'Materia Prima'
+
+      // 3. Insertar el gasto monetario en la tabla `expenses` (Base de Datos central de gastos)
+      const totalCost = qty * unitCost
+      if (totalCost > 0) {
+        const expensePayload = {
+          user_id: user.id,
+          date: purchaseForm.date || new Date().toISOString().split('T')[0],
+          category_key: categoryKey,
+          category_label: categoryLabel,
+          subcategory: subcategory,
+          specific_item: selectedMat?.name || 'Material de Almacén',
+          description: purchaseForm.reference
+            ? `Compra a almacén: ${selectedMat?.name || ''} (${purchaseForm.reference})`
+            : `Ingreso de compra a almacén: ${selectedMat?.name || ''} (${qty} ${selectedMat?.usage_unit || 'unid'})`,
+          provider: purchaseForm.supplier_name.trim() || 'Proveedor Almacén',
+          quantity: qty,
+          unit_price: unitCost,
+          amount: totalCost,
+          advance_amount: totalCost,
+          payment_method: purchaseForm.payment_method || 'efectivo',
+          payment_history: [{
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+            amount: totalCost,
+            method: purchaseForm.payment_method || 'efectivo',
+            note: 'Cancelación total compra almacén'
+          }],
+          material_id: purchaseForm.material_id,
+          order_id: null
+        }
+
+        const { error: errExp } = await supabase.from('expenses').insert(expensePayload)
+        if (errExp) console.warn('No se pudo guardar el gasto en expenses:', errExp)
+      }
+
+      // 4. Actualizar stock en materials
       const currentStock = Number(selectedMat?.current_stock) || 0
       const newStock = currentStock + qty
       const updateData = { current_stock: newStock }
@@ -324,6 +372,10 @@ export default function MaterialsPage() {
         updateData.price_updated_at = purchaseForm.date || new Date().toISOString().split('T')[0]
       }
       await supabase.from('materials').update(updateData).eq('id', purchaseForm.material_id)
+
+      // 5. Invalidar cachés para reflejo inmediato en Gastos y Materiales
+      queryClient.invalidateQueries({ queryKey: ['expenses'] })
+      queryClient.invalidateQueries({ queryKey: ['materials'] })
 
       setPurchaseModalOpen(false)
       if (refetchMaterials) refetchMaterials()
@@ -1016,16 +1068,39 @@ export default function MaterialsPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
-                Fecha de Compra
-              </label>
-              <input
-                type="date"
-                value={purchaseForm.date}
-                onChange={e => setPurchaseForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                  Método de Pago
+                </label>
+                <select
+                  value={purchaseForm.payment_method || 'efectivo'}
+                  onChange={e => setPurchaseForm(f => ({ ...f, payment_method: e.target.value }))}
+                  className="w-full px-3 py-2 neu-pressed bg-surface-container-high rounded-xl text-sm text-on-surface outline-none"
+                >
+                  <option value="efectivo">💵 Efectivo</option>
+                  <option value="transferencia">🏦 Transferencia</option>
+                  <option value="qr">📱 QR</option>
+                  <option value="tarjeta">💳 Tarjeta</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                  Fecha de Compra
+                </label>
+                <input
+                  type="date"
+                  value={purchaseForm.date}
+                  onChange={e => setPurchaseForm(f => ({ ...f, date: e.target.value }))}
+                  className="w-full px-3 py-2 neu-pressed bg-transparent border-none rounded-xl text-sm text-on-surface outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/30 text-[11px] text-on-surface-variant flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-primary shrink-0">sync_alt</span>
+              <span>Esta compra se registrará en la <strong>Hoja de Gastos</strong> y sumará stock físico en <strong>Almacén</strong>.</span>
             </div>
 
             <div>
