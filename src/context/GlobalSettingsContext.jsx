@@ -148,7 +148,8 @@ const INITIAL_CATALOG = {
     { id: 'fe_5', concept: 'Sueldos y Salarios Personal Fijo', category: 'Sueldos y Salarios', amount: 4500, dueDay: 30, active: true, notes: 'Planilla mensual operarios/admin' },
     { id: 'fe_6', concept: 'Mantenimiento Preventivo Maquinaria', category: 'Mantenimiento', amount: 300, dueDay: 20, active: true, notes: 'Lubricación y revisión de máquinas' },
     { id: 'fe_7', concept: 'Licencias de Software y Sistemas', category: 'Software y Sistemas', amount: 150, dueDay: 1, active: true, notes: 'Suscripciones y herramientas digital' }
-  ]
+  ],
+  quickExpenseShortcuts: []
 }
 
 function mergeSettings(saved = {}) {
@@ -169,6 +170,66 @@ function mergeSettings(saved = {}) {
 }
 
 export function GlobalSettingsProvider({ children }) {
+  // Sincronización en tiempo real y al volver el foco entre móvil y PC
+  useEffect(() => {
+    const userId = user?.id
+    if (!userId) return
+
+    const handleSyncFromSupabase = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('global_settings')
+          .select('settings')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (!error && data?.settings) {
+          const next = mergeSettings(data.settings)
+          setSettings(next)
+          localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+        }
+      } catch (e) {
+        console.error('Error sincronizando configuración:', e)
+      }
+    }
+
+    // Refrescar al enfocar ventana o pestaña
+    window.addEventListener('focus', handleSyncFromSupabase)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleSyncFromSupabase()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // Suscripción Realtime Supabase
+    const channel = supabase
+      .channel(`realtime_settings_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'global_settings',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          if (payload.new?.settings) {
+            const next = mergeSettings(payload.new.settings)
+            setSettings(next)
+            localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('focus', handleSyncFromSupabase)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id])
+
   const { user } = useAuth()
   const [settings, setSettings] = useState(INITIAL_CATALOG)
   const hydrationRequestRef = useRef(0)
@@ -559,12 +620,25 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
-  // --- Accesos Rápidos de Gastos ---
-  const saveQuickShortcuts = (shortcuts) => {
+  // --- Accesos Rápidos de Gastos (Persistencia inmediata) ---
+  const saveQuickShortcuts = async (shortcuts) => {
     setSettings(prev => ({
       ...prev,
       quickExpenseShortcuts: shortcuts
     }))
+
+    const userId = user?.id
+    if (userId) {
+      try {
+        const nextSettings = { ...settings, quickExpenseShortcuts: shortcuts }
+        localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(nextSettings))
+        await supabase
+          .from('global_settings')
+          .upsert({ user_id: userId, settings: nextSettings }, { onConflict: 'user_id' })
+      } catch (err) {
+        console.error('Error guardando accesos rápidos de inmediato:', err)
+      }
+    }
   }
 
   return (

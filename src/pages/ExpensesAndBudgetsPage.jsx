@@ -596,7 +596,7 @@ export default function ExpensesAndBudgetsPage() {
 
   // --- ACCESOS RÁPIDOS ---
   const [quickPanelOpen, setQuickPanelOpen] = useState(false) // mobile bottom sheet
-  const [activeFormMode, setActiveFormMode] = useState('wizard')
+  const [activeFormMode, setActiveFormMode] = useState('quick')
 
   // Bloquear scroll de fondo cuando el panel rápido móvil está abierto
   useEffect(() => {
@@ -2445,6 +2445,35 @@ export default function ExpensesAndBudgetsPage() {
 
               {/* IZQUIERDA: LISTA DE TRANSACCIONES */}
               <div className="flex-1 flex flex-col gap-2.5 sm:gap-4 h-full w-full">
+                                {/* BARRA DE ACCESOS RÁPIDOS EN PC */}
+                {(settings?.quickExpenseShortcuts || []).length > 0 && (
+                  <div className="hidden lg:flex items-center gap-2 p-2 px-3 rounded-2xl bg-surface-container-low/80 border border-outline-variant/40 overflow-x-auto shrink-0 shadow-sm">
+                    <span className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1 shrink-0 uppercase tracking-wider">
+                      <span className="material-symbols-outlined text-primary text-[17px]">flash_on</span>
+                      Accesos Rápidos:
+                    </span>
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                      {(settings?.quickExpenseShortcuts || []).map(sc => (
+                        <button
+                          key={sc.id}
+                          onClick={() => {
+                            setActiveFormMode('quick')
+                            handleSelectShortcut(sc)
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                            quickSelectedShortcut?.id === sc.id
+                              ? 'border-primary bg-primary/20 text-primary shadow-[0_0_10px_rgba(255,92,0,0.3)]'
+                              : 'border-outline-variant/40 bg-surface-container hover:border-primary/40 text-on-surface hover:text-primary'
+                          }`}
+                        >
+                          <span className="text-base leading-none">{sc.icon || '⚡'}</span>
+                          <span>{sc.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* CUADRO APARTADO DE FILTROS */}
                 <Card className="p-2.5 sm:p-4 shrink-0">
                   <div className="flex flex-col md:flex-row gap-2 sm:gap-3 items-stretch md:items-center">
@@ -3787,15 +3816,42 @@ export default function ExpensesAndBudgetsPage() {
 
         </div>
 
-        {/* MODAL DE REGISTRO PARA MOVILES */}
+        {/* MODAL DE REGISTRO (MÓVIL / ESCRITORIO NUEVO GASTO) */}
         <Modal
           isOpen={formOpen}
           onClose={() => setFormOpen(false)}
           title=""
           size="lg"
         >
-          <div className="bg-transparent -m-6 p-4 h-[75vh] flex flex-col">
-            {renderWizardForm()}
+          <div className="bg-transparent -m-6 p-4 h-[75vh] flex flex-col overflow-hidden">
+            {/* Tabs selector en Modal */}
+            <div className="flex border-b border-outline-variant shrink-0 bg-surface-container/60 rounded-t-2xl mb-2">
+              <button
+                onClick={() => setActiveFormMode('quick')}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 flex-1 justify-center cursor-pointer ${
+                  activeFormMode === 'quick'
+                    ? 'border-primary text-primary bg-primary/10'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">flash_on</span>
+                Rápido
+              </button>
+              <button
+                onClick={() => setActiveFormMode('wizard')}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 flex-1 justify-center cursor-pointer ${
+                  activeFormMode === 'wizard'
+                    ? 'border-primary text-primary bg-primary/10'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">receipt_long</span>
+                Completo
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {activeFormMode === 'quick' ? renderQuickPanel() : renderWizardForm()}
+            </div>
           </div>
         </Modal>
 
