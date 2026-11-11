@@ -441,7 +441,7 @@ export default function ExpensesAndBudgetsPage() {
 
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const { settings } = useGlobalSettings()
+  const { settings, saveQuickShortcuts } = useGlobalSettings()
   const { data: expenses, loading: loadingExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useCRUD('expenses', {
     orderBy: 'date',
     orderAsc: false,
@@ -455,6 +455,21 @@ export default function ExpensesAndBudgetsPage() {
 
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+
+  // --- ACCESOS RÁPIDOS ---
+  const [quickPanelOpen, setQuickPanelOpen] = useState(false) // mobile bottom sheet
+  const [activeFormMode, setActiveFormMode] = useState('wizard') // 'wizard' | 'quick' (desktop tab)
+  const [quickSelectedShortcut, setQuickSelectedShortcut] = useState(null) // shortcut activo
+  const [quickForm, setQuickForm] = useState({ provider: '', quantity: 1, unitPrice: '', paymentMethod: 'efectivo' })
+  const [quickSaving, setQuickSaving] = useState(false)
+  const [quickError, setQuickError] = useState(null)
+  const [quickSuccess, setQuickSuccess] = useState(null)
+  const [configShortcutsOpen, setConfigShortcutsOpen] = useState(false) // modal gestión
+  const [editingShortcut, setEditingShortcut] = useState(null) // shortcut en edición en modal config
+  const [shortcutDraft, setShortcutDraft] = useState({
+    label: '', icon: '⚡', categoryKey: 'INSUMOS', subcategory: '', specificItem: '',
+    defaultProvider: 'Proveedor Genérico', defaultPaymentMethod: 'efectivo', materialId: ''
+  })
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
   const [orders, setOrders] = useState([])
   const [contracts, setContracts] = useState([])
@@ -852,6 +867,161 @@ export default function ExpensesAndBudgetsPage() {
         console.error('Error deleting expense:', err)
       }
     }
+  }
+
+  // --- GUARDAR ACCESO RÁPIDO ---
+  const handleQuickSave = async () => {
+    if (!quickSelectedShortcut) return
+    if (quickSaving) return
+    if (!quickForm.quantity || Number(quickForm.quantity) <= 0) return setQuickError('Cantidad inválida')
+    if (!quickForm.unitPrice || Number(quickForm.unitPrice) <= 0) return setQuickError('Precio inválido')
+
+    setQuickSaving(true)
+    setQuickError(null)
+    try {
+      const sc = quickSelectedShortcut
+      const qty = Number(quickForm.quantity)
+      const price = Number(quickForm.unitPrice)
+      const total = qty * price
+      const trimmedProvider = (quickForm.provider || sc.defaultProvider || 'Proveedor Genérico').trim()
+
+      // Resolver provider_id
+      let providerId = null
+      const existing = providers.find(p => p.name.toLowerCase() === trimmedProvider.toLowerCase())
+      if (existing) {
+        providerId = existing.id
+      } else if (trimmedProvider !== 'Proveedor Genérico') {
+        try {
+          const { data: newProv, error: errProv } = await supabase
+            .from('terceros')
+            .insert({ user_id: user.id, name: trimmedProvider, role: 'proveedor', client_type: 'otro' })
+            .select().single()
+          if (!errProv && newProv) {
+            providerId = newProv.id
+            setProviders(prev => [...prev, newProv])
+          }
+        } catch {}
+      }
+
+      const isAssignableCat = ['PRODUCCION', 'INSUMOS'].includes(sc.categoryKey)
+      const linkedMaterialId = isAssignableCat ? (sc.materialId || null) : null
+
+      const payload = {
+        date: getTodayStr(),
+        category_key: sc.categoryKey,
+        category_label: expenseStructure[sc.categoryKey]?.label || sc.categoryKey,
+        subcategory: sc.subcategory,
+        specific_item: sc.specificItem,
+        description: `Acceso rápido: ${sc.label}`,
+        provider: trimmedProvider,
+        provider_id: providerId,
+        quantity: qty,
+        unit_price: price,
+        amount: total,
+        advance_amount: 0,
+        payment_history: [],
+        payment_method: quickForm.paymentMethod,
+        order_id: null,
+        material_id: linkedMaterialId
+      }
+
+      await createExpense(payload)
+
+      // Sincronizar inventario si aplica
+      if (isAssignableCat && linkedMaterialId) {
+        try {
+          await supabase.from('inventory_movements').insert({
+            user_id: user.id,
+            material_id: linkedMaterialId,
+            movement_type: 'compra',
+            quantity: qty,
+            unit_cost: price,
+            total_cost: total,
+            reference: 'Compra desde Acceso Rápido',
+            supplier_name: trimmedProvider || null,
+            notes: `Acceso rápido: ${sc.label}`,
+            date: getTodayStr()
+          })
+          const selectedMat = materials.find(m => m.id === linkedMaterialId)
+          if (selectedMat) {
+            const newStock = (Number(selectedMat.current_stock) || 0) + qty
+            const matUpdate = { current_stock: newStock }
+            if (price > 0) { matUpdate.unit_price = price; matUpdate.price_updated_at = getTodayStr() }
+            await supabase.from('materials').update(matUpdate).eq('id', linkedMaterialId)
+          }
+          queryClient.invalidateQueries({ queryKey: ['materials'] })
+        } catch (e) {
+          console.error('Error sincronizando inventario desde acceso rápido:', e)
+        }
+      }
+
+      setQuickForm({ provider: sc.defaultProvider || '', quantity: 1, unitPrice: '', paymentMethod: sc.defaultPaymentMethod || 'efectivo' })
+      setQuickSuccess('✓ Registrado con éxito')
+      setQuickPanelOpen(false)
+      setTimeout(() => setQuickSuccess(null), 3000)
+    } catch (e) {
+      console.error('Error saving quick expense:', e)
+      setQuickError(`Error: ${e.message}`)
+    } finally {
+      setQuickSaving(false)
+    }
+  }
+
+  // --- Cargar último precio pagado para un acceso rápido ---
+  const fetchLastQuickPrice = async (sc) => {
+    if (!sc || !user) return
+    try {
+      const { data } = await supabase
+        .from('expenses')
+        .select('unit_price')
+        .eq('user_id', user.id)
+        .eq('subcategory', sc.subcategory)
+        .eq('specific_item', sc.specificItem)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data?.unit_price) {
+        setQuickForm(prev => ({ ...prev, unitPrice: data.unit_price }))
+      }
+    } catch {}
+  }
+
+  const handleSelectShortcut = (sc) => {
+    setQuickSelectedShortcut(sc)
+    setQuickForm({
+      provider: sc.defaultProvider || 'Proveedor Genérico',
+      quantity: 1,
+      unitPrice: '',
+      paymentMethod: sc.defaultPaymentMethod || 'efectivo'
+    })
+    setQuickError(null)
+    fetchLastQuickPrice(sc)
+  }
+
+  // --- CRUD shortcuts config ---
+  const handleSaveShortcut = () => {
+    if (!shortcutDraft.label.trim()) return
+    const shortcuts = [...(settings?.quickExpenseShortcuts || [])]
+    if (editingShortcut) {
+      const idx = shortcuts.findIndex(s => s.id === editingShortcut.id)
+      if (idx >= 0) shortcuts[idx] = { ...shortcutDraft, id: editingShortcut.id }
+    } else {
+      shortcuts.push({ ...shortcutDraft, id: crypto.randomUUID() })
+    }
+    saveQuickShortcuts(shortcuts)
+    setEditingShortcut(null)
+    setShortcutDraft({ label: '', icon: '⚡', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Genérico', defaultPaymentMethod: 'efectivo', materialId: '' })
+  }
+
+  const handleEditShortcut = (sc) => {
+    setEditingShortcut(sc)
+    setShortcutDraft({ ...sc })
+  }
+
+  const handleDeleteShortcut = (id) => {
+    const shortcuts = (settings?.quickExpenseShortcuts || []).filter(s => s.id !== id)
+    saveQuickShortcuts(shortcuts)
+    if (quickSelectedShortcut?.id === id) setQuickSelectedShortcut(null)
   }
 
   const handleUpdateExpensePaymentStatus = (expense) => {
@@ -1398,6 +1568,154 @@ export default function ExpensesAndBudgetsPage() {
     })
     return Array.from(subs)
   }, [selectedCategoryFilter, expenseStructure])
+
+  // --- RENDER QUICK EXPENSE PANEL ---
+  const renderQuickPanel = () => {
+    const shortcuts = settings?.quickExpenseShortcuts || []
+    return (
+      <div className="flex flex-col h-full bg-transparent select-none text-on-surface overflow-hidden">
+        <div className="p-4 border-b border-outline-variant shrink-0 bg-surface-container/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[20px]">flash_on</span>
+              <h2 className="text-base font-bold text-on-surface leading-none">Accesos Rapidos</h2>
+            </div>
+            <button
+              onClick={() => setConfigShortcutsOpen(true)}
+              className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/10 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px]">settings</span>
+              Configurar
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {shortcuts.length === 0 ? (
+            <div className="text-center py-8 space-y-3">
+              <span className="material-symbols-outlined text-4xl text-on-surface-variant block">flash_on</span>
+              <p className="text-sm text-on-surface-variant">Aun no tenes accesos rapidos configurados.</p>
+              <button onClick={() => setConfigShortcutsOpen(true)} className="text-primary text-sm underline underline-offset-2 cursor-pointer bg-transparent border-none">
+                Crear primer acceso
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-on-surface-variant mb-3">Selecciona una compra frecuente:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {shortcuts.map(sc => (
+                  <button
+                    key={sc.id}
+                    onClick={() => handleSelectShortcut(sc)}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all duration-200 cursor-pointer ${
+                      quickSelectedShortcut?.id === sc.id
+                        ? 'border-primary bg-primary/10 text-primary shadow-[0_0_12px_rgba(255,92,0,0.2)]'
+                        : 'border-outline-variant/40 bg-surface-container-low/40 hover:border-primary/40 hover:bg-primary/5 text-on-surface'
+                    }`}
+                  >
+                    <span className="text-2xl leading-none">{sc.icon || '\u26a1'}</span>
+                    <span className="text-[11px] font-semibold leading-tight">{sc.label}</span>
+                    <span className="text-[9px] text-on-surface-variant font-mono truncate w-full">{sc.subcategory}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {quickSelectedShortcut && (
+            <div className="space-y-3 pt-2 border-t border-outline-variant/30">
+              <div className="flex items-center gap-2 text-xs text-primary font-semibold flex-wrap">
+                <span>{quickSelectedShortcut.icon || '\u26a1'}</span>
+                <span>{quickSelectedShortcut.label}</span>
+                <span className="text-on-surface-variant font-normal">� {quickSelectedShortcut.subcategory}</span>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Proveedor</label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={quickForm.provider}
+                    onChange={e => setQuickForm(prev => ({ ...prev, provider: e.target.value }))}
+                    placeholder="Nombre del proveedor"
+                    className="flex-1 bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    onClick={() => setQuickForm(prev => ({ ...prev, provider: 'Proveedor Generico' }))}
+                    className="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface cursor-pointer"
+                  >
+                    Generico
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Cantidad</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setQuickForm(prev => ({ ...prev, quantity: Math.max(1, (Number(prev.quantity) || 1) - 1) }))}
+                    className="w-9 h-9 rounded-lg border border-outline-variant bg-surface-container text-on-surface hover:bg-primary/10 hover:border-primary flex items-center justify-center font-bold text-lg cursor-pointer"
+                  >&#8722;</button>
+                  <input
+                    type="number"
+                    min="1"
+                    value={quickForm.quantity}
+                    onChange={e => setQuickForm(prev => ({ ...prev, quantity: Math.max(1, parseInt(e.target.value) || 1) }))}
+                    className="w-16 text-center bg-surface-container-low border border-outline-variant rounded-lg py-2 text-sm font-bold text-on-surface focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    onClick={() => setQuickForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 1) + 1 }))}
+                    className="w-9 h-9 rounded-lg border border-outline-variant bg-surface-container text-on-surface hover:bg-primary/10 hover:border-primary flex items-center justify-center font-bold text-lg cursor-pointer"
+                  >&#43;</button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Precio unitario</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={quickForm.unitPrice}
+                  onChange={e => setQuickForm(prev => ({ ...prev, unitPrice: e.target.value }))}
+                  placeholder="Ultimo precio sugerido..."
+                  className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
+                />
+                {Number(quickForm.unitPrice) > 0 && Number(quickForm.quantity) > 0 && (
+                  <p className="text-[10px] text-primary/80 mt-1 font-mono">
+                    Total: {formatCurrency(Number(quickForm.unitPrice) * Number(quickForm.quantity))}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Pago</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {PAYMENT_METHODS.map(pm => (
+                    <button
+                      key={pm.id}
+                      onClick={() => setQuickForm(prev => ({ ...prev, paymentMethod: pm.id }))}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors ${
+                        quickForm.paymentMethod === pm.id
+                          ? 'border-primary bg-primary/15 text-primary'
+                          : 'border-outline-variant/40 bg-surface-container-low/40 text-on-surface-variant hover:border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">{pm.icon}</span>
+                      {pm.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {quickError && <p className="text-xs text-error">{quickError}</p>}
+              {quickSuccess && <p className="text-xs text-[#10b981] font-semibold">{quickSuccess}</p>}
+              <button
+                onClick={handleQuickSave}
+                disabled={quickSaving}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white font-bold text-sm shadow-[0_4px_12px_rgba(255,92,0,0.35)] hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
+              >
+                {quickSaving ? 'Guardando...' : '\u26a1 Registrar compra'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   // --- RENDER WIZARD FORM ---
   const renderWizardForm = () => {
@@ -2411,9 +2729,34 @@ export default function ExpensesAndBudgetsPage() {
                 )}
               </div>
 
-              {/* DERECHA: SIDEBAR DE INGRESO (WIZARD CON 3D EFFECTS) */}
-              <Card className="hidden lg:flex w-full lg:w-[350px] shrink-0 flex-col h-full max-h-full">
-                {renderWizardForm()}
+              {/* DERECHA: SIDEBAR DE INGRESO (WIZARD + ACCESOS RAPIDOS) */}
+              <Card className="hidden lg:flex w-full lg:w-[350px] shrink-0 flex-col h-full max-h-full overflow-hidden">
+                {/* Tabs */}
+                <div className="flex border-b border-outline-variant shrink-0">
+                  <button
+                    onClick={() => setActiveFormMode('quick')}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 flex-1 justify-center cursor-pointer ${
+                      activeFormMode === 'quick'
+                        ? 'border-primary text-primary bg-primary/5'
+                        : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">flash_on</span>
+                    Rápido
+                  </button>
+                  <button
+                    onClick={() => setActiveFormMode('wizard')}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 flex-1 justify-center cursor-pointer ${
+                      activeFormMode === 'wizard'
+                        ? 'border-primary text-primary bg-primary/5'
+                        : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">receipt_long</span>
+                    Completo
+                  </button>
+                </div>
+                {activeFormMode === 'quick' ? renderQuickPanel() : renderWizardForm()}
               </Card>
             </div>
           )}
@@ -3294,7 +3637,7 @@ export default function ExpensesAndBudgetsPage() {
 
         </div>
 
-        {/* MODAL DE REGISTRO PARA MÓVILES */}
+        {/* MODAL DE REGISTRO PARA MOVILES */}
         <Modal
           isOpen={formOpen}
           onClose={() => setFormOpen(false)}
@@ -3305,8 +3648,122 @@ export default function ExpensesAndBudgetsPage() {
             {renderWizardForm()}
           </div>
         </Modal>
+
+        {/* BOTTOM SHEET ACCESOS RAPIDOS (mobile) */}
+        {quickPanelOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setQuickPanelOpen(false)}>
+            <div className="bg-surface-container rounded-t-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="w-10 h-1 rounded-full bg-outline-variant mx-auto mt-3 mb-1 shrink-0" />
+              <div className="flex-1 overflow-y-auto">
+                {renderQuickPanel()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL CONFIGURACION DE ACCESOS RAPIDOS */}
+        <Modal
+          isOpen={configShortcutsOpen}
+          onClose={() => { setConfigShortcutsOpen(false); setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Generico', defaultPaymentMethod: 'efectivo', materialId: '' }) }}
+          title="Configurar Accesos Rapidos"
+          size="lg"
+        >
+          <div className="space-y-5">
+            {/* Lista de shortcuts existentes */}
+            <div className="space-y-2">
+              {(settings?.quickExpenseShortcuts || []).length === 0 ? (
+                <p className="text-sm text-on-surface-variant text-center py-4">Aun no hay accesos rapidos. Crea el primero.</p>
+              ) : (
+                (settings?.quickExpenseShortcuts || []).map(sc => (
+                  <div key={sc.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-container-low border border-outline-variant/30">
+                    <span className="text-xl w-8 text-center">{sc.icon || '\u26A1'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-on-surface truncate">{sc.label}</p>
+                      <p className="text-[11px] text-on-surface-variant font-mono truncate">{sc.categoryKey} / {sc.subcategory} / {sc.specificItem}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => handleEditShortcut(sc)} className="p-1.5 rounded-lg hover:bg-amber-500/10 text-amber-400 cursor-pointer"><span className="material-symbols-outlined text-[16px]">edit</span></button>
+                      <button onClick={() => handleDeleteShortcut(sc.id)} className="p-1.5 rounded-lg hover:bg-error/10 text-error cursor-pointer"><span className="material-symbols-outlined text-[16px]">delete</span></button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Formulario para crear/editar */}
+            <div className="border-t border-outline-variant pt-4 space-y-3">
+              <h3 className="text-sm font-bold text-on-surface">{editingShortcut ? 'Editar acceso' : 'Nuevo acceso rapido'}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Icono (emoji)</label>
+                  <input type="text" value={shortcutDraft.icon} onChange={e => setShortcutDraft(prev => ({...prev, icon: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="\u26A1" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Etiqueta del boton</label>
+                  <input type="text" value={shortcutDraft.label} onChange={e => setShortcutDraft(prev => ({...prev, label: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="ej: Comprar Papel" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Categoria</label>
+                  <select value={shortcutDraft.categoryKey} onChange={e => setShortcutDraft(prev => ({...prev, categoryKey: e.target.value, subcategory: '', specificItem: ''}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                    {Object.entries(expenseStructure).map(([k, v]) => (<option key={k} value={k}>{v.label}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Subcategoria</label>
+                  <select value={shortcutDraft.subcategory} onChange={e => setShortcutDraft(prev => ({...prev, subcategory: e.target.value, specificItem: ''}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                    <option value="">Seleccionar...</option>
+                    {Object.keys(expenseStructure[shortcutDraft.categoryKey]?.subcategories || {}).map(s => (<option key={s} value={s}>{s}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Item especifico</label>
+                  <select value={shortcutDraft.specificItem} onChange={e => setShortcutDraft(prev => ({...prev, specificItem: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                    <option value="">Seleccionar...</option>
+                    {(expenseStructure[shortcutDraft.categoryKey]?.subcategories[shortcutDraft.subcategory] || []).map(item => (<option key={item} value={item}>{item}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Proveedor por defecto</label>
+                  <input type="text" value={shortcutDraft.defaultProvider} onChange={e => setShortcutDraft(prev => ({...prev, defaultProvider: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="Proveedor Generico" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Pago por defecto</label>
+                  <select value={shortcutDraft.defaultPaymentMethod} onChange={e => setShortcutDraft(prev => ({...prev, defaultPaymentMethod: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                    {PAYMENT_METHODS.map(pm => (<option key={pm.id} value={pm.id}>{pm.label}</option>))}
+                  </select>
+                </div>
+                {(['PRODUCCION','INSUMOS'].includes(shortcutDraft.categoryKey)) && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Material (inventario)</label>
+                    <select value={shortcutDraft.materialId} onChange={e => setShortcutDraft(prev => ({...prev, materialId: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                      <option value="">Sin vincular</option>
+                      {materials.map(m => (<option key={m.id} value={m.id}>{m.name}</option>))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 justify-end">
+                {editingShortcut && (
+                  <button onClick={() => { setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Generico', defaultPaymentMethod: 'efectivo', materialId: '' }) }} className="px-4 py-2 rounded-xl border border-outline-variant text-sm text-on-surface-variant hover:bg-white/5 cursor-pointer">Cancelar</button>
+                )}
+                <button onClick={handleSaveShortcut} disabled={!shortcutDraft.label.trim()} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:brightness-110 disabled:opacity-50 cursor-pointer">
+                  {editingShortcut ? 'Actualizar' : 'Agregar acceso'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
       </div>
       {/* Botón flotante móvil de registro de gastos, fijado fuera del contenedor de scroll/animación */}
+      {/* FAB rapido (mobile) */}
+      <Button
+        onClick={() => { setQuickPanelOpen(true); setQuickSelectedShortcut(null) }}
+        className="md:hidden fixed bottom-[80px] right-[72px] z-40 shadow-lg rounded-full w-12 h-12 flex items-center justify-center p-0 bg-gradient-to-b from-[#ff8d5c] to-[#ff5c00] text-white border-none"
+        title="Accesos Rapidos"
+      >
+        <span className="material-symbols-outlined text-[20px]">flash_on</span>
+      </Button>
+      {/* FAB principal (mobile) */}
       <Button
         onClick={() => setFormOpen(true)}
         className="md:hidden fixed bottom-[80px] right-4 z-40 shadow-lg rounded-full w-12 h-12 flex items-center justify-center p-0 neu-button-primary"

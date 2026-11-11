@@ -43,7 +43,8 @@ export default function GlobalSettingsPage() {
     deleteExpenseSubcategory,
     addExpenseSpecificItem,
     deleteExpenseSpecificItem,
-    saveBudgetsAndGoals
+    saveBudgetsAndGoals,
+    saveQuickShortcuts
   } = useGlobalSettings()
   
   const [activeTab, setActiveTab] = useState('orders_structure') // 'orders_structure', 'sizes', 'expenses_structure'
@@ -119,7 +120,8 @@ export default function GlobalSettingsPage() {
           { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
           { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' },
           { id: 'budgets_goals', label: 'Metas y Presupuestos', icon: 'savings' },
-          { id: 'fixed_expenses', label: 'Gastos Fijos Mensuales', icon: 'account_balance' }
+          { id: 'fixed_expenses', label: 'Gastos Fijos Mensuales', icon: 'account_balance' },
+          { id: 'quick_shortcuts', label: 'Accesos Rápidos Gastos', icon: 'flash_on' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -287,6 +289,11 @@ export default function GlobalSettingsPage() {
         {/* --- TAB: GASTOS FIJOS MENSUALES --- */}
         {activeTab === 'fixed_expenses' && (
           <FixedExpensesEditor />
+        )}
+
+        {/* --- TAB: ACCESOS RÁPIDOS DE GASTOS --- */}
+        {activeTab === 'quick_shortcuts' && (
+          <QuickShortcutsEditor />
         )}
       </Card>
     </div>
@@ -2106,3 +2113,322 @@ function FixedExpensesEditor() {
   )
 }
 
+
+
+function QuickShortcutsEditor() {
+  const { settings, saveQuickShortcuts } = useGlobalSettings()
+  const { user } = useAuth()
+  const shortcuts = settings?.quickExpenseShortcuts || []
+  const expenseStructure = settings?.expenseStructure || {}
+
+  const [materials, setMaterials] = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
+  const [form, setForm] = useState({
+    label: '',
+    icon: '⚡',
+    categoryKey: 'INSUMOS',
+    subcategory: '',
+    specificItem: '',
+    defaultProvider: 'Proveedor Genérico',
+    defaultPaymentMethod: 'efectivo',
+    materialId: ''
+  })
+
+  useEffect(() => {
+    async function loadMaterials() {
+      if (!user) return
+      try {
+        const { data } = await supabase
+          .from('materials')
+          .select('id, name, category')
+          .eq('user_id', user.id)
+          .order('name')
+        if (data) setMaterials(data)
+      } catch (err) {
+        console.error('Error cargando materiales en configuración:', err)
+      }
+    }
+    loadMaterials()
+  }, [user])
+
+  const handleOpenNew = () => {
+    setEditingItem(null)
+    setForm({
+      label: '',
+      icon: '⚡',
+      categoryKey: 'INSUMOS',
+      subcategory: '',
+      specificItem: '',
+      defaultProvider: 'Proveedor Genérico',
+      defaultPaymentMethod: 'efectivo',
+      materialId: ''
+    })
+    setShowModal(true)
+  }
+
+  const handleOpenEdit = (sc) => {
+    setEditingItem(sc)
+    setForm({
+      label: sc.label || '',
+      icon: sc.icon || '⚡',
+      categoryKey: sc.categoryKey || 'INSUMOS',
+      subcategory: sc.subcategory || '',
+      specificItem: sc.specificItem || '',
+      defaultProvider: sc.defaultProvider || 'Proveedor Genérico',
+      defaultPaymentMethod: sc.defaultPaymentMethod || 'efectivo',
+      materialId: sc.materialId || ''
+    })
+    setShowModal(true)
+  }
+
+  const handleDelete = (id) => {
+    if (window.confirm('¿Eliminar este acceso rápido?')) {
+      const updated = shortcuts.filter(s => s.id !== id)
+      saveQuickShortcuts(updated)
+    }
+  }
+
+  const handleSave = (e) => {
+    e.preventDefault()
+    if (!form.label.trim()) return alert('Ingrese la etiqueta del botón.')
+    if (!form.categoryKey) return alert('Seleccione una categoría.')
+
+    const currentShortcuts = [...shortcuts]
+    if (editingItem) {
+      const idx = currentShortcuts.findIndex(s => s.id === editingItem.id)
+      if (idx >= 0) {
+        currentShortcuts[idx] = { ...form, id: editingItem.id }
+      }
+    } else {
+      currentShortcuts.push({ ...form, id: crypto.randomUUID() })
+    }
+
+    saveQuickShortcuts(currentShortcuts)
+    setShowModal(false)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline-variant pb-4">
+        <div>
+          <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-[22px]">flash_on</span>
+            Accesos Rápidos de Gastos
+          </h2>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Botones configurables para registrar compras y egresos frecuentes en 1 solo paso con valores precargados.
+          </p>
+        </div>
+        <Button onClick={handleOpenNew} className="flex items-center gap-2 bg-primary text-on-primary font-semibold">
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          Nuevo Acceso Rápido
+        </Button>
+      </div>
+
+      {shortcuts.length === 0 ? (
+        <div className="text-center py-12 border border-dashed border-outline-variant rounded-2xl">
+          <span className="material-symbols-outlined text-5xl text-on-surface-variant/50 block mb-2">flash_on</span>
+          <p className="text-sm font-semibold text-on-surface">No hay accesos rápidos configurados</p>
+          <p className="text-xs text-on-surface-variant mt-1 mb-4">Crea botones rápidos para agilizar el registro diario de compras.</p>
+          <Button onClick={handleOpenNew} variant="secondary" className="text-xs">
+            Configurar Primer Acceso
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {shortcuts.map(sc => (
+            <div
+              key={sc.id}
+              className="p-4 rounded-xl neu-surface border border-outline-variant/40 flex flex-col justify-between space-y-3 relative group hover:border-primary/40 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center border border-outline-variant/30">
+                    {sc.icon || '⚡'}
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm text-on-surface">{sc.label}</h3>
+                    <span className="text-[10px] font-mono text-primary/90 font-semibold uppercase">
+                      {sc.categoryKey}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleOpenEdit(sc)}
+                    className="p-1 rounded-md text-amber-400 hover:bg-amber-400/10 cursor-pointer"
+                    title="Editar"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(sc.id)}
+                    className="p-1 rounded-md text-error hover:bg-error/10 cursor-pointer"
+                    title="Eliminar"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-xs text-on-surface-variant space-y-1 bg-surface-container-low/50 p-2.5 rounded-lg border border-outline-variant/20 font-mono text-[11px]">
+                <p><span className="text-on-surface-variant/70">Subcategoría:</span> {sc.subcategory || '—'}</p>
+                <p><span className="text-on-surface-variant/70">Ítem:</span> {sc.specificItem || '—'}</p>
+                <p><span className="text-on-surface-variant/70">Proveedor def.:</span> {sc.defaultProvider || 'Proveedor Genérico'}</p>
+                <p><span className="text-on-surface-variant/70">Pago def.:</span> <span className="capitalize">{sc.defaultPaymentMethod || 'efectivo'}</span></p>
+                {sc.materialId && (
+                  <p className="text-violet-400 font-semibold">
+                    ✓ Sincroniza con Inventario
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={editingItem ? 'Editar Acceso Rápido' : 'Nuevo Acceso Rápido'}
+          size="md"
+        >
+          <form onSubmit={handleSave} className="space-y-4 text-on-surface">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Ícono / Emoji
+                </label>
+                <Input
+                  value={form.icon}
+                  onChange={e => setForm({ ...form, icon: e.target.value })}
+                  placeholder="⚡, 📄, 🧵, etc."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Nombre del Botón *
+                </label>
+                <Input
+                  value={form.label}
+                  onChange={e => setForm({ ...form, label: e.target.value })}
+                  placeholder="ej: Comprar Papel"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Categoría *
+                </label>
+                <Select
+                  value={form.categoryKey}
+                  onChange={e => setForm({ ...form, categoryKey: e.target.value, subcategory: '', specificItem: '' })}
+                  options={Object.entries(expenseStructure).map(([k, v]) => ({
+                    value: k,
+                    label: v.label
+                  }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Subcategoría
+                </label>
+                <Select
+                  value={form.subcategory}
+                  onChange={e => setForm({ ...form, subcategory: e.target.value, specificItem: '' })}
+                  options={[
+                    { value: '', label: 'Seleccionar subcategoría...' },
+                    ...Object.keys(expenseStructure[form.categoryKey]?.subcategories || {}).map(s => ({
+                      value: s,
+                      label: s
+                    }))
+                  ]}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Ítem Específico
+                </label>
+                <Select
+                  value={form.specificItem}
+                  onChange={e => setForm({ ...form, specificItem: e.target.value })}
+                  options={[
+                    { value: '', label: 'Seleccionar ítem...' },
+                    ...(expenseStructure[form.categoryKey]?.subcategories[form.subcategory] || []).map(item => ({
+                      value: item,
+                      label: item
+                    }))
+                  ]}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Proveedor por Defecto
+                </label>
+                <Input
+                  value={form.defaultProvider}
+                  onChange={e => setForm({ ...form, defaultProvider: e.target.value })}
+                  placeholder="Proveedor Genérico"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                  Método de Pago por Defecto
+                </label>
+                <Select
+                  value={form.defaultPaymentMethod}
+                  onChange={e => setForm({ ...form, defaultPaymentMethod: e.target.value })}
+                  options={[
+                    { value: 'efectivo', label: 'Efectivo' },
+                    { value: 'transferencia', label: 'Transferencia' },
+                    { value: 'qr', label: 'QR' },
+                    { value: 'tarjeta', label: 'Tarjeta' }
+                  ]}
+                />
+              </div>
+
+              {['PRODUCCION', 'INSUMOS'].includes(form.categoryKey) && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                    Vincular a Material (Inventario)
+                  </label>
+                  <Select
+                    value={form.materialId}
+                    onChange={e => setForm({ ...form, materialId: e.target.value })}
+                    options={[
+                      { value: '', label: 'Sin vincular a inventario' },
+                      ...materials.map(m => ({
+                        value: m.id,
+                        label: `${m.name} (${m.category || 'Insumo'})`
+                      }))
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant">
+              <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-primary text-on-primary font-bold">
+                {editingItem ? 'Guardar Cambios' : 'Crear Acceso Rápido'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  )
+}

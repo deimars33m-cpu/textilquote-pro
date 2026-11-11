@@ -164,6 +164,7 @@ function mergeSettings(saved = {}) {
     budgets: Array.isArray(saved.budgets) ? saved.budgets : [],
     salesGoals: Array.isArray(saved.salesGoals) ? saved.salesGoals : [],
     fixedExpenses: Array.isArray(saved.fixedExpenses) ? saved.fixedExpenses : INITIAL_CATALOG.fixedExpenses,
+    quickExpenseShortcuts: Array.isArray(saved.quickExpenseShortcuts) ? saved.quickExpenseShortcuts : [],
   }
 }
 
@@ -558,6 +559,14 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
+  // --- Accesos Rápidos de Gastos ---
+  const saveQuickShortcuts = (shortcuts) => {
+    setSettings(prev => ({
+      ...prev,
+      quickExpenseShortcuts: shortcuts
+    }))
+  }
+
   return (
     <GlobalSettingsContext.Provider value={{
       settings: activeSettings,
@@ -587,6 +596,7 @@ export function GlobalSettingsProvider({ children }) {
       updateFixedExpense,
       deleteFixedExpense,
       saveFixedExpenses,
+      saveQuickShortcuts,
       isLoaded
     }}>
       {children}
