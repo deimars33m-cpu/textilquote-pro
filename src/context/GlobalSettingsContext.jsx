@@ -170,66 +170,6 @@ function mergeSettings(saved = {}) {
 }
 
 export function GlobalSettingsProvider({ children }) {
-  // Sincronización en tiempo real y al volver el foco entre móvil y PC
-  useEffect(() => {
-    const userId = user?.id
-    if (!userId) return
-
-    const handleSyncFromSupabase = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('global_settings')
-          .select('settings')
-          .eq('user_id', userId)
-          .maybeSingle()
-
-        if (!error && data?.settings) {
-          const next = mergeSettings(data.settings)
-          setSettings(next)
-          localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
-        }
-      } catch (e) {
-        console.error('Error sincronizando configuración:', e)
-      }
-    }
-
-    // Refrescar al enfocar ventana o pestaña
-    window.addEventListener('focus', handleSyncFromSupabase)
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        handleSyncFromSupabase()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    // Suscripción Realtime Supabase
-    const channel = supabase
-      .channel(`realtime_settings_${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'global_settings',
-          filter: `user_id=eq.${userId}`
-        },
-        (payload) => {
-          if (payload.new?.settings) {
-            const next = mergeSettings(payload.new.settings)
-            setSettings(next)
-            localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      window.removeEventListener('focus', handleSyncFromSupabase)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      supabase.removeChannel(channel)
-    }
-  }, [user?.id])
-
   const { user } = useAuth()
   const [settings, setSettings] = useState(INITIAL_CATALOG)
   const hydrationRequestRef = useRef(0)
@@ -296,6 +236,65 @@ export function GlobalSettingsProvider({ children }) {
       cancelled = true
     }
   }, [user?.id])
+
+  // Sincronización en tiempo real y al volver el foco entre móvil y PC
+  useEffect(() => {
+    const userId = user?.id
+    if (!userId) return
+
+    const handleSyncFromSupabase = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('global_settings')
+          .select('settings')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (!error && data?.settings) {
+          const next = mergeSettings(data.settings)
+          setSettings(next)
+          localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+        }
+      } catch (e) {
+        console.error('Error sincronizando configuración:', e)
+      }
+    }
+
+    window.addEventListener('focus', handleSyncFromSupabase)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleSyncFromSupabase()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    const channel = supabase
+      .channel(`realtime_settings_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'global_settings',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          if (payload.new?.settings) {
+            const next = mergeSettings(payload.new.settings)
+            setSettings(next)
+            localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('focus', handleSyncFromSupabase)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id])
+
 
   // Persistir únicamente después de hidratar la cuenta activa. Un fallo de lectura
   // desactiva la escritura remota para no reemplazar datos con una copia obsoleta.
