@@ -5,23 +5,23 @@ const navItems = [
   { path: '/', icon: 'dashboard', label: 'Dashboard' },
   { type: 'divider' },
   { path: '/expenses', icon: 'account_balance_wallet', label: 'Gastos y Presup.' },
-  { path: '/loans', icon: 'account_balance', label: 'Préstamos' },
   { path: '/orders', icon: 'shopping_bag', label: 'Pedidos' },
-  { path: '/contracts', icon: 'assignment', label: 'Contratos' },
   { path: '/terceros', icon: 'groups', label: 'Terceros' },
+  { path: '/loans', icon: 'account_balance', label: 'Préstamos' },
+  { type: 'divider' },
+  { path: '/contracts', icon: 'assignment', label: 'Contratos' },
   { type: 'divider' },
   { path: '/materials', icon: 'inventory_2', label: 'Materiales' },
   { path: '/processes', icon: 'precision_manufacturing', label: 'Procesos' },
-  { type: 'divider' },
   { path: '/templates', icon: 'category', label: 'Plantillas' },
+  { type: 'divider' },
   { path: '/quotes/new', icon: 'calculate', label: 'Cotizador' },
   { path: '/quotes', icon: 'description', label: 'Historial' },
-  { type: 'divider' },
-  { path: '/settings/global', icon: 'admin_panel_settings', label: 'Configuración Global' },
 ]
 
 const bottomItems = [
-  { path: '/settings', icon: 'settings', label: 'Configuración' },
+  { path: '/settings', icon: 'manage_accounts', label: 'Cuenta' },
+  { path: '/settings/global', icon: 'admin_panel_settings', label: 'Configuración Global' },
 ]
 
 export default function Sidebar() {
