@@ -11,7 +11,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className={`relative neu-surface w-full ${sizes[size]} max-h-[90vh] flex flex-col overflow-hidden animate-scale-in shadow-2xl`}>
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent z-20"></div>
@@ -37,7 +37,7 @@ export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message }) {
   if (!isOpen) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative neu-surface w-full max-w-sm animate-scale-in p-6">
         <div className="flex items-start gap-3 mb-4">

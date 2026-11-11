@@ -2267,7 +2267,7 @@ function QuickShortcutsEditor() {
     categoryKey: 'INSUMOS',
     subcategory: '',
     specificItem: '',
-    defaultProvider: 'Proveedor Genérico',
+    defaultProvider: '',
     defaultPaymentMethod: 'efectivo',
     materialId: ''
   })
@@ -2297,7 +2297,7 @@ function QuickShortcutsEditor() {
       categoryKey: 'INSUMOS',
       subcategory: '',
       specificItem: '',
-      defaultProvider: 'Proveedor Genérico',
+      defaultProvider: '',
       defaultPaymentMethod: 'efectivo',
       materialId: ''
     })
@@ -2312,7 +2312,7 @@ function QuickShortcutsEditor() {
       categoryKey: sc.categoryKey || 'INSUMOS',
       subcategory: sc.subcategory || '',
       specificItem: sc.specificItem || '',
-      defaultProvider: sc.defaultProvider || 'Proveedor Genérico',
+      defaultProvider: sc.defaultProvider || '',
       defaultPaymentMethod: sc.defaultPaymentMethod || 'efectivo',
       materialId: sc.materialId || ''
     })
@@ -2326,7 +2326,7 @@ function QuickShortcutsEditor() {
     }
   }
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault()
     if (!form.label.trim()) return alert('Ingrese la etiqueta del botón.')
     if (!form.categoryKey) return alert('Seleccione una categoría.')
@@ -2341,7 +2341,7 @@ function QuickShortcutsEditor() {
       currentShortcuts.push({ ...form, id: crypto.randomUUID() })
     }
 
-    saveQuickShortcuts(currentShortcuts)
+    await saveQuickShortcuts(currentShortcuts)
     setShowModal(false)
   }
 
@@ -2507,7 +2507,7 @@ function QuickShortcutsEditor() {
                 <Input
                   value={form.defaultProvider}
                   onChange={e => setForm({ ...form, defaultProvider: e.target.value })}
-                  placeholder="Proveedor Genérico"
+                  placeholder="Opcional (puede dejarse vacio)"
                 />
               </div>
             </div>

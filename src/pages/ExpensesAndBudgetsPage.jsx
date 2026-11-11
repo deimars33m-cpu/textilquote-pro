@@ -618,7 +618,7 @@ export default function ExpensesAndBudgetsPage() {
   const [editingShortcut, setEditingShortcut] = useState(null) // shortcut en edición en modal config
   const [shortcutDraft, setShortcutDraft] = useState({
     label: '', icon: '⚡', categoryKey: 'INSUMOS', subcategory: '', specificItem: '',
-    defaultProvider: 'Proveedor Genérico', defaultPaymentMethod: 'efectivo', materialId: ''
+    defaultProvider: '', defaultPaymentMethod: 'efectivo', materialId: ''
   })
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
   const [orders, setOrders] = useState([])
@@ -1019,6 +1019,23 @@ export default function ExpensesAndBudgetsPage() {
     }
   }
 
+  // Helper para abrir modal de configuración de accesos cerrando el panel previo (especialmente en móviles)
+  const handleOpenConfigModal = () => {
+    setQuickPanelOpen(false)
+    setEditingShortcut(null)
+    setShortcutDraft({
+      label: '',
+      icon: '⚡',
+      categoryKey: 'INSUMOS',
+      subcategory: '',
+      specificItem: '',
+      defaultProvider: '',
+      defaultPaymentMethod: 'efectivo',
+      materialId: ''
+    })
+    setConfigShortcutsOpen(true)
+  }
+
   // --- GUARDAR ACCESO RÁPIDO ---
   const handleQuickSave = async () => {
     if (!quickSelectedShortcut) return
@@ -1139,7 +1156,7 @@ export default function ExpensesAndBudgetsPage() {
   const handleSelectShortcut = (sc) => {
     setQuickSelectedShortcut(sc)
     setQuickForm({
-      provider: sc.defaultProvider || 'Proveedor Genérico',
+      provider: sc.defaultProvider || '',
       quantity: 1,
       unitPrice: '',
       paymentMethod: sc.defaultPaymentMethod || 'efectivo'
@@ -1149,7 +1166,7 @@ export default function ExpensesAndBudgetsPage() {
   }
 
   // --- CRUD shortcuts config ---
-  const handleSaveShortcut = () => {
+  const handleSaveShortcut = async () => {
     if (!shortcutDraft.label.trim()) return
     const shortcuts = [...(settings?.quickExpenseShortcuts || [])]
     if (editingShortcut) {
@@ -1158,9 +1175,13 @@ export default function ExpensesAndBudgetsPage() {
     } else {
       shortcuts.push({ ...shortcutDraft, id: crypto.randomUUID() })
     }
-    saveQuickShortcuts(shortcuts)
+    await saveQuickShortcuts(shortcuts)
+    setConfigShortcutsOpen(false)
     setEditingShortcut(null)
-    setShortcutDraft({ label: '', icon: '⚡', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Genérico', defaultPaymentMethod: 'efectivo', materialId: '' })
+    setShortcutDraft({ label: '', icon: '⚡', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: '', defaultPaymentMethod: 'efectivo', materialId: '' })
+    if (window.innerWidth < 1024) {
+      setQuickPanelOpen(true)
+    }
   }
 
   const handleEditShortcut = (sc) => {
@@ -1731,7 +1752,7 @@ export default function ExpensesAndBudgetsPage() {
               <h2 className="text-base font-bold text-on-surface leading-none">Accesos Rapidos</h2>
             </div>
             <button
-              onClick={() => setConfigShortcutsOpen(true)}
+              onClick={handleOpenConfigModal}
               className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/10 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[15px]">settings</span>
@@ -1744,7 +1765,7 @@ export default function ExpensesAndBudgetsPage() {
             <div className="text-center py-8 space-y-3">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant block">flash_on</span>
               <p className="text-sm text-on-surface-variant">Aun no tenes accesos rapidos configurados.</p>
-              <button onClick={() => setConfigShortcutsOpen(true)} className="text-primary text-sm underline underline-offset-2 cursor-pointer bg-transparent border-none">
+              <button onClick={handleOpenConfigModal} className="text-primary text-sm underline underline-offset-2 cursor-pointer bg-transparent border-none">
                 Crear primer acceso
               </button>
             </div>
@@ -1784,7 +1805,7 @@ export default function ExpensesAndBudgetsPage() {
                     type="text"
                     value={quickForm.provider}
                     onChange={e => setQuickForm(prev => ({ ...prev, provider: e.target.value }))}
-                    placeholder="Nombre del proveedor"
+                    placeholder="Nombre del proveedor (opcional)"
                     className="flex-1 bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
                   />
                   <button
@@ -3893,7 +3914,7 @@ export default function ExpensesAndBudgetsPage() {
         {/* MODAL CONFIGURACION DE ACCESOS RAPIDOS */}
         <Modal
           isOpen={configShortcutsOpen}
-          onClose={() => { setConfigShortcutsOpen(false); setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Generico', defaultPaymentMethod: 'efectivo', materialId: '' }) }}
+          onClose={() => { setConfigShortcutsOpen(false); setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: '', defaultPaymentMethod: 'efectivo', materialId: '' }); if (window.innerWidth < 1024) setQuickPanelOpen(true); }}
           title="Configurar Accesos Rapidos"
           size="lg"
         >
@@ -3953,7 +3974,7 @@ export default function ExpensesAndBudgetsPage() {
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Proveedor por defecto</label>
-                  <input type="text" value={shortcutDraft.defaultProvider} onChange={e => setShortcutDraft(prev => ({...prev, defaultProvider: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="Proveedor Generico" />
+                  <input type="text" value={shortcutDraft.defaultProvider} onChange={e => setShortcutDraft(prev => ({...prev, defaultProvider: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="Opcional (puede dejarse vacio)" />
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Pago por defecto</label>
@@ -3973,7 +3994,7 @@ export default function ExpensesAndBudgetsPage() {
               </div>
               <div className="flex gap-2 justify-end">
                 {editingShortcut && (
-                  <button onClick={() => { setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: 'Proveedor Generico', defaultPaymentMethod: 'efectivo', materialId: '' }) }} className="px-4 py-2 rounded-xl border border-outline-variant text-sm text-on-surface-variant hover:bg-white/5 cursor-pointer">Cancelar</button>
+                  <button onClick={() => { setEditingShortcut(null); setShortcutDraft({ label: '', icon: '\u26A1', categoryKey: 'INSUMOS', subcategory: '', specificItem: '', defaultProvider: '', defaultPaymentMethod: 'efectivo', materialId: '' }) }} className="px-4 py-2 rounded-xl border border-outline-variant text-sm text-on-surface-variant hover:bg-white/5 cursor-pointer">Cancelar</button>
                 )}
                 <button onClick={handleSaveShortcut} disabled={!shortcutDraft.label.trim()} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:brightness-110 disabled:opacity-50 cursor-pointer">
                   {editingShortcut ? 'Actualizar' : 'Agregar acceso'}

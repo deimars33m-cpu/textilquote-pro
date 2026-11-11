@@ -221,6 +221,7 @@ export function GlobalSettingsProvider({ children }) {
     async function hydrateSettings() {
       let nextSettings = localSettings
       let dbWriteReady = false
+      let remoteData = null
 
       try {
         const { data, error } = await supabase
@@ -230,6 +231,7 @@ export function GlobalSettingsProvider({ children }) {
           .maybeSingle()
 
         if (error) throw error
+        remoteData = data
         nextSettings = data?.settings ? mergeSettings(data.settings) : localSettings
         dbWriteReady = true
       } catch (e) {
@@ -240,8 +242,8 @@ export function GlobalSettingsProvider({ children }) {
 
       if (!cancelled && requestId === hydrationRequestRef.current) {
         // Si hay datos en Supabase, combinar accesos rápidos locales y remotos para no perder los de ningún dispositivo
-        if (data?.settings) {
-          const remoteShortcuts = data.settings.quickExpenseShortcuts || []
+        if (remoteData?.settings) {
+          const remoteShortcuts = remoteData.settings.quickExpenseShortcuts || []
           const localShortcuts = localSettings.quickExpenseShortcuts || []
           const combinedShortcuts = mergeShortcutsList(remoteShortcuts, localShortcuts)
           nextSettings.quickExpenseShortcuts = combinedShortcuts
@@ -348,9 +350,25 @@ export function GlobalSettingsProvider({ children }) {
 
     const timeoutId = setTimeout(async () => {
       try {
+        let finalSettings = settings
+        const { data: latestRemote } = await supabase
+          .from('global_settings')
+          .select('settings')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (latestRemote?.settings?.quickExpenseShortcuts) {
+          const mergedShortcuts = mergeShortcutsList(latestRemote.settings.quickExpenseShortcuts, settings.quickExpenseShortcuts)
+          finalSettings = {
+            ...latestRemote.settings,
+            ...settings,
+            quickExpenseShortcuts: mergedShortcuts
+          }
+        }
+
         const { error } = await supabase
           .from('global_settings')
-          .upsert({ user_id: userId, settings }, { onConflict: 'user_id' })
+          .upsert({ user_id: userId, settings: finalSettings }, { onConflict: 'user_id' })
         if (error) throw error
       } catch (e) {
         console.error('Error guardando configuración en Supabase', e)
