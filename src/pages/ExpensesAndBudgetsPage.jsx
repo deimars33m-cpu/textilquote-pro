@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
@@ -432,6 +433,143 @@ const calculateItemMetrics = (sizeDistribution) => {
   return { totalGarments, totalNominalPanels, totalEquivalentPanels, totalM2 }
 }
 
+
+const ICON_BANK = [
+  // Textil & Insumos
+  { icon: '⚡', label: 'Rápido' },
+  { icon: '🧵', label: 'Hilos' },
+  { icon: '📄', label: 'Papel Sublimación' },
+  { icon: '🖨️', label: 'Impresión / DTF' },
+  { icon: '✂️', label: 'Corte / Vinil' },
+  { icon: '👕', label: 'Prendas / Poleras' },
+  { icon: '🎨', label: 'Tintas / Color' },
+  { icon: '📦', label: 'Cajas / Embalaje' },
+  { icon: '🏷️', label: 'Etiquetas' },
+  { icon: '🧴', label: 'Químicos / Limpieza' },
+  { icon: '🧶', label: 'Lana / Tejido' },
+  { icon: '🧥', label: 'Camperas / Buzos' },
+  { icon: '🎒', label: 'Mochilas / Bolsos' },
+  { icon: '🧢', label: 'Gorras' },
+  // Taller & Operativo
+  { icon: '🔨', label: 'Herramientas' },
+  { icon: '🔧', label: 'Mantenimiento' },
+  { icon: '⚙️', label: 'Repuestos' },
+  { icon: '🔩', label: 'Ferretería' },
+  { icon: '🏭', label: 'Taller' },
+  { icon: '💡', label: 'Luz / Servicios' },
+  { icon: '🔥', label: 'Plancha / Calor' },
+  { icon: '🚚', label: 'Fletes / Envíos' },
+  { icon: '🛵', label: 'Delivery' },
+  { icon: '⛽', label: 'Combustible' },
+  { icon: '🧹', label: 'Aseo / Limpieza' },
+  // Pagos & Oficina
+  { icon: '💰', label: 'Dinero / Pago' },
+  { icon: '🧾', label: 'Facturas / Recibos' },
+  { icon: '🛒', label: 'Compras varias' },
+  { icon: '💻', label: 'Sistemas / Insumos PC' },
+  { icon: '📱', label: 'Telefonía / Internet' },
+  { icon: '☕', label: 'Refrigerio' },
+  { icon: '🍕', label: 'Alimentación' },
+  { icon: '🏠', label: 'Alquiler' }
+]
+
+function IconSelector({ value, onChange }) {
+  const [customMode, setCustomMode] = useState(false)
+  const [activeCategory, setActiveCategory] = useState('todos')
+
+  const categories = [
+    { id: 'todos', label: 'Todos' },
+    { id: 'textil', label: 'Textil & Insumos' },
+    { id: 'taller', label: 'Taller & Servicios' },
+    { id: 'general', label: 'General & Pagos' }
+  ]
+
+  const filteredIcons = ICON_BANK.filter((item, idx) => {
+    if (activeCategory === 'todos') return true
+    if (activeCategory === 'textil') return idx < 14
+    if (activeCategory === 'taller') return idx >= 14 && idx < 25
+    if (activeCategory === 'general') return idx >= 25
+    return true
+  })
+
+  return (
+    <div className="space-y-2 col-span-2 bg-surface-container-low/90 p-3 rounded-xl border border-outline-variant/40">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[16px] text-primary">sentiment_satisfied</span>
+          Banco de Íconos y Emojis
+        </label>
+        <button
+          type="button"
+          onClick={() => setCustomMode(!customMode)}
+          className="text-xs text-primary hover:underline cursor-pointer bg-transparent border-none p-0 font-medium"
+        >
+          {customMode ? '← Ver banco de íconos' : 'Escribir personalizado'}
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl w-11 h-11 rounded-xl bg-surface-container-high border-2 border-primary/50 flex items-center justify-center shadow-md">
+            {value || '⚡'}
+          </span>
+          <div className="leading-tight">
+            <span className="text-[10px] text-on-surface-variant uppercase font-mono block">Seleccionado</span>
+            <span className="text-xs font-bold text-primary">{ICON_BANK.find(i => i.icon === value)?.label || 'Personalizado'}</span>
+          </div>
+        </div>
+
+        {customMode ? (
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder="Pega o escribe cualquier emoji..."
+            className="flex-1 bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none"
+          />
+        ) : (
+          <div className="flex-1 flex gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(cat.id)}
+                className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors shrink-0 cursor-pointer ${
+                  activeCategory === cat.id
+                    ? 'bg-primary text-white'
+                    : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!customMode && (
+        <div className="grid grid-cols-8 sm:grid-cols-11 gap-1.5 p-2 bg-surface-container/70 rounded-xl border border-outline-variant/30 max-h-36 overflow-y-auto">
+          {filteredIcons.map(item => (
+            <button
+              key={item.icon + item.label}
+              type="button"
+              onClick={() => onChange(item.icon)}
+              title={item.label}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all cursor-pointer ${
+                value === item.icon
+                  ? 'bg-primary/30 border-2 border-primary scale-110 shadow-[0_0_8px_rgba(255,92,0,0.5)]'
+                  : 'bg-surface-container-low hover:bg-white/10 hover:scale-105 border border-outline-variant/20'
+              }`}
+            >
+              {item.icon}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ExpensesAndBudgetsPage() {
   const location = useLocation()
   const [activeTab, setActiveTab] = useState('registro') // 'registro', 'dashboard', 'analisis'
@@ -458,7 +596,19 @@ export default function ExpensesAndBudgetsPage() {
 
   // --- ACCESOS RÁPIDOS ---
   const [quickPanelOpen, setQuickPanelOpen] = useState(false) // mobile bottom sheet
-  const [activeFormMode, setActiveFormMode] = useState('wizard') // 'wizard' | 'quick' (desktop tab)
+  const [activeFormMode, setActiveFormMode] = useState('wizard')
+
+  // Bloquear scroll de fondo cuando el panel rápido móvil está abierto
+  useEffect(() => {
+    if (quickPanelOpen) {
+      const originalOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = originalOverflow
+      }
+    }
+  }, [quickPanelOpen])
+ // 'wizard' | 'quick' (desktop tab)
   const [quickSelectedShortcut, setQuickSelectedShortcut] = useState(null) // shortcut activo
   const [quickForm, setQuickForm] = useState({ provider: '', quantity: 1, unitPrice: '', paymentMethod: 'efectivo' })
   const [quickSaving, setQuickSaving] = useState(false)
@@ -1573,8 +1723,8 @@ export default function ExpensesAndBudgetsPage() {
   const renderQuickPanel = () => {
     const shortcuts = settings?.quickExpenseShortcuts || []
     return (
-      <div className="flex flex-col h-full bg-transparent select-none text-on-surface overflow-hidden">
-        <div className="p-4 border-b border-outline-variant shrink-0 bg-surface-container/50">
+      <div className="flex flex-col h-full bg-[#131b2e] dark:bg-[#0c121e] select-none text-on-surface overflow-hidden">
+        <div className="p-4 border-b border-outline-variant/60 shrink-0 bg-[#18233c] dark:bg-[#111827]">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">flash_on</span>
@@ -1609,7 +1759,7 @@ export default function ExpensesAndBudgetsPage() {
                     className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all duration-200 cursor-pointer ${
                       quickSelectedShortcut?.id === sc.id
                         ? 'border-primary bg-primary/10 text-primary shadow-[0_0_12px_rgba(255,92,0,0.2)]'
-                        : 'border-outline-variant/40 bg-surface-container-low/40 hover:border-primary/40 hover:bg-primary/5 text-on-surface'
+                        : 'border-outline-variant/50 bg-[#1a253f] dark:bg-[#141d30] hover:border-primary/50 hover:bg-primary/10 text-on-surface shadow-sm'
                     }`}
                   >
                     <span className="text-2xl leading-none">{sc.icon || '\u26a1'}</span>
@@ -3650,15 +3800,38 @@ export default function ExpensesAndBudgetsPage() {
         </Modal>
 
         {/* BOTTOM SHEET ACCESOS RAPIDOS (mobile) */}
-        {quickPanelOpen && (
-          <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setQuickPanelOpen(false)}>
-            <div className="bg-surface-container rounded-t-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="w-10 h-1 rounded-full bg-outline-variant mx-auto mt-3 mb-1 shrink-0" />
-              <div className="flex-1 overflow-y-auto">
+        {quickPanelOpen && typeof document !== 'undefined' && createPortal(
+          <div className="md:hidden fixed inset-0 z-[120] flex flex-col justify-end">
+            {/* Backdrop sólido oscuro con captura total de eventos */}
+            <div
+              className="fixed inset-0 bg-black/85 backdrop-blur-md transition-opacity"
+              onClick={() => setQuickPanelOpen(false)}
+              onTouchMove={e => e.preventDefault()}
+            />
+            {/* Contenedor del Bottom Sheet: 100% opaco y aislado */}
+            <div
+              className="relative z-10 w-full bg-[#131b2e] dark:bg-[#0c121e] border-t-2 border-primary/40 rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.9)] max-h-[85vh] flex flex-col overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 pt-3 pb-1 border-b border-white/5 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px]">flash_on</span>
+                  <span className="text-sm font-bold text-white">Compras Rápidas</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickPanelOpen(false)}
+                  className="p-1 rounded-full text-on-surface-variant hover:text-white hover:bg-white/10 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain">
                 {renderQuickPanel()}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* MODAL CONFIGURACION DE ACCESOS RAPIDOS */}
@@ -3694,10 +3867,10 @@ export default function ExpensesAndBudgetsPage() {
             <div className="border-t border-outline-variant pt-4 space-y-3">
               <h3 className="text-sm font-bold text-on-surface">{editingShortcut ? 'Editar acceso' : 'Nuevo acceso rapido'}</h3>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Icono (emoji)</label>
-                  <input type="text" value={shortcutDraft.icon} onChange={e => setShortcutDraft(prev => ({...prev, icon: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="\u26A1" />
-                </div>
+                <IconSelector 
+                  value={shortcutDraft.icon} 
+                  onChange={icon => setShortcutDraft(prev => ({ ...prev, icon }))} 
+                />
                 <div>
                   <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Etiqueta del boton</label>
                   <input type="text" value={shortcutDraft.label} onChange={e => setShortcutDraft(prev => ({...prev, label: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="ej: Comprar Papel" />
