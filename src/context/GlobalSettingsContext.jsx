@@ -165,8 +165,22 @@ function mergeSettings(saved = {}) {
     budgets: Array.isArray(saved.budgets) ? saved.budgets : [],
     salesGoals: Array.isArray(saved.salesGoals) ? saved.salesGoals : [],
     fixedExpenses: Array.isArray(saved.fixedExpenses) ? saved.fixedExpenses : INITIAL_CATALOG.fixedExpenses,
-    quickExpenseShortcuts: Array.isArray(saved.quickExpenseShortcuts) ? saved.quickExpenseShortcuts : [],
+    quickExpenseShortcuts: Array.isArray(saved.quickExpenseShortcuts) ? saved.quickExpenseShortcuts : (INITIAL_CATALOG.quickExpenseShortcuts || []),
   }
+}
+
+// Función auxiliar para fusionar listas de accesos rápidos sin duplicados por ID
+function mergeShortcutsList(existing = [], incoming = []) {
+  const map = new Map()
+  ;(existing || []).forEach(item => {
+    if (item && item.id) map.set(item.id, item)
+  })
+  ;(incoming || []).forEach(item => {
+    if (item && item.id) {
+      map.set(item.id, { ...(map.get(item.id) || {}), ...item })
+    }
+  })
+  return Array.from(map.values())
 }
 
 export function GlobalSettingsProvider({ children }) {
@@ -225,7 +239,23 @@ export function GlobalSettingsProvider({ children }) {
       }
 
       if (!cancelled && requestId === hydrationRequestRef.current) {
+        // Si hay datos en Supabase, combinar accesos rápidos locales y remotos para no perder los de ningún dispositivo
+        if (data?.settings) {
+          const remoteShortcuts = data.settings.quickExpenseShortcuts || []
+          const localShortcuts = localSettings.quickExpenseShortcuts || []
+          const combinedShortcuts = mergeShortcutsList(remoteShortcuts, localShortcuts)
+          nextSettings.quickExpenseShortcuts = combinedShortcuts
+          
+          // Si el local aportó algún acceso nuevo que la nube no tenía, sincronizarlo a la nube
+          if (combinedShortcuts.length > remoteShortcuts.length) {
+            supabase
+              .from('global_settings')
+              .upsert({ user_id: userId, settings: nextSettings }, { onConflict: 'user_id' })
+              .then(() => {})
+          }
+        }
         setSettings(nextSettings)
+        localStorage.setItem(storageKey, JSON.stringify(nextSettings))
         setHydration({ userId, requestId, dbWriteReady })
       }
     }
@@ -251,9 +281,14 @@ export function GlobalSettingsProvider({ children }) {
           .maybeSingle()
 
         if (!error && data?.settings) {
-          const next = mergeSettings(data.settings)
-          setSettings(next)
-          localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+          setSettings(current => {
+            const next = mergeSettings(data.settings)
+            // Combinar accesos rápidos de ambos para asegurar consistencia
+            const combined = mergeShortcutsList(next.quickExpenseShortcuts, current.quickExpenseShortcuts)
+            next.quickExpenseShortcuts = combined
+            localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+            return next
+          })
         }
       } catch (e) {
         console.error('Error sincronizando configuración:', e)
@@ -280,9 +315,13 @@ export function GlobalSettingsProvider({ children }) {
         },
         (payload) => {
           if (payload.new?.settings) {
-            const next = mergeSettings(payload.new.settings)
-            setSettings(next)
-            localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+            setSettings(current => {
+              const next = mergeSettings(payload.new.settings)
+              const combined = mergeShortcutsList(next.quickExpenseShortcuts, current.quickExpenseShortcuts)
+              next.quickExpenseShortcuts = combined
+              localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(next))
+              return next
+            })
           }
         }
       )
@@ -619,23 +658,82 @@ export function GlobalSettingsProvider({ children }) {
     }))
   }
 
-  // --- Accesos Rápidos de Gastos (Persistencia inmediata) ---
-  const saveQuickShortcuts = async (shortcuts) => {
-    setSettings(prev => ({
-      ...prev,
-      quickExpenseShortcuts: shortcuts
-    }))
-
+  // --- Accesos Rápidos de Gastos (Persistencia inmediata y fusión bidireccional) ---
+  const saveQuickShortcuts = async (newOrUpdatedShortcuts) => {
     const userId = user?.id
+
+    // Si no hay usuario logueado, actualizar solo en memoria
+    if (!userId) {
+      setSettings(prev => ({ ...prev, quickExpenseShortcuts: newOrUpdatedShortcuts }))
+      return
+    }
+
+    try {
+      // 1. Obtener los settings más recientes de Supabase para no pisar botones creados en otro dispositivo
+      const { data } = await supabase
+        .from('global_settings')
+        .select('settings')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      const remoteSettings = data?.settings || {}
+      const remoteShortcuts = remoteSettings.quickExpenseShortcuts || []
+
+      // 2. Fusionar los accesos de la nube con los que el usuario está guardando
+      const mergedShortcuts = mergeShortcutsList(remoteShortcuts, newOrUpdatedShortcuts)
+
+      // 3. Preparar el nuevo objeto completo de configuración
+      const updatedSettings = {
+        ...settings,
+        ...remoteSettings,
+        quickExpenseShortcuts: mergedShortcuts
+      }
+
+      // 4. Actualizar estado local y localStorage
+      setSettings(updatedSettings)
+      localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(updatedSettings))
+
+      // 5. Guardar en Supabase de forma definitiva
+      await supabase
+        .from('global_settings')
+        .upsert({ user_id: userId, settings: updatedSettings }, { onConflict: 'user_id' })
+    } catch (err) {
+      console.error('Error al guardar y fusionar accesos rápidos:', err)
+      // Fallback local
+      setSettings(prev => {
+        const fallback = { ...prev, quickExpenseShortcuts: newOrUpdatedShortcuts }
+        localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(fallback))
+        return fallback
+      })
+    }
+  }
+
+  // Función para eliminar específicamente un acceso rápido sincronizando con la nube
+  const deleteQuickShortcut = async (shortcutId) => {
+    const userId = user?.id
+    setSettings(prev => {
+      const filtered = (prev.quickExpenseShortcuts || []).filter(s => s.id !== shortcutId)
+      return { ...prev, quickExpenseShortcuts: filtered }
+    })
+
     if (userId) {
       try {
-        const nextSettings = { ...settings, quickExpenseShortcuts: shortcuts }
-        localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(nextSettings))
+        const { data } = await supabase
+          .from('global_settings')
+          .select('settings')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        const remoteSettings = data?.settings || settings
+        const filtered = (remoteSettings.quickExpenseShortcuts || []).filter(s => s.id !== shortcutId)
+        const updatedSettings = { ...remoteSettings, quickExpenseShortcuts: filtered }
+
+        localStorage.setItem(`textilquote_global_settings_${userId}`, JSON.stringify(updatedSettings))
         await supabase
           .from('global_settings')
-          .upsert({ user_id: userId, settings: nextSettings }, { onConflict: 'user_id' })
+          .upsert({ user_id: userId, settings: updatedSettings }, { onConflict: 'user_id' })
       } catch (err) {
-        console.error('Error guardando accesos rápidos de inmediato:', err)
+        console.error('Error al eliminar acceso rápido de la nube:', err)
       }
     }
   }
@@ -670,6 +768,7 @@ export function GlobalSettingsProvider({ children }) {
       deleteFixedExpense,
       saveFixedExpenses,
       saveQuickShortcuts,
+      deleteQuickShortcut,
       isLoaded
     }}>
       {children}

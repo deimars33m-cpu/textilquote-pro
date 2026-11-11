@@ -2253,7 +2253,7 @@ function IconSelector({ value, onChange }) {
 }
 
 function QuickShortcutsEditor() {
-  const { settings, saveQuickShortcuts } = useGlobalSettings()
+  const { settings, saveQuickShortcuts, deleteQuickShortcut } = useGlobalSettings()
   const { user } = useAuth()
   const shortcuts = settings?.quickExpenseShortcuts || []
   const expenseStructure = settings?.expenseStructure || {}

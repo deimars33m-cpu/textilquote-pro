@@ -579,7 +579,7 @@ export default function ExpensesAndBudgetsPage() {
 
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const { settings, saveQuickShortcuts } = useGlobalSettings()
+  const { settings, saveQuickShortcuts, deleteQuickShortcut } = useGlobalSettings()
   const { data: expenses, loading: loadingExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useCRUD('expenses', {
     orderBy: 'date',
     orderAsc: false,
