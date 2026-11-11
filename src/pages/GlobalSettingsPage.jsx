@@ -2259,6 +2259,7 @@ function QuickShortcutsEditor() {
   const expenseStructure = settings?.expenseStructure || {}
 
   const [materials, setMaterials] = useState([])
+  const [providers, setProviders] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [form, setForm] = useState({
@@ -2273,21 +2274,27 @@ function QuickShortcutsEditor() {
   })
 
   useEffect(() => {
-    async function loadMaterials() {
+    async function loadData() {
       if (!user) return
       try {
-        const { data } = await supabase
-          .from('materials')
-          .select('id, name, category')
-          .eq('user_id', user.id)
-          .order('name')
-        if (data) setMaterials(data)
+        const [matRes, provRes] = await Promise.all([
+          supabase.from('materials').select('id, name, category').eq('user_id', user.id).order('name'),
+          supabase.from('terceros').select('id, name, phone, notes').eq('user_id', user.id).eq('role', 'proveedor').order('name')
+        ])
+        if (matRes.data) setMaterials(matRes.data)
+        if (provRes.data) setProviders(provRes.data)
       } catch (err) {
-        console.error('Error cargando materiales en configuración:', err)
+        console.error('Error cargando datos en configuración:', err)
       }
     }
-    loadMaterials()
+    loadData()
   }, [user])
+
+  const providerSuggestions = useMemo(() => {
+    const q = (form.defaultProvider || '').trim().toLowerCase()
+    if (!q || q === 'proveedor generico' || q === 'proveedor genérico') return []
+    return providers.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
+  }, [providers, form.defaultProvider])
 
   const handleOpenNew = () => {
     setEditingItem(null)
@@ -2500,15 +2507,46 @@ function QuickShortcutsEditor() {
                   ]}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
-                  Proveedor por Defecto
-                </label>
-                <Input
-                  value={form.defaultProvider}
-                  onChange={e => setForm({ ...form, defaultProvider: e.target.value })}
-                  placeholder="Opcional (puede dejarse vacio)"
-                />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold uppercase text-on-surface-variant">
+                    Proveedor por Defecto
+                  </label>
+                  {providers.length > 0 && (
+                    <span className="text-[10px] text-on-surface-variant/70 font-mono">
+                      {providers.length} en BD
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    list="gs-quick-providers-list"
+                    value={form.defaultProvider}
+                    onChange={e => setForm({ ...form, defaultProvider: e.target.value })}
+                    placeholder="Buscar o escribir proveedor (opcional)"
+                    className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none"
+                  />
+                  <datalist id="gs-quick-providers-list">
+                    {providers.map(p => (
+                      <option key={p.id} value={p.name} />
+                    ))}
+                  </datalist>
+                  {providerSuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-2xl max-h-40 overflow-y-auto divide-y divide-outline-variant/30">
+                      {providerSuggestions.slice(0, 8).map(prov => (
+                        <div
+                          key={prov.id}
+                          className="p-2.5 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors flex items-center justify-between"
+                          onClick={() => setForm(prev => ({ ...prev, defaultProvider: prov.name }))}
+                        >
+                          <span className="font-semibold">{prov.name}</span>
+                          {prov.phone && <span className="text-[10px] text-on-surface-variant font-mono">{prov.phone}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

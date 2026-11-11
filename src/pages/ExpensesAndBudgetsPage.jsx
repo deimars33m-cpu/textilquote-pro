@@ -754,6 +754,19 @@ export default function ExpensesAndBudgetsPage() {
     return list.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
   }, [providers, dependientes, form.providerName, terceroType])
 
+  // Sugerencias de proveedores para compra rápida y configuración de accesos rápidos
+  const quickProviderSuggestions = useMemo(() => {
+    const q = (quickForm.provider || '').trim().toLowerCase()
+    if (!q || q === 'proveedor generico' || q === 'proveedor genérico') return []
+    return providers.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
+  }, [providers, quickForm.provider])
+
+  const shortcutDraftProviderSuggestions = useMemo(() => {
+    const q = (shortcutDraft.defaultProvider || '').trim().toLowerCase()
+    if (!q || q === 'proveedor generico' || q === 'proveedor genérico') return []
+    return providers.filter(p => p.name.toLowerCase().includes(q) && p.name.toLowerCase() !== q)
+  }, [providers, shortcutDraft.defaultProvider])
+
   const updateForm = (field, value) => {
     setForm(prev => {
       const next = { ...prev, [field]: value }
@@ -1799,20 +1812,51 @@ export default function ExpensesAndBudgetsPage() {
                 <span className="text-on-surface-variant font-normal">� {quickSelectedShortcut.subcategory}</span>
               </div>
               <div>
-                <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Proveedor</label>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={quickForm.provider}
-                    onChange={e => setQuickForm(prev => ({ ...prev, provider: e.target.value }))}
-                    placeholder="Nombre del proveedor (opcional)"
-                    className="flex-1 bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
-                  />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Proveedor</label>
+                  {providers.length > 0 && (
+                    <span className="text-[9px] text-on-surface-variant/70 font-mono">
+                      {providers.length} en base de datos
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-1.5 relative">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      list="quick-providers-list"
+                      value={quickForm.provider}
+                      onChange={e => setQuickForm(prev => ({ ...prev, provider: e.target.value }))}
+                      placeholder="Buscar o escribir proveedor..."
+                      className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
+                    />
+                    <datalist id="quick-providers-list">
+                      {providers.map(p => (
+                        <option key={p.id} value={p.name} />
+                      ))}
+                    </datalist>
+                    {quickProviderSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-2xl max-h-40 overflow-y-auto divide-y divide-outline-variant/30">
+                        {quickProviderSuggestions.slice(0, 8).map(prov => (
+                          <div
+                            key={prov.id}
+                            className="p-2.5 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors flex items-center justify-between"
+                            onClick={() => setQuickForm(prev => ({ ...prev, provider: prov.name }))}
+                          >
+                            <span className="font-semibold">{prov.name}</span>
+                            {prov.phone && <span className="text-[10px] text-on-surface-variant font-mono">{prov.phone}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
-                    onClick={() => setQuickForm(prev => ({ ...prev, provider: 'Proveedor Generico' }))}
-                    className="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface cursor-pointer"
+                    type="button"
+                    onClick={() => setQuickForm(prev => ({ ...prev, provider: 'Proveedor Genérico' }))}
+                    className="shrink-0 text-[10px] px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant text-on-surface-variant hover:text-primary hover:border-primary/50 cursor-pointer transition-colors font-medium"
+                    title="Usar Proveedor Genérico"
                   >
-                    Generico
+                    Genérico
                   </button>
                 </div>
               </div>
@@ -3972,9 +4016,44 @@ export default function ExpensesAndBudgetsPage() {
                     {(expenseStructure[shortcutDraft.categoryKey]?.subcategories[shortcutDraft.subcategory] || []).map(item => (<option key={item} value={item}>{item}</option>))}
                   </select>
                 </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Proveedor por defecto</label>
-                  <input type="text" value={shortcutDraft.defaultProvider} onChange={e => setShortcutDraft(prev => ({...prev, defaultProvider: e.target.value}))} className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" placeholder="Opcional (puede dejarse vacio)" />
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider block">Proveedor por defecto</label>
+                    {providers.length > 0 && (
+                      <span className="text-[9px] text-on-surface-variant/70 font-mono">
+                        {providers.length} disponibles
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      list="shortcut-draft-providers-list"
+                      value={shortcutDraft.defaultProvider}
+                      onChange={e => setShortcutDraft(prev => ({...prev, defaultProvider: e.target.value}))}
+                      className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none"
+                      placeholder="Buscar o escribir proveedor (opcional)"
+                    />
+                    <datalist id="shortcut-draft-providers-list">
+                      {providers.map(p => (
+                        <option key={p.id} value={p.name} />
+                      ))}
+                    </datalist>
+                    {shortcutDraftProviderSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-surface-container border border-outline-variant rounded-xl shadow-2xl max-h-40 overflow-y-auto divide-y divide-outline-variant/30">
+                        {shortcutDraftProviderSuggestions.slice(0, 8).map(prov => (
+                          <div
+                            key={prov.id}
+                            className="p-2.5 text-xs text-on-surface hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors flex items-center justify-between"
+                            onClick={() => setShortcutDraft(prev => ({ ...prev, defaultProvider: prov.name }))}
+                          >
+                            <span className="font-semibold">{prov.name}</span>
+                            {prov.phone && <span className="text-[10px] text-on-surface-variant font-mono">{prov.phone}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider mb-1 block">Pago por defecto</label>
