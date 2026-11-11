@@ -120,13 +120,7 @@ export function calculateQuote({
   marginPct = 30,
   discountPct = 0,
   taxPct = 0,
-  totalMonthlyExpenses = 0,
-  monthlyCapacity = 1000,
   minMargin = 15,
-  isClothing = false,
-  sizeDistribution = null,
-  sizeMultipliers = null,
-  negotiatedPrice = null,
 }) {
   const qty = Math.max(1, parseInt(quantity) || 1)
   const margin = Math.max(0, Math.min(99.99, parseFloat(marginPct) || 0))
@@ -198,8 +192,6 @@ export function calculateQuote({
       message: `${materialsWithoutPrice.length} material(es) sin precio: ${materialsWithoutPrice.map(m => m.material_name || m.name).join(', ')}`
     })
   }
-
-  const sizeBreakdown = null
 
   return {
     // Desglose
@@ -276,7 +268,7 @@ export function parseContractDurationToMonths(durationStr) {
   const clean = durationStr.toLowerCase().trim()
   const match = clean.match(/(\d+(?:\.\d+)?)\s*(mes|di|dí|seman|week|month|day)/)
   
-  let days = 0
+  let days
   if (!match) {
     const numMatch = clean.match(/(\d+(?:\.\d+)?)/)
     days = numMatch ? parseFloat(numMatch[1]) : 0

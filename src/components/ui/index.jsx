@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createPortal } from 'react-dom'
 
 export function Modal({ isOpen, onClose, title, children, size = 'md' }) {

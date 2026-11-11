@@ -190,10 +190,10 @@ export function NotificationProvider({ children }) {
       const paidAmount = itemExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
       const expectedAmount = Number(item.amount) || 0
 
-      let isFullyPaid = false
-      let remainingAmount = 0
-      let isPartial = false
-      let percentagePaid = 0
+      let isFullyPaid
+      let remainingAmount
+      let isPartial
+      let percentagePaid
 
       if (isVariable) {
         // En gastos de costo variable (ej. Servicios Básicos / Energía Eléctrica / Luz / Agua),

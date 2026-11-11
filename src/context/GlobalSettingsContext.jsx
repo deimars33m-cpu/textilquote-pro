@@ -502,28 +502,6 @@ export function GlobalSettingsProvider({ children }) {
     })
   }
 
-  // --- CRUD Presupuestos de Gastos ---
-  const addBudget = (budget) => {
-    setSettings(prev => ({
-      ...prev,
-      budgets: [...prev.budgets, { ...budget, id: Date.now().toString() }]
-    }))
-  }
-
-  const updateBudget = (id, updates) => {
-    setSettings(prev => ({
-      ...prev,
-      budgets: prev.budgets.map(b => b.id === id ? { ...b, ...updates } : b)
-    }))
-  }
-
-  const deleteBudget = (id) => {
-    setSettings(prev => ({
-      ...prev,
-      budgets: prev.budgets.filter(b => b.id !== id)
-    }))
-  }
-
   const saveBudgetsAndGoals = (newBudgets, newGoals) => {
     setSettings(prev => ({
       ...prev,

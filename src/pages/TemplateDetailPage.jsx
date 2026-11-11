@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useCategories } from '@/context/CategoryContext'
 import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
-  Card, LoadingSpinner, EmptyState, AlertBanner, Toggle
+  Card, LoadingSpinner, EmptyState, AlertBanner
 } from '@/components/ui/index.jsx'
 import {
   formatCurrency, usageUnits,

@@ -79,28 +79,6 @@ export default function GlobalSettingsPage() {
     alert('Precios autogenerados correctamente.')
   }
 
-  // Panels Auto-Gen State
-  const [autoGenPanelPrice, setAutoGenPanelPrice] = useState('')
-
-  const handleAutoGeneratePanels = () => {
-    if (!autoGenPanelPrice || parseFloat(autoGenPanelPrice) <= 0) {
-      return alert('Ingrese un precio base válido para 1 Panel.')
-    }
-    const base = parseFloat(autoGenPanelPrice)
-    
-    Object.keys(settings.panels).forEach(panelKey => {
-      // panelKey is like '1 PANEL', '2 PANELES', etc. Extract the number.
-      const match = panelKey.match(/^(\d+)/)
-      if (match) {
-        const count = parseInt(match[1], 10)
-        const price = base * count
-        updatePanelPrice(panelKey, price)
-      }
-    })
-    showSavedIndicator('autogen_panels_save')
-    alert('Precios de paneles autogenerados correctamente.')
-  }
-
   const showSavedIndicator = (id) => {
     setSavedStatus(prev => ({ ...prev, [id]: true }))
     setTimeout(() => setSavedStatus(prev => ({ ...prev, [id]: false })), 1500)

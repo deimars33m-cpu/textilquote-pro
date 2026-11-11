@@ -13,7 +13,6 @@ import { Card, Input, Select, Textarea, Button, AlertBanner, LoadingSpinner, Mod
 function CostBreakdownPanel({
   calc,
   quantity,
-  marginPct,
   onRoundUp,
   negotiatedPrice,
   contractDuration,
@@ -176,7 +175,6 @@ function PricingIntelligencePanel({
   applyTax,
   onApplyMargin,
 }) {
-  const currentTierMargin = getVolumeTierMargin(quantity)
   const taxPct = applyTax ? (settings?.tax_percentage || 0) : 0
   const minMarginPct = settings?.min_margin || 15
 
@@ -665,10 +663,6 @@ export default function QuoterPage() {
     }])
   }
 
-  function addMaterial() {
-    setMaterialModalOpen(true)
-  }
-
   // ─── Process editor helpers ─────────────────────────────────────────
   function updateProcess(id, field, value) {
     setProcesses(prev => prev.map(p =>
@@ -711,10 +705,6 @@ export default function QuoterPage() {
       quantity: 1,
     }])
   }
-
-  const activeTemplate = useMemo(() => {
-    return templates.find(t => t.id === templateId)
-  }, [templates, templateId])
 
   // ─── Calculate quote (memoized) ─────────────────────────────────────
   const calc = useMemo(() => {

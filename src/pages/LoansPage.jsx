@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Card, Input, Button, AlertBanner, Modal, Select } from '@/components/ui/index.jsx'
+import { Input, Button, AlertBanner, Modal, Select } from '@/components/ui/index.jsx'
 import { formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -34,7 +34,6 @@ export default function LoansPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showEditLoanModal, setShowEditLoanModal] = useState(false)
   const [showEditPaymentModal, setShowEditPaymentModal] = useState(false)
-  const [editingPayment, setEditingPayment] = useState(null)
   const [activeTab, setActiveTab] = useState('activo') // 'activo' | 'pagado'
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -370,7 +369,7 @@ export default function LoansPage() {
     const outstanding = targetLoan.remainingPrincipal
     const rateFraction = (Number(targetLoan.interest_rate || 0) / 100)
     
-    let suggestedInterest = 0
+    let suggestedInterest
     if (targetLoan.interest_period === 'mensual') {
       suggestedInterest = Math.min(totalPay, outstanding * rateFraction)
     } else {
@@ -500,7 +499,6 @@ export default function LoansPage() {
   }
 
   const handleOpenEditPayment = (payment) => {
-    setEditingPayment(payment)
     setEditPaymentForm({
       id: payment.id,
       loan_id: payment.loan_id,
@@ -576,7 +574,6 @@ export default function LoansPage() {
 
       setSuccessMsg('Transacción de amortización actualizada con éxito.')
       setShowEditPaymentModal(false)
-      setEditingPayment(null)
       await fetchData(true)
     } catch (err) {
       console.error("Error updating payment:", err)
@@ -1332,7 +1329,7 @@ export default function LoansPage() {
       {showEditPaymentModal && (
         <Modal
           isOpen={showEditPaymentModal}
-          onClose={() => { setShowEditPaymentModal(false); setEditingPayment(null); }}
+          onClose={() => setShowEditPaymentModal(false)}
           title="Editar Transacción de Pago / Amortización"
         >
           <form onSubmit={handleUpdatePayment} className="space-y-4 text-left">
@@ -1395,7 +1392,7 @@ export default function LoansPage() {
             <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/30">
               <Button 
                 type="button" 
-                onClick={() => { setShowEditPaymentModal(false); setEditingPayment(null); }} 
+                onClick={() => setShowEditPaymentModal(false)} 
                 className="btn-3d-raised text-on-surface-variant hover:text-white cursor-pointer"
               >
                 Cancelar

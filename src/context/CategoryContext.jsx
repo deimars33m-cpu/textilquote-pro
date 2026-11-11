@@ -99,7 +99,7 @@ export function CategoryProvider({ children }) {
     if (stored) {
       try {
         setMaterialCategories(JSON.parse(stored))
-      } catch (e) {
+      } catch {
         setMaterialCategories(DEFAULT_MATERIAL_CATEGORIES)
       }
     } else {
@@ -169,7 +169,7 @@ export function CategoryProvider({ children }) {
     if (stored) {
       try {
         setProductCategories(JSON.parse(stored))
-      } catch (e) {
+      } catch {
         setProductCategories(DEFAULT_PRODUCT_CATEGORIES)
       }
     } else {
@@ -368,7 +368,6 @@ export function CategoryProvider({ children }) {
       categories: materialCategories,     // Compatible con MaterialsPage (categorías de materiales)
       categoryMap: categoryMap,           // Compatible con MaterialsPage (categorías de materiales)
       materialCategories,
-      categoryMap,
       productCategories,
       productCategoryMap,
       loading: loadingMaterials || loadingProducts,

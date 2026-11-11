@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
-import { calculateQuote, formatProductionTime, calcTotalMonthlyExpenses, parseContractDurationToMonths } from '@/lib/calculations'
+import { calcTotalMonthlyExpenses, parseContractDurationToMonths } from '@/lib/calculations'
 import {
   Card, Button, StatusBadge, LoadingSpinner,
   AlertBanner, ConfirmDialog, Select
@@ -142,20 +142,6 @@ export default function QuoteDetailPage() {
   const processes = item.quote_processes || []
   const embellishments = item.quote_embellishments || []
 
-  const calc = calculateQuote({
-    materials,
-    processes,
-    embellishments,
-    quantity: item.quantity || 1,
-    marginPct: item.margin_pct || 30,
-    discountPct: quote.discount_pct || 0,
-    taxPct: quote.tax_pct || 0,
-    totalMonthlyExpenses,
-    monthlyCapacity: settings?.monthly_capacity_units || 1000,
-    minMargin: settings?.min_margin || 15,
-    negotiatedPrice: quote.total_price,
-  })
-
   const getContractDuration = (notesStr) => {
     if (!notesStr) return null
     const match = notesStr.match(/\[Duración del contrato:\s*([^\]]+)\]/)
@@ -172,22 +158,11 @@ export default function QuoteDetailPage() {
   }
   const cleanNotes = getCleanNotes(quote.notes)
 
-  const getProductionTimeText = (notesStr) => {
-    if (!notesStr) return null
-    const match = notesStr.match(/\[Tiempo total de producción:\s*([^\]]+)\]/)
-    return match ? match[1] : null
-  }
-  const productionTimeText = getProductionTimeText(quote.notes)
-
   const contractMonths = parseContractDurationToMonths(contractDuration)
   const proratedFixedExpenses = totalMonthlyExpenses * contractMonths
 
   const netProfit = (quote.total_price - quote.total_cost) - proratedFixedExpenses
   const netMargin = quote.total_price > 0 ? (netProfit / quote.total_price) * 100 : 0
-
-  const totalProductionTimeMinutes = processes.reduce((sum, p) => {
-    return sum + ((parseFloat(p.time_minutes) || 0) * (item.quantity || 1))
-  }, 0)
 
   // Check margins for warnings
   const isMarginWarning = quote.real_margin < (settings.min_margin || 15)

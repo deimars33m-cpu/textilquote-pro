@@ -456,10 +456,6 @@ export default function ExpensesAndBudgetsPage() {
   const [formOpen, setFormOpen] = useState(false) // Control para abrir modal en móvil
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentExpense, setSelectedPaymentExpense] = useState(null)
-  // eslint-disable-next-line no-unused-vars
-  const [_calculatorPacks, setCalculatorPacks] = useState('')
-  // eslint-disable-next-line no-unused-vars
-  const [_calculatorPricePerPack, setCalculatorPricePerPack] = useState('')
   const [orders, setOrders] = useState([])
   const [contracts, setContracts] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)

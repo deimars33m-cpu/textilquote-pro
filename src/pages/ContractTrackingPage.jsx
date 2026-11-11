@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { formatCurrency } from '@/lib/formatters'
@@ -311,7 +311,7 @@ function NewContractModal({ onClose, onCreated, user, initialQuoteId }) {
 
 // ── Contract Detail View ─────────────────────────────────────────────────────
 
-function ContractDetail({ contract, onBack, onRefresh }) {
+function ContractDetail({ contract, onBack }) {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('compras')
   const [contractData, setContractData] = useState(contract)
@@ -424,7 +424,7 @@ function ContractDetail({ contract, onBack, onRefresh }) {
     await supabase.from('contract_cutting_progress').delete().eq('contract_id', contractData.id)
     await supabase.from('contract_production_progress').delete().eq('contract_id', contractData.id)
     await supabase.from('contract_embellishment_progress').delete().eq('contract_id', contractData.id)
-    try { await supabase.from('contract_labor_batches').delete().eq('contract_id', contractData.id) } catch (e) {}
+    try { await supabase.from('contract_labor_batches').delete().eq('contract_id', contractData.id) } catch {}
     await supabase.from('contract_tracking').delete().eq('id', contractData.id)
     onBack()
   }
@@ -603,7 +603,7 @@ function StatusSelector({ contractId, current, onChanged }) {
 
 // ── Tab: Compras de Materiales ───────────────────────────────────────────────
 
-function MaterialPurchasesTab({ contractId, rows, totalUnits, onRefresh }) {
+function MaterialPurchasesTab({ contractId, rows, onRefresh }) {
   const { user } = useAuth()
   const [form, setForm] = useState({ material_id: null, material_name: '', unit: 'metro', qty_required: '', qty_purchased: '', supplier_name: '', unit_cost: '', purchase_date: '', receipt_number: '', status: 'pendiente', notes: '' })
   const [editId, setEditId] = useState(null)
@@ -1563,7 +1563,6 @@ function EmbellishmentProgressTab({ contractId, rows, totalUnits, onRefresh }) {
 
 export default function ContractTrackingPage() {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const initialQuoteId = searchParams.get('quoteId')
   const [contracts, setContracts] = useState([])
@@ -1769,7 +1768,7 @@ export default function ContractTrackingPage() {
 
 // ── Tab: Mano de Obra Directa (Planilla, Deudas y Liquidación por Operario) ──
 
-function LaborProgressTab({ contractId, orderId, quoteProcesses, laborExpenses, laborBatches = [], terceros, totalUnits, onRefresh, user }) {
+function LaborProgressTab({ orderId, quoteProcesses, laborExpenses, laborBatches = [], terceros, totalUnits, onRefresh, user }) {
   const [selectedOperator, setSelectedOperator] = useState('all')
 
   // Modals state

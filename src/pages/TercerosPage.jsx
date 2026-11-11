@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useCRUD } from '@/hooks/useCRUD'
 import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
-  Card, SearchInput, LoadingSpinner, EmptyState, StatusBadge
+  Card, SearchInput, LoadingSpinner, EmptyState
 } from '@/components/ui/index.jsx'
 import { clientTypes, terceroTypes, formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'

@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import { Card, SearchInput, Button, StatusBadge,
+import { Card, SearchInput, Button,
   LoadingSpinner, EmptyState, Select, AlertBanner, Modal,
   Input, Textarea, PaymentStatusModal
 } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, formatQuoteNumber, getTodayStr, parseDateToLocalYMD } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr, parseDateToLocalYMD } from '@/lib/formatters'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 
 const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -473,26 +473,6 @@ const initialSizes = {
   ...PANELS_LIST.reduce((acc, panel) => ({ ...acc, [panel]: 0 }), {})
 }
 
-const initialSizePrices = {
-  ...SIZES_LIST.reduce((acc, size) => {
-    let price = 50
-    if (['2', '4', '6'].includes(size)) price = 40
-    else if (['8', '10', '12'].includes(size)) price = 45
-    else if (['14', '16'].includes(size)) price = 50
-    else if (size === 'S') price = 55
-    else if (size === 'M') price = 60
-    else if (size === 'L') price = 65
-    else if (size === 'XL') price = 70
-    else if (size === 'XXL') price = 75
-    else if (size === 'XXXL') price = 80
-    return { ...acc, [size]: price }
-  }, {}),
-  ...PANELS_LIST.reduce((acc, panel, idx) => {
-    const price = (idx + 1) * 20
-    return { ...acc, [panel]: price }
-  }, {})
-}
-
 const getOrderCategoryStyle = (categoryName) => {
   const name = (categoryName || '').toLowerCase().trim();
   if (name.includes('producción') || name.includes('produccion')) {
@@ -525,7 +505,6 @@ const getDefaultDeliveryDate = (category) => {
 
 export default function OrdersPage() {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const convertQuoteId = searchParams.get('convertQuoteId')
   const { settings, getServicePrice, getWeeklySalesGoal, updateWeeklySalesGoal } = useGlobalSettings()
@@ -573,7 +552,6 @@ export default function OrdersPage() {
   const [orderExpenses, setOrderExpenses] = useState([])
   const [estimatedMaterials, setEstimatedMaterials] = useState([])
   const [estimatedProcesses, setEstimatedProcesses] = useState([])
-  const [linkedQuote, setLinkedQuote] = useState(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [detailsTab, setDetailsTab] = useState('trabajo') // 'trabajo' o 'finanzas'
 
@@ -661,7 +639,6 @@ export default function OrdersPage() {
         setOrderExpenses([])
         setEstimatedMaterials([])
         setEstimatedProcesses([])
-        setLinkedQuote(null)
         setDetailsTab('trabajo') // Reset tab
         return
       }
@@ -696,7 +673,6 @@ export default function OrdersPage() {
             .single()
 
           if (quoteError) throw quoteError
-          setLinkedQuote(quoteData)
 
           if (quoteData?.quote_items) {
             // Aplanar materiales usando lógica de compra al por mayor (historial cotización)
@@ -741,7 +717,6 @@ export default function OrdersPage() {
         } else {
           setEstimatedMaterials([])
           setEstimatedProcesses([])
-          setLinkedQuote(null)
         }
       } catch (err) {
         console.error('Error fetching order finance details:', err)
@@ -1767,9 +1742,6 @@ export default function OrdersPage() {
       }
     }
   }, [orderForm.category, orderForm.subcategory, orderForm.sizes, orderForm.sizePrices, orderForm.flatQuantity, orderForm.flatUnitPrice, orderForm.stitchesCount, orderForm.panelSizes, orderForm.panelSizePrices, settings])
-
-  const subtotal = totalAmount / 1.18
-  const igvAmount = totalAmount - subtotal
 
   const orderMetrics = useMemo(() => {
     if (!selectedOrder?.order_items) return null;
