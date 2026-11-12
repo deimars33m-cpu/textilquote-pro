@@ -9,6 +9,7 @@ import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { supabase } from '@/lib/supabase'
 import { useCRUD } from '@/hooks/useCRUD'
 import { FixedExpensesAlertBanner } from '@/components/FixedExpensesAlertBanner.jsx'
+import { printProductionCostStatement } from '@/lib/costReportPrinter'
 
 const PAYMENT_METHODS = [
   { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
@@ -3391,55 +3392,9 @@ export default function ExpensesAndBudgetsPage() {
                   {analysisSubTab === 'produccion_textil' && (
                     <div className="space-y-6">
                       <Card className="relative overflow-hidden border-l-4 border-l-primary">
-                        <div className="p-6 space-y-4">
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                            <div>
-                              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <span className="material-symbols-outlined text-primary">apparel</span>
-                                Análisis de Costos por Contrato / Pedido
-                              </h3>
-                              <p className="text-xs text-on-surface-variant">
-                                Selecciona un contrato para evaluar su Estado de Costos segregado (Materia Prima, Mano de Obra y Gastos Indirectos).
-                              </p>
-                            </div>
-                          {/* Filtrar únicamente los contratos de producción textil / confección */}
+                        <div className="p-6 space-y-5">
                           {(() => {
-                            const textileOrders = analysisStats.filteredOrders.filter(o => {
-                              if (o.order_type === 'pedido_cotizado') return true
-                              return o.order_items?.some(i => {
-                                const cat = (i.category || '').toLowerCase()
-                                const prodCat = (i.product_category || '').toLowerCase()
-                                return cat.includes('produc') || cat.includes('textil') || cat.includes('confecc') ||
-                                       prodCat.includes('produc') || prodCat.includes('textil') || prodCat.includes('confecc')
-                              })
-                            })
-
-
-                            // Datos si hay uno seleccionado o resumen de todos los de producción textil
-                            // (ver bloque de resumen más abajo que usa selectedOrder con activeOrders)
-
-                            return (
-                              <>
-                                <div className="w-full sm:w-72">
-                                  <Select
-                                    value={selectedContractId}
-                                    onChange={e => setSelectedContractId(e.target.value)}
-                                    options={[
-                                      { value: '', label: '-- Ver Resumen Global de Producción Textil --' },
-                                      ...textileOrders.map(o => ({
-                                        value: o.id,
-                                        label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
-                                      }))
-                                    ]}
-                                  />
-                                </div>
-                              </>
-                            )
-                          })()}
-                          </div>
-
-                          {/* Si hay contrato seleccionado */}
-                          {(() => {
+                            // 1. Filtrar contratos de confección / producción textil
                             const textileOrders = analysisStats.filteredOrders.filter(o => {
                               if (o.order_type === 'pedido_cotizado') return true
                               return o.order_items?.some(i => {
@@ -3451,9 +3406,6 @@ export default function ExpensesAndBudgetsPage() {
                             })
 
                             const selectedOrder = textileOrders.find(o => o.id === selectedContractId)
-                            if (!selectedOrder && selectedContractId) return null
-
-                            // Datos si hay uno seleccionado o resumen general de contratos de producción textil
                             const activeOrders = selectedOrder ? [selectedOrder] : textileOrders
 
                             const totalRevenue = activeOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
@@ -3465,10 +3417,10 @@ export default function ExpensesAndBudgetsPage() {
                             const orderIds = activeOrders.map(o => o.id)
                             const linkedExpenses = expenses.filter(e => orderIds.includes(e.order_id))
 
-                            let mpCost = 0         // 1. Materia Prima
-                            let embCost = 0        // 2. Embellecimientos
-                            let destajoCost = 0    // 3. Pagos a destajo
-                            let comisionCost = 0   // 4. Comisiones
+                            let mpCost = 0         // 1.1 Materia Prima Directa
+                            let destajoCost = 0    // 1.2 Mano de Obra Directa / Destajos
+                            let embCost = 0        // 1.3 Servicios Directos (Embellecimiento)
+                            let comisionCost = 0   // 1.4 Comisiones
                             let otrosDirectCost = 0
 
                             linkedExpenses.forEach(e => {
@@ -3492,190 +3444,331 @@ export default function ExpensesAndBudgetsPage() {
                               }
                             })
 
-                            // Gastos indirectos prorrateados para este/estos contratos
+                            // Gastos indirectos prorrateados
                             const contractRevenueShare = analysisStats.totalPeriodRevenue > 0 ? (totalRevenue / analysisStats.totalPeriodRevenue) : 0
                             const gifCost = contractRevenueShare * analysisStats.periodOverheadCosts
 
-                            const totalDirectCost = mpCost + embCost + destajoCost + comisionCost + otrosDirectCost
-                            const totalContractCost = totalDirectCost + gifCost
+                            const subtotalDirecto = mpCost + embCost + destajoCost + comisionCost + otrosDirectCost
+                            const subtotalIndirecto = gifCost
+                            const totalContractCost = subtotalDirecto + subtotalIndirecto
                             const costPerUnit = totalGarments > 0 ? totalContractCost / totalGarments : 0
                             const pricePerUnit = totalGarments > 0 ? totalRevenue / totalGarments : 0
                             const netProfit = totalRevenue - totalContractCost
                             const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
 
+                            // Desglose por Tipo de Producto
+                            const FALLBACK_LABELS = {
+                              camisetas: 'Camisetas / Poleras',
+                              buzos: 'Buzos Deportivos',
+                              mochilas: 'Maletines y Mochilas',
+                              ropa_escolar: 'Ropa Escolar',
+                              promociones: 'Promociones Textiles',
+                              accesorios: 'Accesorios Textiles',
+                              otros: 'Otros',
+                            }
+                            const ptSubcategories = settings && settings.subcategories && settings.subcategories.produccion_textil || []
+                            const ptLabelMap = {}
+                            ptSubcategories.forEach(sc => { ptLabelMap[sc.id] = sc.label })
+
+                            const ptAccum = {}
+                            activeOrders.forEach(o => {
+                              ;(o.order_items || []).forEach(item => {
+                                const catL = (item.category || '').toLowerCase()
+                                if (catL.includes('produc') || catL.includes('textil') || catL.includes('confecc')) {
+                                  const key = item.product_category || 'otros'
+                                  if (!ptAccum[key]) ptAccum[key] = { revenue: 0, units: 0 }
+                                  ptAccum[key].revenue += Number(item.total_price) || 0
+                                  ptAccum[key].units += Number(item.quantity) || 0
+                                }
+                              })
+                            })
+
+                            const productRows = Object.entries(ptAccum)
+                              .filter(([, d]) => d.units > 0)
+                              .map(([ptKey, d]) => {
+                                const revenueShare = totalRevenue > 0 ? d.revenue / totalRevenue : 0
+                                const ptCost = totalContractCost * revenueShare
+                                const ptCostPerUnit = d.units > 0 ? ptCost / d.units : 0
+                                const ptPricePerUnit = d.units > 0 ? d.revenue / d.units : 0
+                                const ptProfit = d.revenue - ptCost
+                                const ptMargin = d.revenue > 0 ? (ptProfit / d.revenue) * 100 : 0
+                                const label = ptLabelMap[ptKey] || FALLBACK_LABELS[ptKey] || ptKey
+                                return { ptKey, label, revenue: d.revenue, units: d.units, ptCost, ptCostPerUnit, ptPricePerUnit, ptProfit, ptMargin }
+                              })
+                              .sort((a, b) => b.revenue - a.revenue)
+
+                            // Manejador de impresión/PDF formal
+                            const handlePrintCostStatement = () => {
+                              printProductionCostStatement({
+                                companyName: settings?.company_name || 'TEXTILQUOTE PRO',
+                                scopeTitle: selectedOrder
+                                  ? `Pedido #${selectedOrder.order_number?.toString().padStart(4, '0')} - ${selectedOrder.terceros?.name || 'Cliente'}`
+                                  : 'Resumen Consolidado de Producción Textil',
+                                isGlobal: !selectedOrder,
+                                order: selectedOrder,
+                                totalGarments,
+                                totalRevenue,
+                                directCosts: {
+                                  mpCost,
+                                  embCost,
+                                  destajoCost,
+                                  comisionCost,
+                                  otrosDirectCost,
+                                  subtotal: subtotalDirecto
+                                },
+                                indirectCosts: {
+                                  gifCost,
+                                  subtotal: subtotalIndirecto
+                                },
+                                totalContractCost,
+                                costPerUnit,
+                                pricePerUnit,
+                                netProfit,
+                                profitMargin,
+                                productRows,
+                                formatCurrency
+                              })
+                            }
+
                             return (
-                              <div className="space-y-6 pt-4 border-t border-outline-variant/30">
-                                {/* Estado de Resultados / Costos KPI Grid */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                                  <div className="neu-pressed p-4 rounded-xl text-left">
-                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Monto Total Contrato</span>
-                                    <span className="text-xl font-mono font-bold text-white block mt-1">{formatCurrency(totalRevenue)}</span>
-                                    <span className="text-[10px] font-mono text-on-surface-variant">{totalGarments} prendas producidas</span>
+                              <>
+                                {/* Cabecera de Control y Filtros */}
+                                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 border-b border-outline-variant/30">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-primary text-2xl">account_balance</span>
+                                      <h3 className="text-lg font-bold text-white">
+                                        Estado de Costo de Producción Textil
+                                      </h3>
+                                    </div>
+                                    <p className="text-xs text-on-surface-variant mt-0.5">
+                                      Segregación contable normalizada (Materia Prima, Mano de Obra y GIF) para evaluación gerencial y toma de decisiones.
+                                    </p>
                                   </div>
-                                  <div className="neu-pressed p-4 rounded-xl text-left">
-                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Total Producción</span>
-                                    <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(totalContractCost)}</span>
-                                    <span className="text-[10px] font-mono text-on-surface-variant">Costos Directos + GIF Prorrateados</span>
-                                  </div>
-                                  <div className="neu-pressed p-4 rounded-xl text-left">
-                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Unitario por Prenda</span>
-                                    <span className="text-xl font-mono font-bold text-amber-400 block mt-1">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</span>
-                                    <span className="text-[10px] font-mono text-on-surface-variant">Precio Venta: {formatCurrency(pricePerUnit)}</span>
-                                  </div>
-                                  <div className="neu-pressed p-4 rounded-xl text-left">
-                                    <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Utilidad Neta</span>
-                                    <span className={`text-xl font-mono font-bold block mt-1 ${netProfit >= 0 ? 'text-emerald-400' : 'text-error'}`}>
-                                      {formatCurrency(netProfit)}
-                                    </span>
-                                    <span className="text-[10px] font-mono text-primary font-bold">Margen: {profitMargin.toFixed(1)}%</span>
-                                  </div>
-                                </div>
 
-                                {/* Tabla de Segregación del Estado de Costos de Confección */}
-                                <div className="neu-surface p-4 rounded-xl space-y-3">
-                                  <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-primary text-base">receipt_long</span>
-                                    Estado de Costos de Confección Textil por Cuentas
-                                  </h4>
-                                  <div className="overflow-x-auto rounded-xl neu-pressed">
-                                    <table className="w-full text-left text-xs border-collapse font-mono">
-                                      <thead>
-                                        <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
-                                          <th className="py-2.5 px-3">Cuenta / Cuentas de PRODUCCIÓN</th>
-                                          <th className="py-2.5 px-3 text-right">Monto Total (Bs)</th>
-                                          <th className="py-2.5 px-3 text-right">Costo / Prenda</th>
-                                          <th className="py-2.5 px-3 text-center">% del Costo</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-white/5 text-on-surface">
-                                        <tr>
-                                          <td className="py-2 px-3 text-white font-sans">🧵 Materia Prima (Telas, Accesorios, Cierres, Hilos)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(mpCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(mpCost / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((mpCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
-                                        </tr>
-                                        <tr>
-                                          <td className="py-2 px-3 text-white font-sans">🎨 Embellecimientos (Pagos Bordados, Sublimación)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(embCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(embCost / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((embCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
-                                        </tr>
-                                        <tr>
-                                          <td className="py-2 px-3 text-white font-sans">✂️ Pagos a destajo (Mano de obra externa / Confección)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(destajoCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(destajoCost / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((destajoCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
-                                        </tr>
-                                        <tr>
-                                          <td className="py-2 px-3 text-white font-sans">💼 Comisiones (Comisiones por Ventas / Otros)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(comisionCost + otrosDirectCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency((comisionCost + otrosDirectCost) / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? (((comisionCost + otrosDirectCost) / totalContractCost) * 100).toFixed(1) : 0}%</td>
-                                        </tr>
-                                        <tr>
-                                          <td className="py-2 px-3 text-white font-sans">🏛️ Gastos Fijos e Indirectos (Prorrateados)</td>
-                                          <td className="py-2 px-3 text-right">{formatCurrency(gifCost)}</td>
-                                          <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(gifCost / totalGarments) : '—'}</td>
-                                          <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((gifCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
-                                        </tr>
-                                        <tr className="bg-primary/10 font-bold border-t border-primary/20">
-                                          <td className="py-2.5 px-3 text-primary font-sans">TOTAL COSTO DE PRODUCCIÓN</td>
-                                          <td className="py-2.5 px-3 text-right text-primary">{formatCurrency(totalContractCost)}</td>
-                                          <td className="py-2.5 px-3 text-right text-emerald-400">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</td>
-                                          <td className="py-2.5 px-3 text-center text-primary">100%</td>
-                                        </tr>
-                                      </tbody>
-                                    </table>
+                                  <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                                    <div className="w-full sm:w-72">
+                                      <Select
+                                        value={selectedContractId}
+                                        onChange={e => setSelectedContractId(e.target.value)}
+                                        options={[
+                                          { value: '', label: '-- Ver Resumen Global de Producción Textil --' },
+                                          ...textileOrders.map(o => ({
+                                            value: o.id,
+                                            label: `Pedido #${o.order_number?.toString().padStart(4, '0')} - ${o.terceros?.name || 'Cliente'} (${formatCurrency(o.total_amount)})`
+                                          }))
+                                        ]}
+                                      />
+                                    </div>
+
+                                    <Button
+                                      variant="secondary"
+                                      onClick={handlePrintCostStatement}
+                                      disabled={activeOrders.length === 0}
+                                      className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 border border-primary/40 hover:border-primary shadow-sm hover:shadow-primary/20 transition-all"
+                                      title="Imprimir o exportar el Estado de Costos de Producción en PDF"
+                                    >
+                                      <span className="material-symbols-outlined text-[17px] text-primary">print</span>
+                                      <span>Imprimir / Exportar PDF</span>
+                                    </Button>
                                   </div>
                                 </div>
-                                {/* Desglose por Tipo de Producto */}
-                                {(() => {
-                                   const FALLBACK_LABELS = {
-                                     camisetas: 'Camisetas / Poleras',
-                                     buzos: 'Buzos Deportivos',
-                                     mochilas: 'Maletines y Mochilas',
-                                     ropa_escolar: 'Ropa Escolar',
-                                     promociones: 'Promociones Textiles',
-                                     accesorios: 'Accesorios Textiles',
-                                     otros: 'Otros',
-                                   }
-                                   const ptSubcategories = settings && settings.subcategories && settings.subcategories.produccion_textil || []
-                                   const ptLabelMap = {}
-                                   ptSubcategories.forEach(sc => { ptLabelMap[sc.id] = sc.label })
 
-                                   // Recalcular por tipo de producto solo con activeOrders
-                                   const ptAccum = {}
-                                   activeOrders.forEach(o => {
-                                     ;(o.order_items || []).forEach(item => {
-                                       const catL = (item.category || '').toLowerCase()
-                                       if (catL.includes('produc') || catL.includes('textil') || catL.includes('confecc')) {
-                                         const key = item.product_category || 'otros'
-                                         if (!ptAccum[key]) ptAccum[key] = { revenue: 0, units: 0 }
-                                         ptAccum[key].revenue += Number(item.total_price) || 0
-                                         ptAccum[key].units += Number(item.quantity) || 0
-                                       }
-                                     })
-                                   })
+                                {activeOrders.length === 0 ? (
+                                  <div className="p-8 text-center neu-pressed rounded-xl">
+                                    <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-2 block">inventory_2</span>
+                                    <p className="text-sm font-semibold text-white">No hay órdenes de confección o producción textil en este período.</p>
+                                    <p className="text-xs text-on-surface-variant mt-1">Crea pedidos en Cotizaciones/Pedidos para visualizar su Estado de Costos.</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-6 pt-2">
+                                    {/* Estado de Resultados / Costos KPI Grid */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div className="neu-pressed p-4 rounded-xl text-left border-l-2 border-primary/60">
+                                        <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Monto Total Contrato</span>
+                                        <span className="text-xl font-mono font-bold text-white block mt-1">{formatCurrency(totalRevenue)}</span>
+                                        <span className="text-[10px] font-mono text-primary font-bold">{totalGarments} prendas producidas</span>
+                                      </div>
+                                      <div className="neu-pressed p-4 rounded-xl text-left border-l-2 border-error/60">
+                                        <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Total Producción</span>
+                                        <span className="text-xl font-mono font-bold text-error block mt-1">{formatCurrency(totalContractCost)}</span>
+                                        <span className="text-[10px] font-mono text-on-surface-variant">Costos Directos + GIF Prorrateados</span>
+                                      </div>
+                                      <div className="neu-pressed p-4 rounded-xl text-left border-l-2 border-amber-400/60">
+                                        <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Costo Unitario por Prenda</span>
+                                        <span className="text-xl font-mono font-bold text-amber-400 block mt-1">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</span>
+                                        <span className="text-[10px] font-mono text-on-surface-variant">Precio Venta: {formatCurrency(pricePerUnit)}</span>
+                                      </div>
+                                      <div className="neu-pressed p-4 rounded-xl text-left border-l-2 border-emerald-400/60">
+                                        <span className="text-[10px] font-mono uppercase text-on-surface-variant block font-bold">Utilidad Bruta Lote</span>
+                                        <span className={`text-xl font-mono font-bold block mt-1 ${netProfit >= 0 ? 'text-emerald-400' : 'text-error'}`}>
+                                          {formatCurrency(netProfit)}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-emerald-400 font-bold">Margen: {profitMargin.toFixed(1)}%</span>
+                                      </div>
+                                    </div>
 
-                                   const productRows = Object.entries(ptAccum)
-                                     .filter(([, d]) => d.units > 0)
-                                     .map(([ptKey, d]) => {
-                                       const revenueShare = totalRevenue > 0 ? d.revenue / totalRevenue : 0
-                                       const ptCost = totalContractCost * revenueShare
-                                       const ptCostPerUnit = d.units > 0 ? ptCost / d.units : 0
-                                       const ptPricePerUnit = d.units > 0 ? d.revenue / d.units : 0
-                                       const ptProfit = d.revenue - ptCost
-                                       const ptMargin = d.revenue > 0 ? (ptProfit / d.revenue) * 100 : 0
-                                       const label = ptLabelMap[ptKey] || FALLBACK_LABELS[ptKey] || ptKey
-                                       return { ptKey, label, revenue: d.revenue, units: d.units, ptCost, ptCostPerUnit, ptPricePerUnit, ptProfit, ptMargin }
-                                     })
-                                     .sort((a, b) => b.revenue - a.revenue)
+                                    {/* Tabla de Segregación del Estado de Costos de Confección (Formato Contable) */}
+                                    <div className="neu-surface p-4 rounded-xl space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                                          <span className="material-symbols-outlined text-primary text-base">receipt_long</span>
+                                          Estado de Costos de Confección Textil por Cuentas Contables
+                                        </h4>
+                                        <span className="text-[10px] font-mono text-on-surface-variant hidden sm:inline-block">
+                                          Base: Costeo por Órdenes de Producción
+                                        </span>
+                                      </div>
 
-                                   if (productRows.length < 2) return null
+                                      <div className="overflow-x-auto rounded-xl neu-pressed">
+                                        <table className="w-full text-left text-xs border-collapse font-mono">
+                                          <thead>
+                                            <tr className="bg-surface-container/80 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                                              <th className="py-2.5 px-3 w-12 text-center">Cód.</th>
+                                              <th className="py-2.5 px-3">Cuenta Contable / Concepto de Fabricación</th>
+                                              <th className="py-2.5 px-3 text-right">Monto Total</th>
+                                              <th className="py-2.5 px-3 text-right">Costo / Prenda</th>
+                                              <th className="py-2.5 px-3 text-center">% del Costo</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-white/5 text-on-surface">
+                                            {/* 1.0 COSTOS DIRECTOS */}
+                                            <tr>
+                                              <td className="py-2 px-3 text-center text-primary font-bold">1.1</td>
+                                              <td className="py-2 px-3 text-white font-sans">
+                                                🧵 <strong>Materia Prima Directa (MPD)</strong>: Telas, avíos, cierres, botones e hilos
+                                              </td>
+                                              <td className="py-2 px-3 text-right">{formatCurrency(mpCost)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(mpCost / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((mpCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+                                            <tr>
+                                              <td className="py-2 px-3 text-center text-primary font-bold">1.2</td>
+                                              <td className="py-2 px-3 text-white font-sans">
+                                                ✂️ <strong>Mano de Obra Directa (MOD)</strong>: Talleres a destajo, costura, confección y corte
+                                              </td>
+                                              <td className="py-2 px-3 text-right">{formatCurrency(destajoCost)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(destajoCost / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((destajoCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+                                            <tr>
+                                              <td className="py-2 px-3 text-center text-primary font-bold">1.3</td>
+                                              <td className="py-2 px-3 text-white font-sans">
+                                                🎨 <strong>Servicios Directos de Transformación</strong>: Sublimación, bordados y DTF
+                                              </td>
+                                              <td className="py-2 px-3 text-right">{formatCurrency(embCost)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(embCost / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((embCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+                                            <tr>
+                                              <td className="py-2 px-3 text-center text-primary font-bold">1.4</td>
+                                              <td className="py-2 px-3 text-white font-sans">
+                                                💼 <strong>Otros Costos Directos</strong>: Comisiones por venta y logística directa
+                                              </td>
+                                              <td className="py-2 px-3 text-right">{formatCurrency(comisionCost + otrosDirectCost)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency((comisionCost + otrosDirectCost) / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center">{totalContractCost > 0 ? (((comisionCost + otrosDirectCost) / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+                                            <tr className="bg-white/5 font-semibold text-white border-t border-b border-white/10">
+                                              <td className="py-2 px-3 text-center font-bold text-primary">I</td>
+                                              <td className="py-2 px-3 font-sans">SUBTOTAL COSTOS DIRECTOS DE FABRICACIÓN (COSTO PRIMO)</td>
+                                              <td className="py-2 px-3 text-right text-primary">{formatCurrency(subtotalDirecto)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(subtotalDirecto / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center text-primary">{totalContractCost > 0 ? ((subtotalDirecto / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
 
-                                   return (
-                                     <div className="neu-surface p-4 rounded-xl space-y-3 mt-4">
-                                       <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                                         <span className="material-symbols-outlined text-primary text-base">inventory_2</span>
-                                         Resumen por Tipo de Producto
-                                       </h4>
-                                       <div className="overflow-x-auto rounded-xl neu-pressed">
-                                         <table className="w-full text-left text-xs border-collapse font-mono">
-                                           <thead>
-                                             <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
-                                               <th className="py-2.5 px-3">Producto</th>
-                                               <th className="py-2.5 px-3 text-right">Uds.</th>
-                                               <th className="py-2.5 px-3 text-right">Ingresos</th>
-                                               <th className="py-2.5 px-3 text-right">Costo Est.</th>
-                                               <th className="py-2.5 px-3 text-right">Costo/Ud</th>
-                                               <th className="py-2.5 px-3 text-right">Precio/Ud</th>
-                                               <th className="py-2.5 px-3 text-center">Margen</th>
-                                             </tr>
-                                           </thead>
-                                           <tbody className="divide-y divide-white/5 text-on-surface">
-                                             {productRows.map(row => (
-                                               <tr key={row.ptKey}>
-                                                 <td className="py-2 px-3 text-white font-sans font-semibold">{row.label}</td>
-                                                 <td className="py-2 px-3 text-right">{row.units}</td>
-                                                 <td className="py-2 px-3 text-right text-emerald-400">{formatCurrency(row.revenue)}</td>
-                                                 <td className="py-2 px-3 text-right text-error">{formatCurrency(row.ptCost)}</td>
-                                                 <td className="py-2 px-3 text-right text-amber-400">{formatCurrency(row.ptCostPerUnit)}</td>
-                                                 <td className="py-2 px-3 text-right text-primary">{formatCurrency(row.ptPricePerUnit)}</td>
-                                                 <td className={`py-2 px-3 text-center font-bold ${row.ptMargin >= 20 ? 'text-emerald-400' : row.ptMargin >= 0 ? 'text-amber-400' : 'text-error'}`}>
-                                                   {row.ptMargin.toFixed(1)}%
-                                                 </td>
-                                               </tr>
-                                             ))}
-                                           </tbody>
-                                         </table>
-                                       </div>
-                                       <p className="text-[10px] text-on-surface-variant font-mono">
-                                         * Costo estimado prorrateado por proporción de ingresos entre tipos de producto.
-                                       </p>
-                                     </div>
-                                   )
-                                 })()}
-                              </div>
+                                            {/* 2.0 GASTOS INDIRECTOS */}
+                                            <tr>
+                                              <td className="py-2 px-3 text-center text-primary font-bold">2.1</td>
+                                              <td className="py-2 px-3 text-white font-sans">
+                                                🏛️ <strong>Gastos Indirectos de Fabricación (GIF / CIF)</strong>: Prorrateo de taller, energía y planta
+                                              </td>
+                                              <td className="py-2 px-3 text-right">{formatCurrency(gifCost)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(gifCost / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center">{totalContractCost > 0 ? ((gifCost / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+                                            <tr className="bg-white/5 font-semibold text-white border-t border-b border-white/10">
+                                              <td className="py-2 px-3 text-center font-bold text-primary">II</td>
+                                              <td className="py-2 px-3 font-sans">SUBTOTAL GASTOS INDIRECTOS DE FABRICACIÓN (GIF)</td>
+                                              <td className="py-2 px-3 text-right text-primary">{formatCurrency(subtotalIndirecto)}</td>
+                                              <td className="py-2 px-3 text-right text-primary">{totalGarments > 0 ? formatCurrency(subtotalIndirecto / totalGarments) : '—'}</td>
+                                              <td className="py-2 px-3 text-center text-primary">{totalContractCost > 0 ? ((subtotalIndirecto / totalContractCost) * 100).toFixed(1) : 0}%</td>
+                                            </tr>
+
+                                            {/* 3.0 TOTAL */}
+                                            <tr className="bg-primary/15 font-bold border-t-2 border-primary/30 text-white">
+                                              <td className="py-2.5 px-3 text-center text-primary">III</td>
+                                              <td className="py-2.5 px-3 text-primary font-sans">TOTAL COSTO DE PRODUCCIÓN (I + II)</td>
+                                              <td className="py-2.5 px-3 text-right text-primary">{formatCurrency(totalContractCost)}</td>
+                                              <td className="py-2.5 px-3 text-right text-emerald-400">{totalGarments > 0 ? formatCurrency(costPerUnit) : '—'}</td>
+                                              <td className="py-2.5 px-3 text-center text-primary">100.0%</td>
+                                            </tr>
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+
+                                    {/* Desglose por Tipo de Producto */}
+                                    {productRows.length > 1 && (
+                                      <div className="neu-surface p-4 rounded-xl space-y-3">
+                                        <div className="flex items-center justify-between">
+                                          <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-primary text-base">inventory_2</span>
+                                            Resumen de Rentabilidad por Tipo de Producto
+                                          </h4>
+                                          <span className="text-[10px] font-mono text-on-surface-variant">
+                                            {productRows.length} líneas analizadas
+                                          </span>
+                                        </div>
+
+                                        <div className="overflow-x-auto rounded-xl neu-pressed">
+                                          <table className="w-full text-left text-xs border-collapse font-mono">
+                                            <thead>
+                                              <tr className="bg-surface-container/80 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                                                <th className="py-2.5 px-3">Producto</th>
+                                                <th className="py-2.5 px-3 text-right">Uds.</th>
+                                                <th className="py-2.5 px-3 text-right">Ingresos</th>
+                                                <th className="py-2.5 px-3 text-right">Costo Est.</th>
+                                                <th className="py-2.5 px-3 text-right">Costo/Ud</th>
+                                                <th className="py-2.5 px-3 text-right">Precio/Ud</th>
+                                                <th className="py-2.5 px-3 text-center">Margen</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-white/5 text-on-surface">
+                                              {productRows.map(row => (
+                                                <tr key={row.ptKey}>
+                                                  <td className="py-2 px-3 text-white font-sans font-semibold">{row.label}</td>
+                                                  <td className="py-2 px-3 text-right">{row.units}</td>
+                                                  <td className="py-2 px-3 text-right text-emerald-400">{formatCurrency(row.revenue)}</td>
+                                                  <td className="py-2 px-3 text-right text-error">{formatCurrency(row.ptCost)}</td>
+                                                  <td className="py-2 px-3 text-right text-amber-400">{formatCurrency(row.ptCostPerUnit)}</td>
+                                                  <td className="py-2 px-3 text-right text-primary">{formatCurrency(row.pricePerUnit || row.ptPricePerUnit)}</td>
+                                                  <td className={`py-2 px-3 text-center font-bold ${row.ptMargin >= 20 ? 'text-emerald-400' : row.ptMargin >= 0 ? 'text-amber-400' : 'text-error'}`}>
+                                                    {row.ptMargin.toFixed(1)}%
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1">
+                                          <p className="text-[10px] text-on-surface-variant font-mono">
+                                            * Costo estimado prorrateado por absorción según proporción de ingresos entre productos.
+                                          </p>
+                                          <button
+                                            type="button"
+                                            onClick={handlePrintCostStatement}
+                                            className="text-xs text-primary hover:underline flex items-center gap-1 font-semibold"
+                                          >
+                                            <span className="material-symbols-outlined text-sm">print</span>
+                                            Exportar este resumen a PDF
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </>
                             )
                           })()}
                         </div>
