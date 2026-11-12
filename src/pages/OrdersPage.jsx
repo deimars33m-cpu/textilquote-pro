@@ -527,20 +527,8 @@ export default function OrdersPage() {
   const [paymentFilter, setPaymentFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
-  const [showAnalytics, setShowAnalytics] = useState(false)
-  const [showWeeklyStats, setShowWeeklyStats] = useState(() => {
-    const saved = localStorage.getItem('orders_show_weekly_stats')
-    return saved !== null ? saved === 'true' : true
-  })
+  const [activeTab, setActiveTab] = useState('pedidos') // 'pedidos' | 'semanal' | 'analisis'
   const [selectedDayModal, setSelectedDayModal] = useState(null)
-
-  const toggleWeeklyStats = () => {
-    setShowWeeklyStats(prev => {
-      const next = !prev
-      localStorage.setItem('orders_show_weekly_stats', String(next))
-      return next
-    })
-  }
 
   // Control de interfaz responsive
   const [showMobileForm, setShowMobileForm] = useState(false)
@@ -1113,13 +1101,11 @@ export default function OrdersPage() {
     }
   }, [orders, weekOffset, settings, getWeeklySalesGoal])
 
-  // Estadísticas avanzadas y ROI (Task #3 - Especializadas)
+  // Estadísticas avanzadas y ROI (Auditadas y Corregidas Matemáticamente)
   const advancedStats = useMemo(() => {
     let totalRevenue = 0
     let totalPaid = 0
     let totalEstimatedCost = 0
-    let totalActualExpenses = 0
-    let totalProductionTime = 0
     let totalOrdersCount = 0
 
     // Canales de venta
@@ -1132,6 +1118,21 @@ export default function OrdersPage() {
     const categoryRevenue = {}
     const categoryCounts = {}
 
+    // Costos reales vs estimados y tiempos
+    let totalActualExpenses = 0        // Egresos enlazados con order_id en la BD
+    let totalConsolidatedCost = 0      // Costo total congruente de TODA la cartera
+    let countWithExpenses = 0          // Órdenes con egresos reales enlazados
+    let revenueWithExpenses = 0        // Ingresos de las órdenes con egresos enlazados
+    let expensesWithExpenses = 0       // Gastos reales de esas órdenes específicas
+
+    let totalProductionTime = 0
+    let revenueWithTime = 0
+    let ordersWithTimeCount = 0
+
+    const defaultMarginPct = ((settings?.default_margin ?? 30) / 100)
+    // Costo por defecto implícito si la orden no tiene desglose de insumos (ej. 70%)
+    const defaultCostRatio = Math.max(0.1, 1 - defaultMarginPct)
+
     orders.forEach(o => {
       if (o.status === 'cancelado') return
       
@@ -1141,7 +1142,6 @@ export default function OrdersPage() {
 
       totalRevenue += revenue
       totalPaid += paid
-      totalActualExpenses += actualExpenses
       totalOrdersCount++
 
       if (o.order_type === 'pedido_cotizado') {
@@ -1154,59 +1154,109 @@ export default function OrdersPage() {
 
       // Costos y tiempos de ítems
       const items = o.order_items || []
+      let orderItemEstimatedCost = 0
+      let orderItemTime = 0
+
       items.forEach(item => {
         const itemTotal = parseFloat(item.total_price) || 0
         const itemMatCost = parseFloat(item.materials_cost) || 0
         const itemProcCost = parseFloat(item.processes_cost) || 0
         const itemTime = parseFloat(item.production_time_minutes) || 0
 
-        totalEstimatedCost += (itemMatCost + itemProcCost)
-        totalProductionTime += itemTime
+        orderItemEstimatedCost += (itemMatCost + itemProcCost)
+        orderItemTime += itemTime
 
         const cat = item.category || 'otro'
         categoryRevenue[cat] = (categoryRevenue[cat] || 0) + itemTotal
         categoryCounts[cat] = (categoryCounts[cat] || 0) + 1
       })
+
+      // Si los ítems no tenían costo especificado, estimamos con base en el ratio de costo para no asumir costo 0
+      const effectiveOrderEstimatedCost = orderItemEstimatedCost > 0 
+        ? orderItemEstimatedCost 
+        : (revenue * defaultCostRatio)
+
+      totalEstimatedCost += effectiveOrderEstimatedCost
+
+      // Tiempo de producción
+      if (orderItemTime > 0) {
+        totalProductionTime += orderItemTime
+        revenueWithTime += revenue
+        ordersWithTimeCount++
+      }
+
+      // Gastos reales vinculados
+      if (actualExpenses > 0) {
+        countWithExpenses++
+        revenueWithExpenses += revenue
+        expensesWithExpenses += actualExpenses
+        totalActualExpenses += actualExpenses
+        // Si tiene gasto real registrado, usamos el real
+        totalConsolidatedCost += actualExpenses
+      } else {
+        // Si no tiene gasto real registrado en la BD, usamos su costo presupuestado (evita asumir costo cero)
+        totalConsolidatedCost += effectiveOrderEstimatedCost
+      }
     })
 
     const totalPending = totalRevenue - totalPaid
     
-    // Rentabilidades
+    // 1. RENTABILIDAD CONSOLIDADA DE TODA LA CARTERA (Total de pedidos activos)
+    const consolidatedProfit = totalRevenue - totalConsolidatedCost
+    const consolidatedMargin = totalRevenue > 0 ? (consolidatedProfit / totalRevenue) * 100 : 0
+    const consolidatedROI = totalConsolidatedCost > 0 ? (consolidatedProfit / totalConsolidatedCost) * 100 : 0
+
+    // 2. RENTABILIDAD ESTIMADA (Presupuestos de cotización y pedidos)
     const estProfit = totalRevenue - totalEstimatedCost
     const estMargin = totalRevenue > 0 ? (estProfit / totalRevenue) * 100 : 0
     const estROI = totalEstimatedCost > 0 ? (estProfit / totalEstimatedCost) * 100 : 0
 
-    const realProfit = totalRevenue - totalActualExpenses
-    const realMargin = totalRevenue > 0 ? (realProfit / totalRevenue) * 100 : 0
-    const realROI = totalActualExpenses > 0 ? (realProfit / totalActualExpenses) * 100 : 0
+    // 3. RENTABILIDAD DE LA MUESTRA VERIFICADA (Solo pedidos con egresos directos vinculados)
+    const verifiedProfit = revenueWithExpenses - expensesWithExpenses
+    const verifiedMargin = revenueWithExpenses > 0 ? (verifiedProfit / revenueWithExpenses) * 100 : 0
+    const verifiedROI = expensesWithExpenses > 0 ? (verifiedProfit / expensesWithExpenses) * 100 : 0
 
-    // Eficiencia operativa (Ventas por hora de confección/producción)
+    // 4. EFICIENCIA OPERATIVA (Ventas por hora ponderada sobre pedidos con tiempo reportado)
     const timeHours = totalProductionTime / 60
-    const revenuePerHour = timeHours > 0 ? totalRevenue / timeHours : 0
+    const revenuePerHour = timeHours > 0 ? revenueWithTime / timeHours : 0
 
     return {
       totalRevenue,
       totalPaid,
       totalPending,
+      totalOrdersCount,
+      // Costos
       totalEstimatedCost,
+      totalConsolidatedCost,
       totalActualExpenses,
+      // Rentabilidades Consolidadas (Representativas de toda la cartera)
+      realProfit: consolidatedProfit,
+      realMargin: consolidatedMargin,
+      realROI: consolidatedROI,
+      // Estimadas
       estProfit,
       estMargin,
       estROI,
-      realProfit,
-      realMargin,
-      realROI,
+      // Muestra Verificada con gastos
+      countWithExpenses,
+      revenueWithExpenses,
+      expensesWithExpenses,
+      verifiedProfit,
+      verifiedMargin,
+      verifiedROI,
+      // Canales y Categorías
       revenueQuoted,
       revenueDaily,
       countQuoted,
       countDaily,
       categoryRevenue,
       categoryCounts,
+      // Tiempo
       totalProductionTime,
       revenuePerHour,
-      totalOrdersCount
+      ordersWithTimeCount
     }
-  }, [orders])
+  }, [orders, settings])
 
   // Opciones de tipo de pedido para select
   const typeOptions = [
@@ -2944,7 +2994,29 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Grid General */}
+            {/* TABS COMPACTOS (Idéntico formato al de Gastos y Presupuestos) */}
+      <div className="flex gap-2 border-b border-white/10 pb-px overflow-x-auto whitespace-nowrap scrollbar-none">
+        {[
+          { id: 'pedidos', label: 'Lista de Pedidos y Registro', icon: 'receipt_long' },
+          { id: 'semanal', label: 'Resumen Semanal y Metas', icon: 'calendar_view_week' },
+          { id: 'analisis', label: 'Rendimiento y Rentabilidad (ROI)', icon: 'analytics' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 font-medium text-sm transition-colors border-b-2 whitespace-nowrap shrink-0 ${activeTab === tab.id
+                ? 'border-primary text-primary bg-primary/5 rounded-t-lg'
+                : 'border-transparent text-on-surface-variant hover:text-white hover:bg-white/5 rounded-t-lg'
+              }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* PESTAÑA 1: LISTA DE PEDIDOS Y REGISTRO */}
+      {activeTab === 'pedidos' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* COLUMNA IZQUIERDA: Listado y Estadísticas (Toma 9 de 12 en PC) */}
@@ -2994,500 +3066,6 @@ export default function OrdersPage() {
               </div>
             </Card>
           </div>
-
-          {/* Barra de Toggles de Resúmenes y Estadísticas */}
-          <div className="flex justify-end items-center gap-2 flex-wrap">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={toggleWeeklyStats}
-              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5 cursor-pointer shadow-sm"
-              title={showWeeklyStats ? 'Ocultar panel de ventas semanales' : 'Mostrar panel de ventas semanales'}
-            >
-              <span className="material-symbols-outlined text-[16px] text-primary">
-                {showWeeklyStats ? 'expand_less' : 'calendar_view_week'}
-              </span>
-              {showWeeklyStats ? 'Ocultar Resumen Semanal' : 'Ver Resumen Semanal'}
-            </Button>
-
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="flex items-center gap-2 border border-outline-variant hover:border-primary/50 text-xs py-1.5 cursor-pointer shadow-sm"
-              title={showAnalytics ? 'Ocultar estadísticas avanzadas' : 'Mostrar estadísticas avanzadas y ROI'}
-            >
-              <span className="material-symbols-outlined text-[16px]">
-                {showAnalytics ? 'expand_less' : 'analytics'}
-              </span>
-              {showAnalytics ? 'Ocultar Estadísticas Avanzadas' : 'Ver Estadísticas Avanzadas y ROI'}
-            </Button>
-          </div>
-
-          {/* =========================================================================
-              PANEL DE ESTADÍSTICAS DIARIAS Y META SEMANAL (LUNES A SÁBADO)
-              ========================================================================= */}
-          {showWeeklyStats && (
-            <div className="glass-card p-5 border border-primary/20 space-y-5 rounded-2xl relative overflow-hidden text-left shadow-xl bg-surface-container/60 animate-fade-in">
-            {/* Luz de fondo ambiental */}
-            <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-
-            {/* Cabecera del Panel con Navegación de Semanas */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4 relative z-10">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/30 shadow-sm shrink-0">
-                  <span className="material-symbols-outlined text-primary text-[22px]">calendar_view_week</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-base font-extrabold text-on-surface dark:text-white">
-                      Ventas Semanales y Meta (Lun - Sáb)
-                    </h3>
-                    {weekOffset === 0 ? (
-                      <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        Semana Actual
-                      </span>
-                    ) : (
-                      <span className="text-[10px] bg-white/5 text-on-surface-variant font-mono px-2 py-0.5 rounded-full">
-                        {weekOffset < 0 ? `Hace ${Math.abs(weekOffset)} sem.` : `En +${weekOffset} sem.`}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-on-surface-variant font-mono mt-0.5">
-                    {formatDate(weeklyStats.startDateStr)} al {formatDate(weeklyStats.endDateStr)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Navegación y Ajuste de Meta */}
-              <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setWeekOffset(w => w - 1)}
-                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
-                  title="Ver semana anterior"
-                >
-                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                  <span className="hidden md:inline">Anterior</span>
-                </button>
-
-                {weekOffset !== 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setWeekOffset(0)}
-                    className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-bold transition-all border border-primary/20 cursor-pointer"
-                  >
-                    Hoy
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setWeekOffset(w => w + 1)}
-                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
-                  title="Ver semana siguiente"
-                >
-                  <span className="hidden md:inline">Siguiente</span>
-                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-                </button>
-
-                <div className="h-5 w-px bg-white/10 mx-1 hidden sm:block" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGoalModalInput(weeklyStats.weeklyGoal.toString())
-                    setShowGoalModal(true)
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-surface-container-high/70 border border-outline-variant/40 hover:border-primary/50 text-xs font-semibold text-on-surface flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Configurar monto de meta semanal"
-                >
-                  <span className="material-symbols-outlined text-primary text-[16px]">edit</span>
-                  Meta: <span className="font-mono font-bold text-primary">{formatCurrency(weeklyStats.weeklyGoal, 0)}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Tarjeta de Resumen y Barra de Meta */}
-            <div className="p-4 rounded-2xl bg-surface-container-low/80 border border-white/5 space-y-3 relative z-10">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
-                <div>
-                  <p className="text-[10px] font-mono uppercase font-bold text-on-surface-variant tracking-wider">
-                    Total Ventas Semanales (Lunes a Sábado)
-                  </p>
-                  <div className="flex items-baseline gap-3 mt-1 flex-wrap">
-                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-on-surface dark:text-white">
-                      {formatCurrency(weeklyStats.totalWeeklySales)}
-                    </span>
-                    <span className="text-xs text-on-surface-variant font-mono">
-                      de <strong className="text-primary font-bold">{formatCurrency(weeklyStats.weeklyGoal)}</strong>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span className={`text-lg font-mono font-extrabold ${weeklyStats.isGoalMet ? 'text-emerald-400' : 'text-primary'}`}>
-                        {weeklyStats.progressPct.toFixed(1)}%
-                      </span>
-                      <span className="text-xs text-on-surface-variant">alcanzado</span>
-                    </div>
-                    <p className="text-[11px] font-mono mt-0.5">
-                      {weeklyStats.isGoalMet ? (
-                        <span className="text-emerald-400 font-bold flex items-center gap-1 justify-end">
-                          <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                          ¡Meta Cumplida! (+{formatCurrency(weeklyStats.surplus)})
-                        </span>
-                      ) : (
-                        <span className="text-[#ff7a00] font-semibold">
-                          Faltan {formatCurrency(weeklyStats.remaining)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Barra de Progreso 3D */}
-              <div className="w-full bg-black/40 rounded-full h-3.5 p-0.5 border border-white/5 overflow-hidden shadow-inner">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${
-                    weeklyStats.isGoalMet
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
-                      : weeklyStats.progressPct >= 50
-                      ? 'bg-gradient-to-r from-primary to-amber-400 shadow-[0_0_12px_rgba(255,122,0,0.5)]'
-                      : 'bg-gradient-to-r from-[#ff5c00] to-orange-400'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(2, weeklyStats.progressPct))}%` }}
-                />
-              </div>
-
-              <div className="flex justify-between items-center text-[10px] text-on-surface-variant font-mono pt-1">
-                <span>{weeklyStats.totalWeeklyOrdersCount} pedidos registrados en esta semana</span>
-                <span>
-                  Promedio: {formatCurrency(weeklyStats.totalWeeklySales / 6)} / día
-                </span>
-              </div>
-            </div>
-
-            {/* Grilla de los 6 Días (Lunes a Sábado) */}
-            <div className="space-y-2 relative z-10">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[15px] text-primary">view_week</span>
-                  Ventas Diarias (Lunes a Sábado)
-                  <span className="text-[10px] text-on-surface-variant/70 font-sans font-normal lowercase">(clic en un día para ver detalle)</span>
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                {weeklyStats.days.map((day) => {
-                  const dayPct = weeklyStats.totalWeeklySales > 0 ? (day.sales / weeklyStats.totalWeeklySales) * 100 : 0
-                  const formattedDatePart = `${String(day.date.getDate()).padStart(2, '0')}/${String(day.date.getMonth() + 1).padStart(2, '0')}`
-                  return (
-                    <div
-                      key={day.dateStr}
-                      onClick={() => setSelectedDayModal(day)}
-                      className={`p-3 rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden cursor-pointer group hover:scale-[1.02] ${
-                        day.isToday
-                          ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,122,0,0.25)] ring-1 ring-primary/40'
-                          : 'bg-surface-container-high/40 border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container-high/70'
-                      }`}
-                      title="Haz clic para ver los pedidos y entregas de este día"
-                    >
-                      {day.isToday && (
-                        <div className="absolute top-0 right-0 bg-primary text-on-primary text-[8px] font-extrabold px-1.5 py-0.5 rounded-bl-lg uppercase tracking-wider shadow-sm">
-                          HOY
-                        </div>
-                      )}
-
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className={`text-[10px] font-extrabold uppercase tracking-wider font-mono ${
-                            day.isToday ? 'text-primary' : 'text-on-surface-variant'
-                          }`}>
-                            {day.dayShort}
-                          </span>
-                          <span className="text-[10px] text-on-surface-variant font-mono">
-                            {formattedDatePart}
-                          </span>
-                        </div>
-
-                        <div className="mt-2 text-left">
-                          <p className={`text-sm font-extrabold font-mono ${
-                            day.sales > 0 ? (day.isToday ? 'text-primary' : 'text-white') : 'text-on-surface-variant/60'
-                          }`}>
-                            {formatCurrency(day.sales, 0)}
-                          </p>
-                          <div className="text-[10px] text-on-surface-variant mt-0.5 font-sans space-y-0.5">
-                            <p>
-                              {day.ordersCount === 1 ? '1 venta' : `${day.ordersCount} ventas`}
-                              {day.sundayOrdersCount > 0 && (
-                                <span className="text-[9px] text-[#ff7a00] font-mono block font-semibold">
-                                  (+{day.sundayOrdersCount} dom.)
-                                </span>
-                              )}
-                            </p>
-                            {day.deliveriesCount > 0 && (
-                              <p className="text-[9px] text-secondary font-mono font-semibold flex items-center gap-0.5">
-                                <span className="material-symbols-outlined text-[11px]">local_shipping</span>
-                                {day.deliveriesCount} entrega{day.deliveriesCount > 1 ? 's' : ''}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Micro barra de proporción */}
-                      <div className="mt-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
-                        <div className="flex-1 bg-black/30 rounded-full h-1 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${day.isToday ? 'bg-primary' : 'bg-white/40'}`}
-                            style={{ width: `${dayPct}%` }}
-                          />
-                        </div>
-                        <span className="material-symbols-outlined text-[12px] text-on-surface-variant/40 group-hover:text-primary transition-colors">
-                          open_in_new
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Desglose por Categorías de Venta (Producción, Servicios, etc.) */}
-            {weeklyStats.categoriesList.length > 0 && (
-              <div className="space-y-2.5 pt-2 border-t border-white/5 relative z-10">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-primary">category</span>
-                    Subcategorización por Línea de Venta
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => setShowWeekCategories(!showWeekCategories)}
-                    className="text-[10px] text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    {showWeekCategories ? 'Contraer' : 'Expandir'}
-                    <span className="material-symbols-outlined text-[14px]">
-                      {showWeekCategories ? 'expand_less' : 'expand_more'}
-                    </span>
-                  </button>
-                </div>
-
-                {showWeekCategories && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {weeklyStats.categoriesList.map(cat => (
-                      <div
-                        key={cat.id}
-                        className="p-2.5 rounded-xl bg-surface-container-high/30 border border-outline-variant/20 flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <div
-                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white"
-                            style={{ backgroundColor: `${cat.color}25`, border: `1px solid ${cat.color}50` }}
-                          >
-                            <span className="material-symbols-outlined text-[15px]" style={{ color: cat.color }}>
-                              {cat.icon}
-                            </span>
-                          </div>
-                          <div className="overflow-hidden">
-                            <p className="text-xs font-bold text-on-surface dark:text-white truncate" title={cat.label}>
-                              {cat.label}
-                            </p>
-                            <p className="text-[10px] text-on-surface-variant font-mono">
-                              {cat.count} {cat.count === 1 ? 'servicio' : 'servicios'} ({cat.pct.toFixed(1)}%)
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0 pl-2">
-                          <span className="text-xs font-mono font-bold text-on-surface dark:text-white">
-                            {formatCurrency(cat.amount)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            </div>
-          )}
-
-          {/* =========================================================================
-              PANEL DE ESTADÍSTICAS AVANZADAS Y ROI
-              ========================================================================= */}
-          {showAnalytics && (
-            <div className="glass-card p-6 border border-outline-variant/30 space-y-6 relative overflow-hidden text-left">
-              {/* Luz de fondo sutil cian en la parte baja derecha */}
-              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-2 relative z-10">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[24px]">insights</span>
-                  <h3 className="text-body-lg font-extrabold text-white">Análisis de Rendimiento y Rentabilidad (ROI)</h3>
-                </div>
-                <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider bg-surface-container-high/40 px-2 py-0.5 rounded-full">
-                  {advancedStats.totalOrdersCount} pedidos activos
-                </span>
-              </div>
-
-              {/* Grid de KPIs especializados */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
-                {/* ROI Real vs Estimado */}
-                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
-                  <div>
-                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Retorno de Inversión (ROI)</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <h4 className="text-xl font-bold font-mono text-emerald-400">
-                        {advancedStats.realROI.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">Real</span>
-                      </h4>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
-                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{advancedStats.estROI.toFixed(1)}%</span>
-                  </p>
-                </div>
-
-                {/* Margen de Utilidad */}
-                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
-                  <div>
-                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Margen de Utilidad</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <h4 className="text-xl font-bold font-mono text-cyan-400">
-                        {advancedStats.realMargin.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">Real</span>
-                      </h4>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
-                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{advancedStats.estMargin.toFixed(1)}%</span>
-                  </p>
-                </div>
-
-                {/* Costo vs Gastos */}
-                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
-                  <div>
-                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Egresos del Canal</p>
-                    <div className="flex flex-col gap-0.5 mt-1">
-                      <h4 className="text-lg font-bold font-mono text-rose-400">
-                        {formatCurrency(advancedStats.totalActualExpenses)} <span className="text-[9px] text-on-surface-variant font-normal">Gastado</span>
-                      </h4>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
-                    Estimado (Cotiz.): <span className="font-mono text-white font-bold">{formatCurrency(advancedStats.totalEstimatedCost)}</span>
-                  </p>
-                </div>
-
-                {/* Eficiencia de Tiempo (Ingresos/Hora) */}
-                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between h-[120px]">
-                  <div>
-                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Rendimiento Operativo</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <h4 className="text-xl font-bold font-mono text-amber-400">
-                        {formatCurrency(advancedStats.revenuePerHour)}/h
-                      </h4>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
-                    Tiempo Total: <span className="font-mono text-white font-bold">{(advancedStats.totalProductionTime / 60).toFixed(1)} hrs</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Gráficos de Fuentes de Ingreso */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 relative z-10">
-                {/* Categorías de Trabajo */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-primary">category</span>
-                    Ingresos por Línea de Producción
-                  </h4>
-                  <div className="space-y-2.5 bg-white/[0.02] p-4 rounded-xl border border-white/5 max-h-[220px] overflow-y-auto">
-                    {Object.entries(advancedStats.categoryRevenue).length === 0 ? (
-                      <p className="text-xs text-on-surface-variant italic">No hay datos de ítems detallados</p>
-                    ) : (
-                      Object.entries(advancedStats.categoryRevenue)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([cat, val]) => {
-                          const percent = advancedStats.totalRevenue > 0 ? (val / advancedStats.totalRevenue) * 100 : 0
-                          // Asignar colores neon segun categoría
-                          let colorClass = 'bg-primary' // cyan
-                          if (cat.includes('sublimacion')) colorClass = 'bg-purple-500 shadow-[0_0_8px_#a855f7]'
-                          else if (cat.includes('confeccion') || cat.includes('produccion')) colorClass = 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
-                          else if (cat.includes('bordado')) colorClass = 'bg-blue-500 shadow-[0_0_8px_#3b82f6]'
-                          else if (cat.includes('vinil') || cat.includes('corte')) colorClass = 'bg-emerald-500 shadow-[0_0_8px_#10b981]'
-                          else if (cat.includes('dtf') && !cat.includes('uv')) colorClass = 'bg-orange-500 shadow-[0_0_8px_#f97316]'
-                          else if (cat.includes('uv')) colorClass = 'bg-pink-500 shadow-[0_0_8px_#ec4899]'
-                          
-                          const label = cat === 'produccion_textil' ? 'Confección Textil' :
-                                        cat === 'servicios_sublimacion' ? 'Sublimación' :
-                                        cat === 'servicios_bordado' ? 'Bordado' :
-                                        cat === 'servicios_estampado_vinil' ? 'Estampado Vinil' :
-                                        cat === 'servicios_dtf' ? 'DTF' :
-                                        cat === 'servicios_uv_dtf' ? 'UV-DTF' : cat;
-
-                          return (
-                            <div key={cat} className="space-y-1">
-                              <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
-                                <span className="capitalize text-white font-semibold">{label}</span>
-                                <span className="font-mono text-on-surface-variant">{formatCurrency(val)} ({percent.toFixed(1)}%)</span>
-                              </div>
-                              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
-                              </div>
-                            </div>
-                          )
-                        })
-                    )}
-                  </div>
-                </div>
-
-                {/* Tipo de Pedido */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-primary">storefront</span>
-                    Ingresos por Canal de Venta
-                  </h4>
-                  <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4 h-[162px] flex flex-col justify-center">
-                    {/* Canal: Pedidos Cotizados */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
-                        <span className="text-white font-semibold">Pedidos Cotizados (Mayoristas/Contratos)</span>
-                        <span className="font-mono text-on-surface-variant">
-                          {formatCurrency(advancedStats.revenueQuoted)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
-                        </span>
-                      </div>
-                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-[0_0_8px_#06b6d4]" 
-                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0}%` }} 
-                        />
-                      </div>
-                    </div>
-
-                    {/* Canal: Venta Menor */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
-                        <span className="text-white font-semibold">Servicio Diario (Venta Menor / Mostrador)</span>
-                        <span className="font-mono text-on-surface-variant">
-                          {formatCurrency(advancedStats.revenueDaily)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
-                        </span>
-                      </div>
-                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 shadow-[0_0_8px_#10b981]" 
-                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0}%` }} 
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Filtros */}
           <Card className="py-2.5 px-4">
@@ -3988,6 +3566,498 @@ export default function OrdersPage() {
         </div>
 
       </div>
+      )}
+
+      {/* PESTAÑA 2: RESUMEN SEMANAL Y METAS (LUNES A SÁBADO) */}
+      {activeTab === 'semanal' && (
+        <div className="w-full space-y-6 animate-fade-in max-w-7xl mx-auto">
+          <div className="glass-card p-5 border border-primary/20 space-y-5 rounded-2xl relative overflow-hidden text-left shadow-xl bg-surface-container/60 animate-fade-in">
+            {/* Luz de fondo ambiental */}
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Cabecera del Panel con Navegación de Semanas */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/30 shadow-sm shrink-0">
+                  <span className="material-symbols-outlined text-primary text-[22px]">calendar_view_week</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-extrabold text-on-surface dark:text-white">
+                      Ventas Semanales y Meta (Lun - Sáb)
+                    </h3>
+                    {weekOffset === 0 ? (
+                      <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Semana Actual
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-white/5 text-on-surface-variant font-mono px-2 py-0.5 rounded-full">
+                        {weekOffset < 0 ? `Hace ${Math.abs(weekOffset)} sem.` : `En +${weekOffset} sem.`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-on-surface-variant font-mono mt-0.5">
+                    {formatDate(weeklyStats.startDateStr)} al {formatDate(weeklyStats.endDateStr)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Navegación y Ajuste de Meta */}
+              <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(w => w - 1)}
+                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
+                  title="Ver semana anterior"
+                >
+                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                  <span className="hidden md:inline">Anterior</span>
+                </button>
+
+                {weekOffset !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setWeekOffset(0)}
+                    className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-bold transition-all border border-primary/20 cursor-pointer"
+                  >
+                    Hoy
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(w => w + 1)}
+                  className="px-2.5 py-1.5 rounded-xl neu-raised-sm hover:text-primary text-on-surface-variant text-xs flex items-center gap-1 font-medium transition-all cursor-pointer"
+                  title="Ver semana siguiente"
+                >
+                  <span className="hidden md:inline">Siguiente</span>
+                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                </button>
+
+                <div className="h-5 w-px bg-white/10 mx-1 hidden sm:block" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoalModalInput(weeklyStats.weeklyGoal.toString())
+                    setShowGoalModal(true)
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-surface-container-high/70 border border-outline-variant/40 hover:border-primary/50 text-xs font-semibold text-on-surface flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Configurar monto de meta semanal"
+                >
+                  <span className="material-symbols-outlined text-primary text-[16px]">edit</span>
+                  Meta: <span className="font-mono font-bold text-primary">{formatCurrency(weeklyStats.weeklyGoal, 0)}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tarjeta de Resumen y Barra de Meta */}
+            <div className="p-4 rounded-2xl bg-surface-container-low/80 border border-white/5 space-y-3 relative z-10">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
+                <div>
+                  <p className="text-[10px] font-mono uppercase font-bold text-on-surface-variant tracking-wider">
+                    Total Ventas Semanales (Lunes a Sábado)
+                  </p>
+                  <div className="flex items-baseline gap-3 mt-1 flex-wrap">
+                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-on-surface dark:text-white">
+                      {formatCurrency(weeklyStats.totalWeeklySales)}
+                    </span>
+                    <span className="text-xs text-on-surface-variant font-mono">
+                      de <strong className="text-primary font-bold">{formatCurrency(weeklyStats.weeklyGoal)}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span className={`text-lg font-mono font-extrabold ${weeklyStats.isGoalMet ? 'text-emerald-400' : 'text-primary'}`}>
+                        {weeklyStats.progressPct.toFixed(1)}%
+                      </span>
+                      <span className="text-xs text-on-surface-variant">alcanzado</span>
+                    </div>
+                    <p className="text-[11px] font-mono mt-0.5">
+                      {weeklyStats.isGoalMet ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1 justify-end">
+                          <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                          ¡Meta Cumplida! (+{formatCurrency(weeklyStats.surplus)})
+                        </span>
+                      ) : (
+                        <span className="text-[#ff7a00] font-semibold">
+                          Faltan {formatCurrency(weeklyStats.remaining)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra de Progreso 3D */}
+              <div className="w-full bg-black/40 rounded-full h-3.5 p-0.5 border border-white/5 overflow-hidden shadow-inner">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${
+                    weeklyStats.isGoalMet
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                      : weeklyStats.progressPct >= 50
+                      ? 'bg-gradient-to-r from-primary to-amber-400 shadow-[0_0_12px_rgba(255,122,0,0.5)]'
+                      : 'bg-gradient-to-r from-[#ff5c00] to-orange-400'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(2, weeklyStats.progressPct))}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between items-center text-[10px] text-on-surface-variant font-mono pt-1">
+                <span>{weeklyStats.totalWeeklyOrdersCount} pedidos registrados en esta semana</span>
+                <span>
+                  Promedio: {formatCurrency(weeklyStats.totalWeeklySales / 6)} / día
+                </span>
+              </div>
+            </div>
+
+            {/* Grilla de los 6 Días (Lunes a Sábado) */}
+            <div className="space-y-2 relative z-10">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-primary">view_week</span>
+                  Ventas Diarias (Lunes a Sábado)
+                  <span className="text-[10px] text-on-surface-variant/70 font-sans font-normal lowercase">(clic en un día para ver detalle)</span>
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                {weeklyStats.days.map((day) => {
+                  const dayPct = weeklyStats.totalWeeklySales > 0 ? (day.sales / weeklyStats.totalWeeklySales) * 100 : 0
+                  const formattedDatePart = `${String(day.date.getDate()).padStart(2, '0')}/${String(day.date.getMonth() + 1).padStart(2, '0')}`
+                  return (
+                    <div
+                      key={day.dateStr}
+                      onClick={() => setSelectedDayModal(day)}
+                      className={`p-3 rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden cursor-pointer group hover:scale-[1.02] ${
+                        day.isToday
+                          ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,122,0,0.25)] ring-1 ring-primary/40'
+                          : 'bg-surface-container-high/40 border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container-high/70'
+                      }`}
+                      title="Haz clic para ver los pedidos y entregas de este día"
+                    >
+                      {day.isToday && (
+                        <div className="absolute top-0 right-0 bg-primary text-on-primary text-[8px] font-extrabold px-1.5 py-0.5 rounded-bl-lg uppercase tracking-wider shadow-sm">
+                          HOY
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] font-extrabold uppercase tracking-wider font-mono ${
+                            day.isToday ? 'text-primary' : 'text-on-surface-variant'
+                          }`}>
+                            {day.dayShort}
+                          </span>
+                          <span className="text-[10px] text-on-surface-variant font-mono">
+                            {formattedDatePart}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-left">
+                          <p className={`text-sm font-extrabold font-mono ${
+                            day.sales > 0 ? (day.isToday ? 'text-primary' : 'text-white') : 'text-on-surface-variant/60'
+                          }`}>
+                            {formatCurrency(day.sales, 0)}
+                          </p>
+                          <div className="text-[10px] text-on-surface-variant mt-0.5 font-sans space-y-0.5">
+                            <p>
+                              {day.ordersCount === 1 ? '1 venta' : `${day.ordersCount} ventas`}
+                              {day.sundayOrdersCount > 0 && (
+                                <span className="text-[9px] text-[#ff7a00] font-mono block font-semibold">
+                                  (+{day.sundayOrdersCount} dom.)
+                                </span>
+                              )}
+                            </p>
+                            {day.deliveriesCount > 0 && (
+                              <p className="text-[9px] text-secondary font-mono font-semibold flex items-center gap-0.5">
+                                <span className="material-symbols-outlined text-[11px]">local_shipping</span>
+                                {day.deliveriesCount} entrega{day.deliveriesCount > 1 ? 's' : ''}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Micro barra de proporción */}
+                      <div className="mt-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
+                        <div className="flex-1 bg-black/30 rounded-full h-1 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${day.isToday ? 'bg-primary' : 'bg-white/40'}`}
+                            style={{ width: `${dayPct}%` }}
+                          />
+                        </div>
+                        <span className="material-symbols-outlined text-[12px] text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                          open_in_new
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Desglose por Categorías de Venta (Producción, Servicios, etc.) */}
+            {weeklyStats.categoriesList.length > 0 && (
+              <div className="space-y-2.5 pt-2 border-t border-white/5 relative z-10">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant font-mono flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-primary">category</span>
+                    Subcategorización por Línea de Venta
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowWeekCategories(!showWeekCategories)}
+                    className="text-[10px] text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    {showWeekCategories ? 'Contraer' : 'Expandir'}
+                    <span className="material-symbols-outlined text-[14px]">
+                      {showWeekCategories ? 'expand_less' : 'expand_more'}
+                    </span>
+                  </button>
+                </div>
+
+                {showWeekCategories && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {weeklyStats.categoriesList.map(cat => (
+                      <div
+                        key={cat.id}
+                        className="p-2.5 rounded-xl bg-surface-container-high/30 border border-outline-variant/20 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white"
+                            style={{ backgroundColor: `${cat.color}25`, border: `1px solid ${cat.color}50` }}
+                          >
+                            <span className="material-symbols-outlined text-[15px]" style={{ color: cat.color }}>
+                              {cat.icon}
+                            </span>
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="text-xs font-bold text-on-surface dark:text-white truncate" title={cat.label}>
+                              {cat.label}
+                            </p>
+                            <p className="text-[10px] text-on-surface-variant font-mono">
+                              {cat.count} {cat.count === 1 ? 'servicio' : 'servicios'} ({cat.pct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 pl-2">
+                          <span className="text-xs font-mono font-bold text-on-surface dark:text-white">
+                            {formatCurrency(cat.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+        </div>
+      )}
+
+      {/* PESTAÑA 3: ESTADÍSTICAS AVANZADAS Y RENDIMIENTO (ROI) */}
+      {activeTab === 'analisis' && (
+        <div className="w-full space-y-6 animate-fade-in max-w-7xl mx-auto">
+          <div className="glass-card p-6 border border-outline-variant/30 space-y-6 relative overflow-hidden text-left">
+              {/* Luz de fondo sutil cian en la parte baja derecha */}
+              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-2 relative z-10">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[24px]">insights</span>
+                  <h3 className="text-body-lg font-extrabold text-white">Análisis de Rendimiento y Rentabilidad (ROI)</h3>
+                </div>
+                <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-wider bg-surface-container-high/40 px-2 py-0.5 rounded-full">
+                  {advancedStats.totalOrdersCount} pedidos activos
+                </span>
+              </div>
+
+              {/* Grid de KPIs especializados y auditados */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+                {/* ROI Real Consolidado */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between min-h-[125px] border-l-2 border-emerald-400">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Retorno de Inversión (ROI)</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-emerald-400">
+                        {advancedStats.realROI.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">Consolidado</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans space-y-0.5">
+                    <div>Estimado (Cotiz.): <span className="font-mono text-white font-bold">{advancedStats.estROI.toFixed(1)}%</span></div>
+                    {advancedStats.countWithExpenses > 0 && (
+                      <div className="text-[9px] text-primary">
+                        Muestra verificada ({advancedStats.countWithExpenses} p.): <strong>{advancedStats.verifiedROI.toFixed(1)}%</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Margen de Utilidad */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between min-h-[125px] border-l-2 border-cyan-400">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Margen de Utilidad</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-cyan-400">
+                        {advancedStats.realMargin.toFixed(1)}% <span className="text-[10px] text-on-surface-variant font-normal">S/ Ventas</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Utilidad Neta: <span className="font-mono text-white font-bold">{formatCurrency(advancedStats.realProfit)}</span>
+                  </p>
+                </div>
+
+                {/* Costo Total de Producción */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between min-h-[125px] border-l-2 border-rose-400">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Costo Total Producción</p>
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      <h4 className="text-lg font-bold font-mono text-rose-400">
+                        {formatCurrency(advancedStats.totalConsolidatedCost)} <span className="text-[9px] text-on-surface-variant font-normal">Consolidado</span>
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    Egresos Enlazados BD: <span className="font-mono text-white font-bold">{formatCurrency(advancedStats.totalActualExpenses)}</span>
+                  </p>
+                </div>
+
+                {/* Eficiencia de Tiempo (Ingresos/Hora) */}
+                <div className="neu-pressed p-4 rounded-xl flex flex-col justify-between min-h-[125px] border-l-2 border-amber-400">
+                  <div>
+                    <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider">Rendimiento Operativo</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h4 className="text-xl font-bold font-mono text-amber-400">
+                        {advancedStats.revenuePerHour > 0 ? `${formatCurrency(advancedStats.revenuePerHour)}/h` : '—'}
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant mt-2 border-t border-white/5 pt-1.5 font-sans">
+                    {advancedStats.ordersWithTimeCount > 0 
+                      ? `Tiempo: ${(advancedStats.totalProductionTime / 60).toFixed(1)} hrs (${advancedStats.ordersWithTimeCount} pedidos)`
+                      : 'Sin tiempos de producción cargados'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Banner de Auditoría y Metodología */}
+              <div className="neu-pressed p-3.5 rounded-xl border border-white/5 flex items-start gap-3 text-xs text-on-surface-variant relative z-10">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+                  <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs">Auditoría y Metodología de Costos de Pedidos</p>
+                  <p className="text-[11px] leading-relaxed text-on-surface-variant">
+                    El <strong className="text-white">ROI Consolidado ({advancedStats.realROI.toFixed(1)}%)</strong> y el <strong className="text-white">Margen ({advancedStats.realMargin.toFixed(1)}%)</strong> evalúan la totalidad de la cartera ({advancedStats.totalOrdersCount} pedidos activos). Integra los egresos reales de los pedidos que tienen compras enlazadas en la BD y el costo presupuestado para los restantes, eliminando distorsiones por pedidos sin costos cargados.
+                    {advancedStats.countWithExpenses > 0 ? (
+                      <span className="block mt-0.5 text-primary">
+                        ✓ Muestra verificada de {advancedStats.countWithExpenses} pedidos con egresos directos enlazados: Ingresos {formatCurrency(advancedStats.revenueWithExpenses)} | Egresos {formatCurrency(advancedStats.expensesWithExpenses)} | ROI Verificado: <strong>{advancedStats.verifiedROI.toFixed(1)}%</strong>.
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+              </div>
+
+              {/* Gráficos de Fuentes de Ingreso */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 relative z-10">
+                {/* Categorías de Trabajo */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-primary">category</span>
+                    Ingresos por Línea de Producción
+                  </h4>
+                  <div className="space-y-2.5 bg-white/[0.02] p-4 rounded-xl border border-white/5 max-h-[220px] overflow-y-auto">
+                    {Object.entries(advancedStats.categoryRevenue).length === 0 ? (
+                      <p className="text-xs text-on-surface-variant italic">No hay datos de ítems detallados</p>
+                    ) : (
+                      Object.entries(advancedStats.categoryRevenue)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([cat, val]) => {
+                          const percent = advancedStats.totalRevenue > 0 ? (val / advancedStats.totalRevenue) * 100 : 0
+                          // Asignar colores neon segun categoría
+                          let colorClass = 'bg-primary' // cyan
+                          if (cat.includes('sublimacion')) colorClass = 'bg-purple-500 shadow-[0_0_8px_#a855f7]'
+                          else if (cat.includes('confeccion') || cat.includes('produccion')) colorClass = 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
+                          else if (cat.includes('bordado')) colorClass = 'bg-blue-500 shadow-[0_0_8px_#3b82f6]'
+                          else if (cat.includes('vinil') || cat.includes('corte')) colorClass = 'bg-emerald-500 shadow-[0_0_8px_#10b981]'
+                          else if (cat.includes('dtf') && !cat.includes('uv')) colorClass = 'bg-orange-500 shadow-[0_0_8px_#f97316]'
+                          else if (cat.includes('uv')) colorClass = 'bg-pink-500 shadow-[0_0_8px_#ec4899]'
+                          
+                          const label = cat === 'produccion_textil' ? 'Confección Textil' :
+                                        cat === 'servicios_sublimacion' ? 'Sublimación' :
+                                        cat === 'servicios_bordado' ? 'Bordado' :
+                                        cat === 'servicios_estampado_vinil' ? 'Estampado Vinil' :
+                                        cat === 'servicios_dtf' ? 'DTF' :
+                                        cat === 'servicios_uv_dtf' ? 'UV-DTF' : cat;
+
+                          return (
+                            <div key={cat} className="space-y-1">
+                              <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                                <span className="capitalize text-white font-semibold">{label}</span>
+                                <span className="font-mono text-on-surface-variant">{formatCurrency(val)} ({percent.toFixed(1)}%)</span>
+                              </div>
+                              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })
+                    )}
+                  </div>
+                </div>
+
+                {/* Tipo de Pedido */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-primary">storefront</span>
+                    Ingresos por Canal de Venta
+                  </h4>
+                  <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4 h-[162px] flex flex-col justify-center">
+                    {/* Canal: Pedidos Cotizados */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                        <span className="text-white font-semibold">Pedidos Cotizados (Mayoristas/Contratos)</span>
+                        <span className="font-mono text-on-surface-variant">
+                          {formatCurrency(advancedStats.revenueQuoted)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-[0_0_8px_#06b6d4]" 
+                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueQuoted / advancedStats.totalRevenue) * 100 : 0}%` }} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Canal: Venta Menor */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-medium text-on-surface-variant">
+                        <span className="text-white font-semibold">Servicio Diario (Venta Menor / Mostrador)</span>
+                        <span className="font-mono text-on-surface-variant">
+                          {formatCurrency(advancedStats.revenueDaily)} ({ (advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0).toFixed(1) }%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 shadow-[0_0_8px_#10b981]" 
+                          style={{ width: `${advancedStats.totalRevenue > 0 ? (advancedStats.revenueDaily / advancedStats.totalRevenue) * 100 : 0}%` }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </div>
+      )}
+
 
       {/* MODAL DESPLEGABLE EN MÓVIL (para el formulario) */}
       {showMobileForm && (
