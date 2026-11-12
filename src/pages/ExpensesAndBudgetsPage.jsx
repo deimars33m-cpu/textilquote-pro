@@ -3588,6 +3588,93 @@ export default function ExpensesAndBudgetsPage() {
                                     </table>
                                   </div>
                                 </div>
+                                {/* Desglose por Tipo de Producto */}
+                                {(() => {
+                                   const FALLBACK_LABELS = {
+                                     camisetas: 'Camisetas / Poleras',
+                                     buzos: 'Buzos Deportivos',
+                                     mochilas: 'Maletines y Mochilas',
+                                     ropa_escolar: 'Ropa Escolar',
+                                     promociones: 'Promociones Textiles',
+                                     accesorios: 'Accesorios Textiles',
+                                     otros: 'Otros',
+                                   }
+                                   const ptSubcategories = settings && settings.subcategories && settings.subcategories.produccion_textil || []
+                                   const ptLabelMap = {}
+                                   ptSubcategories.forEach(sc => { ptLabelMap[sc.id] = sc.label })
+
+                                   // Recalcular por tipo de producto solo con activeOrders
+                                   const ptAccum = {}
+                                   activeOrders.forEach(o => {
+                                     ;(o.order_items || []).forEach(item => {
+                                       const catL = (item.category || '').toLowerCase()
+                                       if (catL.includes('produc') || catL.includes('textil') || catL.includes('confecc')) {
+                                         const key = item.product_category || 'otros'
+                                         if (!ptAccum[key]) ptAccum[key] = { revenue: 0, units: 0 }
+                                         ptAccum[key].revenue += Number(item.total_price) || 0
+                                         ptAccum[key].units += Number(item.quantity) || 0
+                                       }
+                                     })
+                                   })
+
+                                   const productRows = Object.entries(ptAccum)
+                                     .filter(([, d]) => d.units > 0)
+                                     .map(([ptKey, d]) => {
+                                       const revenueShare = totalRevenue > 0 ? d.revenue / totalRevenue : 0
+                                       const ptCost = totalContractCost * revenueShare
+                                       const ptCostPerUnit = d.units > 0 ? ptCost / d.units : 0
+                                       const ptPricePerUnit = d.units > 0 ? d.revenue / d.units : 0
+                                       const ptProfit = d.revenue - ptCost
+                                       const ptMargin = d.revenue > 0 ? (ptProfit / d.revenue) * 100 : 0
+                                       const label = ptLabelMap[ptKey] || FALLBACK_LABELS[ptKey] || ptKey
+                                       return { ptKey, label, revenue: d.revenue, units: d.units, ptCost, ptCostPerUnit, ptPricePerUnit, ptProfit, ptMargin }
+                                     })
+                                     .sort((a, b) => b.revenue - a.revenue)
+
+                                   if (productRows.length < 2) return null
+
+                                   return (
+                                     <div className="neu-surface p-4 rounded-xl space-y-3 mt-4">
+                                       <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                                         <span className="material-symbols-outlined text-primary text-base">inventory_2</span>
+                                         Resumen por Tipo de Producto
+                                       </h4>
+                                       <div className="overflow-x-auto rounded-xl neu-pressed">
+                                         <table className="w-full text-left text-xs border-collapse font-mono">
+                                           <thead>
+                                             <tr className="bg-surface-container/60 border-b border-outline-variant text-on-surface-variant uppercase font-semibold">
+                                               <th className="py-2.5 px-3">Producto</th>
+                                               <th className="py-2.5 px-3 text-right">Uds.</th>
+                                               <th className="py-2.5 px-3 text-right">Ingresos</th>
+                                               <th className="py-2.5 px-3 text-right">Costo Est.</th>
+                                               <th className="py-2.5 px-3 text-right">Costo/Ud</th>
+                                               <th className="py-2.5 px-3 text-right">Precio/Ud</th>
+                                               <th className="py-2.5 px-3 text-center">Margen</th>
+                                             </tr>
+                                           </thead>
+                                           <tbody className="divide-y divide-white/5 text-on-surface">
+                                             {productRows.map(row => (
+                                               <tr key={row.ptKey}>
+                                                 <td className="py-2 px-3 text-white font-sans font-semibold">{row.label}</td>
+                                                 <td className="py-2 px-3 text-right">{row.units}</td>
+                                                 <td className="py-2 px-3 text-right text-emerald-400">{formatCurrency(row.revenue)}</td>
+                                                 <td className="py-2 px-3 text-right text-error">{formatCurrency(row.ptCost)}</td>
+                                                 <td className="py-2 px-3 text-right text-amber-400">{formatCurrency(row.ptCostPerUnit)}</td>
+                                                 <td className="py-2 px-3 text-right text-primary">{formatCurrency(row.ptPricePerUnit)}</td>
+                                                 <td className={`py-2 px-3 text-center font-bold ${row.ptMargin >= 20 ? 'text-emerald-400' : row.ptMargin >= 0 ? 'text-amber-400' : 'text-error'}`}>
+                                                   {row.ptMargin.toFixed(1)}%
+                                                 </td>
+                                               </tr>
+                                             ))}
+                                           </tbody>
+                                         </table>
+                                       </div>
+                                       <p className="text-[10px] text-on-surface-variant font-mono">
+                                         * Costo estimado prorrateado por proporción de ingresos entre tipos de producto.
+                                       </p>
+                                     </div>
+                                   )
+                                 })()}
                               </div>
                             )
                           })()}
