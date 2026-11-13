@@ -10,6 +10,8 @@ import { formatCurrency, formatDate, getTodayStr, parseDateToLocalYMD } from '@/
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 
 const SIZES_LIST = ['2', '4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+const INFANTIL_SIZES = ['2', '4', '6', '8', '10', '12', '14', '16']
+const ADULTO_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL']
 const PANELS_LIST = ['1 PANEL', '2 PANELES', '3 PANELES', '4 PANELES', '5 PANELES', '6 PANELES']
 
 const SIZE_FACTORS = {
@@ -573,6 +575,7 @@ export default function OrdersPage() {
   // Asistente de registro de pedidos (5 pasos)
   const [currentStep, setCurrentStep] = useState(1)
   const [selectedPanelFilter, setSelectedPanelFilter] = useState('1 PANEL')
+  const [textileSizeFilter, setTextileSizeFilter] = useState('todas') // 'todas' | 'infantil' | 'adulto'
   const [orderForm, setOrderForm] = useState({
     clientName: '',
     clientNit: '',
@@ -606,6 +609,7 @@ export default function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [selectedPanelFilterEdit, setSelectedPanelFilterEdit] = useState('1 PANEL')
+  const [textileSizeFilterEdit, setTextileSizeFilterEdit] = useState('todas')
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [selectedPaymentOrder, setSelectedPaymentOrder] = useState(null)
   const [copied, setCopied] = useState(false)
@@ -2432,25 +2436,33 @@ export default function OrdersPage() {
                  {usesSizes ? (
                   <div className="space-y-3">
                     {/* Tarjeta Superior: Precio Base Prenda (Talla L) y Prorrateo Automático */}
-                    <div className="neu-pressed p-3 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-surface-container/60 border border-outline-variant/40">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                          <span className="material-symbols-outlined text-base">price_change</span>
+                    <div className="neu-pressed p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/40 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="material-symbols-outlined text-emerald-400 text-base shrink-0">price_change</span>
+                          <span className="text-xs font-bold text-on-surface truncate">Base Talla L:</span>
+                          <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                            Prorrateo
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-on-surface">Precio Base Prenda (Talla L):</span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              Prorrateo Talla L
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-on-surface-variant mt-0.5">
-                            Ingresa el precio de talla L (ej. 130 Bs) para sugerir precios proporcionales. Son modificables por talla.
-                          </p>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-xs font-mono font-bold text-emerald-400">Bs</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="130"
+                            value={orderForm.baseGarmentPrice ?? ''}
+                            onChange={e => handleBaseGarmentPriceChange(e.target.value)}
+                            className="w-16 bg-surface-container rounded-lg px-2 py-1 text-xs font-bold text-emerald-400 text-right outline-none focus:ring-1 focus:ring-emerald-400/50 font-mono neu-pressed border border-emerald-500/30"
+                            title="Precio base Talla L (sugiere el resto proporcionalmente)"
+                          />
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-outline-variant/20 text-[10px]">
+                        <span className="text-on-surface-variant text-[10px]">Perfil de tela:</span>
                         <div className="flex rounded-lg neu-pressed p-0.5 bg-black/20 text-[10px] font-bold">
                           <button
                             type="button"
@@ -2477,20 +2489,6 @@ export default function OrdersPage() {
                             Abrigo
                           </button>
                         </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-xs font-mono font-bold text-emerald-400">Bs</span>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            placeholder="130"
-                            value={orderForm.baseGarmentPrice ?? ''}
-                            onChange={e => handleBaseGarmentPriceChange(e.target.value)}
-                            className="w-20 bg-surface-container rounded-xl px-2.5 py-1 text-xs font-bold text-emerald-400 text-right outline-none focus:ring-1 focus:ring-emerald-400/50 font-mono neu-pressed border border-emerald-500/30"
-                            title="Precio base Talla L"
-                          />
-                        </div>
                       </div>
                     </div>
 
@@ -2498,9 +2496,44 @@ export default function OrdersPage() {
                       <AlertBanner type="error">{formErrors.sizes}</AlertBanner>
                     )}
 
-                    {/* Módulos compactos de registro de cantidades por talla */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
-                      {SIZES_LIST.map((size) => {
+                    {/* Selector de Grupo de Tallas: Todas | Niños | Adultos */}
+                    <div className="flex gap-1.5 p-1 bg-surface-container rounded-xl border border-outline-variant/30 text-xs font-semibold">
+                      {[
+                        { id: 'todas', label: 'Todas', count: SIZES_LIST.length, qty: Object.entries(orderForm.sizes).reduce((s, [k, v]) => SIZES_LIST.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                        { id: 'infantil', label: 'Niños (2-16)', count: INFANTIL_SIZES.length, qty: Object.entries(orderForm.sizes).reduce((s, [k, v]) => INFANTIL_SIZES.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                        { id: 'adulto', label: 'Adultos (S-3XL)', count: ADULTO_SIZES.length, qty: Object.entries(orderForm.sizes).reduce((s, [k, v]) => ADULTO_SIZES.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                      ].map(tab => {
+                        const isActive = textileSizeFilter === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setTextileSizeFilter(tab.id)}
+                            className={`flex-1 py-1 px-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
+                              isActive
+                                ? 'bg-primary text-white shadow-xs'
+                                : 'text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            {tab.qty > 0 && (
+                              <span className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${isActive ? 'bg-black/30 text-white' : 'bg-primary/20 text-primary font-bold'}`}>
+                                {tab.qty}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Cuadrícula limpia y responsive de 3 columnas (idéntica a Sublimación) */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {(textileSizeFilter === 'infantil'
+                        ? INFANTIL_SIZES
+                        : textileSizeFilter === 'adulto'
+                          ? ADULTO_SIZES
+                          : SIZES_LIST
+                      ).map((size) => {
                         const qty = orderForm.sizes[size] || 0
                         const price = orderForm.sizePrices[size] || 0
                         const isSizeL = size === 'L'
@@ -2512,17 +2545,17 @@ export default function OrdersPage() {
                             className={`p-2 rounded-xl flex flex-col justify-between items-center text-center space-y-1.5 transition-all ${
                               hasQty
                                 ? 'bg-primary/10 border border-primary/50 shadow-xs'
-                                : 'neu-pressed bg-white/[0.02] border border-outline-variant/30'
+                                : 'neu-pressed bg-white/[0.02] border border-outline-variant/30 hover:border-outline-variant/60'
                             }`}
                           >
                             {/* Cabecera: Talla y Precio editable */}
                             <div className="w-full flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/20">
                               <div className="flex items-center gap-1">
-                                <span className={`font-mono font-bold text-xs ${isSizeL ? 'text-emerald-400' : 'text-primary'}`}>
+                                <span className={`font-mono font-bold text-xs ${isSizeL ? 'text-emerald-400 font-black' : 'text-primary'}`}>
                                   {size}
                                 </span>
                                 {isSizeL && (
-                                  <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase font-mono">
+                                  <span className="text-[7px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase font-mono">
                                     Base
                                   </span>
                                 )}
@@ -2535,7 +2568,7 @@ export default function OrdersPage() {
                                   step="0.5"
                                   value={price}
                                   onChange={e => updateSizePrice(size, e.target.value)}
-                                  className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
+                                  className="w-11 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
                                   title={`Precio sugerido para talla ${size} (editable)`}
                                 />
                               </div>
@@ -2606,7 +2639,7 @@ export default function OrdersPage() {
                             </span>
                           </div>
                           <div className="text-right">
-                            <span className="text-on-surface-variant text-[11px] mr-2">Importe Confección:</span>
+                            <span className="text-on-surface-variant text-[11px] mr-2">Importe:</span>
                             <span className="font-mono font-bold text-emerald-400 text-sm">
                               {formatCurrency(totalGarmentsCost)}
                             </span>
@@ -5210,25 +5243,33 @@ export default function OrdersPage() {
                   return (
                     <div className="space-y-3">
                       {/* Tarjeta Superior: Precio Base Prenda (Talla L) y Prorrateo Automático */}
-                      <div className="neu-pressed p-3 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-surface-container/60 border border-outline-variant/40">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                            <span className="material-symbols-outlined text-base">price_change</span>
+                      <div className="neu-pressed p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/40 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="material-symbols-outlined text-emerald-400 text-base shrink-0">price_change</span>
+                            <span className="text-xs font-bold text-on-surface truncate">Base Talla L:</span>
+                            <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                              Prorrateo
+                            </span>
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-on-surface">Precio Base Prenda (Talla L):</span>
-                              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                Prorrateo Talla L
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-on-surface-variant mt-0.5">
-                              Ingresa el precio de talla L (ej. 130 Bs) para sugerir precios proporcionales. Son modificables por talla.
-                            </p>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-xs font-mono font-bold text-emerald-400">Bs</span>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              placeholder="130"
+                              value={editForm.baseGarmentPrice ?? ''}
+                              onChange={e => handleEditBaseGarmentPriceChange(e.target.value)}
+                              className="w-16 bg-surface-container rounded-lg px-2 py-1 text-xs font-bold text-emerald-400 text-right outline-none focus:ring-1 focus:ring-emerald-400/50 font-mono neu-pressed border border-emerald-500/30"
+                              title="Precio base Talla L (sugiere el resto proporcionalmente)"
+                            />
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-outline-variant/20 text-[10px]">
+                          <span className="text-on-surface-variant text-[10px]">Perfil de tela:</span>
                           <div className="flex rounded-lg neu-pressed p-0.5 bg-black/20 text-[10px] font-bold">
                             <button
                               type="button"
@@ -5255,26 +5296,47 @@ export default function OrdersPage() {
                               Abrigo
                             </button>
                           </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-xs font-mono font-bold text-emerald-400">Bs</span>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="130"
-                              value={editForm.baseGarmentPrice ?? ''}
-                              onChange={e => handleEditBaseGarmentPriceChange(e.target.value)}
-                              className="w-20 bg-surface-container rounded-xl px-2.5 py-1 text-xs font-bold text-emerald-400 text-right outline-none focus:ring-1 focus:ring-emerald-400/50 font-mono neu-pressed border border-emerald-500/30"
-                              title="Precio base Talla L"
-                            />
-                          </div>
                         </div>
                       </div>
 
-                      {/* Módulos compactos de registro de cantidades por talla */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
-                        {SIZES_LIST.map((size) => {
+                      {/* Selector de Grupo de Tallas: Todas | Niños | Adultos */}
+                      <div className="flex gap-1.5 p-1 bg-surface-container rounded-xl border border-outline-variant/30 text-xs font-semibold">
+                        {[
+                          { id: 'todas', label: 'Todas', count: SIZES_LIST.length, qty: Object.entries(editForm.sizes).reduce((s, [k, v]) => SIZES_LIST.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                          { id: 'infantil', label: 'Niños (2-16)', count: INFANTIL_SIZES.length, qty: Object.entries(editForm.sizes).reduce((s, [k, v]) => INFANTIL_SIZES.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                          { id: 'adulto', label: 'Adultos (S-3XL)', count: ADULTO_SIZES.length, qty: Object.entries(editForm.sizes).reduce((s, [k, v]) => ADULTO_SIZES.includes(k) ? s + (parseInt(v) || 0) : s, 0) },
+                        ].map(tab => {
+                          const isActive = textileSizeFilterEdit === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setTextileSizeFilterEdit(tab.id)}
+                              className={`flex-1 py-1 px-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
+                                isActive
+                                  ? 'bg-primary text-white shadow-xs'
+                                  : 'text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+                              }`}
+                            >
+                              <span>{tab.label}</span>
+                              {tab.qty > 0 && (
+                                <span className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${isActive ? 'bg-black/30 text-white' : 'bg-primary/20 text-primary font-bold'}`}>
+                                  {tab.qty}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Cuadrícula limpia y responsive de 3 columnas (idéntica a Sublimación) */}
+                      <div className="grid grid-cols-3 gap-2">
+                        {(textileSizeFilterEdit === 'infantil'
+                          ? INFANTIL_SIZES
+                          : textileSizeFilterEdit === 'adulto'
+                            ? ADULTO_SIZES
+                            : SIZES_LIST
+                        ).map((size) => {
                           const qty = editForm.sizes[size] || 0
                           const price = editForm.sizePrices[size] || 0
                           const isSizeL = size === 'L'
@@ -5286,17 +5348,17 @@ export default function OrdersPage() {
                               className={`p-2 rounded-xl flex flex-col justify-between items-center text-center space-y-1.5 transition-all ${
                                 hasQty
                                   ? 'bg-primary/10 border border-primary/50 shadow-xs'
-                                  : 'neu-pressed bg-white/[0.02] border border-outline-variant/30'
+                                  : 'neu-pressed bg-white/[0.02] border border-outline-variant/30 hover:border-outline-variant/60'
                               }`}
                             >
                               {/* Cabecera: Talla y Precio editable */}
                               <div className="w-full flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/20">
                                 <div className="flex items-center gap-1">
-                                  <span className={`font-mono font-bold text-xs ${isSizeL ? 'text-emerald-400' : 'text-primary'}`}>
+                                  <span className={`font-mono font-bold text-xs ${isSizeL ? 'text-emerald-400 font-black' : 'text-primary'}`}>
                                     {size}
                                   </span>
                                   {isSizeL && (
-                                    <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase font-mono">
+                                    <span className="text-[7px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase font-mono">
                                       Base
                                     </span>
                                   )}
@@ -5309,7 +5371,7 @@ export default function OrdersPage() {
                                     step="0.5"
                                     value={price}
                                     onChange={e => updateEditSizePrice(size, e.target.value)}
-                                    className="w-12 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
+                                    className="w-11 text-right bg-transparent border-none rounded px-1 py-0.5 text-xs font-mono font-bold text-on-surface outline-none focus:ring-1 focus:ring-primary/50 neu-pressed"
                                     title={`Precio sugerido para talla ${size} (editable)`}
                                   />
                                 </div>
@@ -5380,7 +5442,7 @@ export default function OrdersPage() {
                               </span>
                             </div>
                             <div className="text-right">
-                              <span className="text-on-surface-variant text-[11px] mr-2">Importe Confección:</span>
+                              <span className="text-on-surface-variant text-[11px] mr-2">Importe:</span>
                               <span className="font-mono font-bold text-emerald-400 text-sm">
                                 {formatCurrency(totalGarmentsCost)}
                               </span>
