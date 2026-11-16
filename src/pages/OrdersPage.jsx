@@ -561,6 +561,9 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('todos')
   const [paymentFilter, setPaymentFilter] = useState('todos')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('todos')
+  const [paymentMovementsFilter, setPaymentMovementsFilter] = useState('todos')
+  const [paymentMovementsSearch, setPaymentMovementsSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const [activeTab, setActiveTab] = useState('pedidos') // 'pedidos' | 'semanal' | 'analisis'
@@ -846,10 +849,44 @@ export default function OrdersPage() {
         })
       }
 
-      const enrichedOrders = (ordersData || []).map(o => ({
-        ...o,
-        actual_expenses_sum: expensesMap[o.id] || 0
-      }))
+      // Normalización y migración automática: cambiar pagos registrados como 'yape' o 'plin' a 'qr'
+      const ordersToUpdate = []
+      const enrichedOrders = (ordersData || []).map(o => {
+        let hasYape = false
+        let normalizedHistory = o.payment_history
+        if (Array.isArray(o.payment_history)) {
+          normalizedHistory = o.payment_history.map(p => {
+            const m = (p.method || '').toLowerCase().trim()
+            if (m === 'yape' || m === 'yape_plin' || m === 'plin' || m.includes('yape')) {
+              hasYape = true
+              return { ...p, method: 'qr' }
+            }
+            return p
+          })
+          if (hasYape) {
+            ordersToUpdate.push({ id: o.id, payment_history: normalizedHistory })
+          }
+        }
+
+        return {
+          ...o,
+          payment_history: normalizedHistory,
+          actual_expenses_sum: expensesMap[o.id] || 0
+        }
+      })
+
+      // Actualizar en segundo plano en Supabase los pedidos que tenían registros Yape
+      if (ordersToUpdate.length > 0) {
+        Promise.all(
+          ordersToUpdate.map(item =>
+            supabase.from('orders').update({ payment_history: item.payment_history }).eq('id', item.id)
+          )
+        ).then(() => {
+          console.log(`[Auto-Migración] Se actualizaron ${ordersToUpdate.length} pedidos de Yape a QR en Supabase.`)
+        }).catch(e => {
+          console.error('Error al persistir actualización Yape -> QR en Supabase:', e)
+        })
+      }
 
       setOrders(enrichedOrders);
     } catch (err) {
@@ -957,8 +994,13 @@ export default function OrdersPage() {
         const matchesType = typeFilter === 'todos' || o.order_type === typeFilter
         const matchesPayment = paymentFilter === 'todos' || o.payment_status === paymentFilter
         const matchesStatus = statusFilter === 'todos' || o.status === statusFilter
+        const matchesPaymentMethod = paymentMethodFilter === 'todos' || (o.payment_history || []).some(p => {
+          const m = (p.method || '').toLowerCase().trim()
+          const norm = (m === 'yape' || m === 'yape_plin' || m === 'plin' || m.includes('yape')) ? 'qr' : m
+          return norm === paymentMethodFilter
+        })
 
-        return matchesSearch && matchesType && matchesPayment && matchesStatus
+        return matchesSearch && matchesType && matchesPayment && matchesStatus && matchesPaymentMethod
       })
       .sort((a, b) => {
         const timeA = new Date(a.created_at || 0).getTime()
@@ -966,7 +1008,7 @@ export default function OrdersPage() {
         if (timeA !== timeB) return timeB - timeA
         return (b.order_number || 0) - (a.order_number || 0)
       })
-  }, [orders, search, typeFilter, paymentFilter, statusFilter])
+  }, [orders, search, typeFilter, paymentFilter, statusFilter, paymentMethodFilter])
 
   // Estadísticas del día
   const stats = useMemo(() => {
@@ -1312,6 +1354,69 @@ export default function OrdersPage() {
     { value: 'adelanto', label: 'Adelanto' },
     { value: 'pagado', label: 'Pagado' }
   ]
+
+  // Opciones de método de pago para filtro
+  const paymentMethodOptions = [
+    { value: 'todos', label: 'Cualquier Método' },
+    { value: 'efectivo', label: '💵 Solo Efectivo' },
+    { value: 'qr', label: '📱 Solo QR (inc. Yape)' },
+    { value: 'transferencia', label: '🏛️ Solo Transferencia' },
+    { value: 'tarjeta', label: '💳 Solo Tarjeta' }
+  ]
+
+  // Consolidado global de movimientos de pagos recibidos en pedidos
+  const allPaymentMovements = useMemo(() => {
+    const list = []
+    orders.forEach(order => {
+      if (order.status === 'cancelado') return
+      const history = Array.isArray(order.payment_history) ? order.payment_history : []
+      history.forEach(p => {
+        const rawMethod = (p.method || 'efectivo').toLowerCase().trim()
+        const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
+        list.push({
+          id: p.id || `${order.id}-${p.date}-${p.amount}`,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          clientName: order.terceros?.name || 'Cliente general',
+          clientPhone: order.terceros?.phone || '',
+          date: p.date,
+          amount: parseFloat(p.amount) || 0,
+          method: method,
+          note: p.note || ''
+        })
+      })
+    })
+    return list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+  }, [orders])
+
+  const paymentMethodTotals = useMemo(() => {
+    const totals = {
+      efectivo: { amount: 0, count: 0 },
+      qr: { amount: 0, count: 0 },
+      transferencia: { amount: 0, count: 0 },
+      tarjeta: { amount: 0, count: 0 }
+    }
+    allPaymentMovements.forEach(p => {
+      if (totals[p.method]) {
+        totals[p.method].amount += p.amount
+        totals[p.method].count += 1
+      }
+    })
+    return totals
+  }, [allPaymentMovements])
+
+  const filteredPaymentMovements = useMemo(() => {
+    return allPaymentMovements.filter(m => {
+      const matchesMethod = paymentMovementsFilter === 'todos' || m.method === paymentMovementsFilter
+      const q = paymentMovementsSearch.toLowerCase().trim()
+      const matchesSearch = !q ||
+        m.clientName.toLowerCase().includes(q) ||
+        `#${m.orderNumber}`.includes(q) ||
+        (m.note || '').toLowerCase().includes(q) ||
+        m.method.toLowerCase().includes(q)
+      return matchesMethod && matchesSearch
+    })
+  }, [allPaymentMovements, paymentMovementsFilter, paymentMovementsSearch])
 
   // Opciones de estado de producción
   const statusOptions = [
@@ -3346,6 +3451,13 @@ export default function OrdersPage() {
                     onChange={e => setStatusFilter(e.target.value)}
                   />
                 </div>
+                <div className="w-[120px] sm:w-[155px]">
+                  <Select
+                    options={paymentMethodOptions}
+                    value={paymentMethodFilter}
+                    onChange={e => setPaymentMethodFilter(e.target.value)}
+                  />
+                </div>
 
                 {/* Selector de Vista (Fichas / Tabla) */}
                 <div className="flex bg-surface-container-high/40 p-0.5 rounded-xl border border-outline-variant/30 select-none shrink-0">
@@ -3394,7 +3506,7 @@ export default function OrdersPage() {
                   message={
                     dbError === 'orders_table_missing'
                       ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                      : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
+                      : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos' || paymentMethodFilter !== 'todos'
                       ? 'No se encontraron pedidos con los filtros seleccionados.'
                       : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
                   }
@@ -3645,7 +3757,7 @@ export default function OrdersPage() {
                             message={
                               dbError === 'orders_table_missing'
                                 ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                                : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
+                                : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos' || paymentMethodFilter !== 'todos'
                                 ? 'No se encontraron pedidos con los filtros seleccionados.'
                                 : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
                             }
@@ -4298,6 +4410,191 @@ export default function OrdersPage() {
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección de Movimientos de Pagos Recibidos (Efectivo & QR) */}
+              <div className="pt-6 border-t border-white/5 space-y-4 relative z-10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[22px]">payments</span>
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                        Movimientos de Pagos Recibidos
+                      </h4>
+                      <p className="text-[11px] text-on-surface-variant">
+                        Conciliación y balance de abonos recibidos en Efectivo, QR (incluye históricos migrados de Yape) y bancos.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-on-surface-variant font-mono bg-surface-container-high/40 px-3 py-1.5 rounded-full border border-white/5">
+                      Total Recaudado: <strong className="text-emerald-400 font-bold">{formatCurrency(allPaymentMovements.reduce((sum, p) => sum + p.amount, 0))}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Tarjetas de resumen por método */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Efectivo */}
+                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-amber-400 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
+                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-amber-400">
+                          <span className="material-symbols-outlined text-[15px]">payments</span> Efectivo
+                        </span>
+                        <span className="text-[10px] font-mono bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded font-bold">
+                          {paymentMethodTotals.efectivo.count} pagos
+                        </span>
+                      </div>
+                      <h5 className="text-lg font-bold font-mono text-white mt-1">
+                        {formatCurrency(paymentMethodTotals.efectivo.amount)}
+                      </h5>
+                    </div>
+                  </div>
+
+                  {/* QR */}
+                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-emerald-400 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
+                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-emerald-400">
+                          <span className="material-symbols-outlined text-[15px]">qr_code_scanner</span> QR
+                        </span>
+                        <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 px-1.5 py-0.5 rounded font-bold">
+                          {paymentMethodTotals.qr.count} pagos
+                        </span>
+                      </div>
+                      <h5 className="text-lg font-bold font-mono text-white mt-1">
+                        {formatCurrency(paymentMethodTotals.qr.amount)}
+                      </h5>
+                    </div>
+                    <span className="text-[9px] text-emerald-400 font-mono mt-1 flex items-center gap-0.5">
+                      <span className="material-symbols-outlined text-[12px]">check_circle</span> Incluye Yape migrado
+                    </span>
+                  </div>
+
+                  {/* Transferencia */}
+                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-blue-400 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
+                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-blue-400">
+                          <span className="material-symbols-outlined text-[15px]">account_balance</span> Transf.
+                        </span>
+                        <span className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded font-bold">
+                          {paymentMethodTotals.transferencia.count} pagos
+                        </span>
+                      </div>
+                      <h5 className="text-lg font-bold font-mono text-white mt-1">
+                        {formatCurrency(paymentMethodTotals.transferencia.amount)}
+                      </h5>
+                    </div>
+                  </div>
+
+                  {/* Tarjeta */}
+                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-purple-400 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
+                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-purple-400">
+                          <span className="material-symbols-outlined text-[15px]">credit_card</span> Tarjeta
+                        </span>
+                        <span className="text-[10px] font-mono bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded font-bold">
+                          {paymentMethodTotals.tarjeta.count} pagos
+                        </span>
+                      </div>
+                      <h5 className="text-lg font-bold font-mono text-white mt-1">
+                        {formatCurrency(paymentMethodTotals.tarjeta.amount)}
+                      </h5>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filtro y Tabla de Movimientos de Pagos */}
+                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+                    <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                      {[
+                        { id: 'todos', label: 'Todos' },
+                        { id: 'efectivo', label: '💵 Solo Efectivo' },
+                        { id: 'qr', label: '📱 Solo QR' },
+                        { id: 'transferencia', label: '🏛️ Solo Transferencia' },
+                        { id: 'tarjeta', label: '💳 Solo Tarjeta' }
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setPaymentMovementsFilter(tab.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            paymentMovementsFilter === tab.id
+                              ? 'bg-primary text-black font-extrabold shadow-sm'
+                              : 'bg-surface-container-high/40 text-on-surface-variant hover:text-white'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="w-full sm:w-64">
+                      <input
+                        type="text"
+                        placeholder="Filtrar por cliente, pedido o nota..."
+                        value={paymentMovementsSearch}
+                        onChange={e => setPaymentMovementsSearch(e.target.value)}
+                        className="w-full text-xs px-3 py-1.5 bg-surface-container-low border border-outline-variant/30 rounded-lg text-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tabla cronológica */}
+                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar border border-white/5 rounded-lg">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-surface-container-high/60 text-on-surface-variant sticky top-0 uppercase tracking-wider text-[10px]">
+                        <tr>
+                          <th className="py-2 px-3">Fecha</th>
+                          <th className="py-2 px-3">Pedido</th>
+                          <th className="py-2 px-3">Cliente</th>
+                          <th className="py-2 px-3">Método</th>
+                          <th className="py-2 px-3">Nota</th>
+                          <th className="py-2 px-3 text-right">Monto (Bs)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-on-surface">
+                        {filteredPaymentMovements.length === 0 ? (
+                          <tr>
+                            <td colSpan="6" className="py-6 text-center text-on-surface-variant italic font-sans">
+                              No hay movimientos registrados para este criterio
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredPaymentMovements.map(m => {
+                            const methodColors = {
+                              efectivo: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+                              qr: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+                              transferencia: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+                              tarjeta: 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                            }
+                            return (
+                              <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="py-2.5 px-3 text-on-surface-variant whitespace-nowrap">{formatDate(m.date)}</td>
+                                <td className="py-2.5 px-3 font-bold text-white whitespace-nowrap">#{m.orderNumber?.toString().padStart(4, '0')}</td>
+                                <td className="py-2.5 px-3 text-white font-sans truncate max-w-[150px]">{m.clientName}</td>
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${methodColors[m.method] || 'bg-white/5 text-on-surface'}`}>
+                                    {m.method === 'efectivo' && <span className="material-symbols-outlined text-[12px]">payments</span>}
+                                    {m.method === 'qr' && <span className="material-symbols-outlined text-[12px]">qr_code_scanner</span>}
+                                    {m.method === 'transferencia' && <span className="material-symbols-outlined text-[12px]">account_balance</span>}
+                                    {m.method === 'tarjeta' && <span className="material-symbols-outlined text-[12px]">credit_card</span>}
+                                    {m.method}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-on-surface-variant font-sans truncate max-w-[180px]">{m.note || '—'}</td>
+                                <td className="py-2.5 px-3 text-right font-bold text-emerald-400 whitespace-nowrap">{formatCurrency(m.amount)}</td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
