@@ -740,8 +740,6 @@ export default function ExpensesAndBudgetsPage() {
     amount: '',
     advanceAmount: '',
     paymentMethod: 'efectivo',
-    orderId: '',
-    materialId: '',
     responsible: ''
   })
   const [error, setError] = useState(null)
@@ -773,17 +771,12 @@ export default function ExpensesAndBudgetsPage() {
     setForm(prev => {
       const next = { ...prev, [field]: value }
 
-      // Auto-calcular total si cambian cantidad, precio unitario o por mayor
-      if (field === 'quantity' || field === 'unitPrice' || field === 'wholesaleQuantity') {
+      // Auto-calcular total si cambian cantidad o precio unitario
+      if (field === 'quantity' || field === 'unitPrice') {
         const q = Number(next.quantity) || 0
         const p = Number(next.unitPrice) || 0
-        const w = Number(next.wholesaleQuantity) || 0
         if (q > 0 && p > 0) {
-          if (w > 0) {
-            next.amount = (w * q * p).toFixed(2)
-          } else {
-            next.amount = (q * p).toFixed(2)
-          }
+          next.amount = (q * p).toFixed(2)
         }
       }
       return next
@@ -815,8 +808,7 @@ export default function ExpensesAndBudgetsPage() {
       amount: payAmount,
       advanceAmount: payAmount,
       paymentMethod: 'transferencia',
-      orderId: '',
-      materialId: ''
+      responsible: ''
     })
     setCurrentStep(3)
     if (window.innerWidth < 1024) {
@@ -922,10 +914,7 @@ export default function ExpensesAndBudgetsPage() {
         }
       }
 
-      const isAssignableCat = ['PRODUCCION', 'INSUMOS'].includes(form.categoryKey)
-      const linkedOrderId = isAssignableCat ? (form.orderId || null) : null
-      const linkedMaterialId = isAssignableCat ? (form.materialId || null) : null
-      const finalQuantity = Number(form.wholesaleQuantity) > 0 ? Number(form.wholesaleQuantity) * Number(form.quantity) : Number(form.quantity)
+      const finalQuantity = Number(form.quantity) || 1
       const unitPriceNum = Number(form.unitPrice) || 0
       const totalAmountNum = Number(form.amount) || (finalQuantity * unitPriceNum)
 
@@ -954,9 +943,7 @@ export default function ExpensesAndBudgetsPage() {
           amount: Number(form.advanceAmount),
           method: form.paymentMethod,
           note: 'Abono inicial'
-        }] : [],
-        order_id: linkedOrderId,
-        material_id: linkedMaterialId
+        }] : []
       }
 
       try {
@@ -968,42 +955,6 @@ export default function ExpensesAndBudgetsPage() {
           await createExpense(safePayload)
         } else {
           throw errSave
-        }
-      }
-
-      // Si es PRODUCCIÓN o INSUMOS y está vinculado a un material del catálogo, reflejar en Inventario y Almacén
-      if (isAssignableCat && linkedMaterialId) {
-        try {
-          // 1. Insertar en inventory_movements (tipo: compra)
-          await supabase.from('inventory_movements').insert({
-            user_id: user.id,
-            material_id: linkedMaterialId,
-            movement_type: 'compra',
-            quantity: finalQuantity,
-            unit_cost: unitPriceNum,
-            total_cost: totalAmountNum,
-            reference: linkedOrderId ? 'Compra imputada a contrato/pedido' : 'Compra desde Hoja de Gastos',
-            supplier_name: trimmedProvider || null,
-            notes: form.description?.trim() || `Compra registrada desde Hoja de Gastos (${form.categoryKey})`,
-            date: form.date
-          })
-
-          // 2. Incrementar stock físico en materials
-          const selectedMat = materials.find(m => m.id === linkedMaterialId)
-          if (selectedMat) {
-            const currentStock = Number(selectedMat.current_stock) || 0
-            const newStock = currentStock + finalQuantity
-            const matUpdate = { current_stock: newStock }
-            if (unitPriceNum > 0) {
-              matUpdate.unit_price = unitPriceNum
-              matUpdate.price_updated_at = form.date
-            }
-            await supabase.from('materials').update(matUpdate).eq('id', linkedMaterialId)
-          }
-
-          queryClient.invalidateQueries({ queryKey: ['materials'] })
-        } catch (e) {
-          console.error('Error sincronizando inventario desde gasto:', e)
         }
       }
 
@@ -1023,8 +974,6 @@ export default function ExpensesAndBudgetsPage() {
         amount: '',
         advanceAmount: '',
         paymentMethod: 'efectivo',
-        orderId: '',
-        materialId: '',
         responsible: ''
       })
       setTerceroType('proveedor')
@@ -2231,77 +2180,37 @@ export default function ExpensesAndBudgetsPage() {
                 onChange={(e) => updateForm('date', e.target.value)}
               />
 
-              {(() => {
-                const currentMaterial = materials.find(m => m.id === form.materialId);
-                const packQty = currentMaterial?.purchase_quantity || 1;
-                const packUnit = currentMaterial?.purchase_unit || 'Caja/Rollo';
-                const showWholesale = !!form.materialId;
-
-                return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                    {showWholesale && (
-                      <div className="w-full">
-                        <label className="block text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1 whitespace-nowrap">
-                          <span className="material-symbols-outlined text-[14px]">inventory_2</span> Por Mayor
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={form.wholesaleQuantity || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            updateForm('wholesaleQuantity', val);
-                            if (val && Number(val) > 0) {
-                              updateForm('quantity', packQty);
-                            }
-                          }}
-                          className={`w-full px-3 py-2.5 min-w-0 ${Number(form.wholesaleQuantity) > 0 ? 'bg-primary/20 text-primary font-bold shadow-[0_0_12px_rgba(255,92,0,0.2)]' : 'neu-pressed bg-transparent text-on-surface'} border-none rounded-xl font-mono text-sm text-center focus:ring-1 focus:ring-primary/50 outline-none transition-colors h-[42px]`}
-                        />
-                        {Number(form.wholesaleQuantity) > 0 && (
-                          <span className="text-[9px] text-primary text-center block mt-1 absolute whitespace-nowrap">
-                            {packQty} uds / {packUnit}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className="w-full">
-                      <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5 ml-1 whitespace-nowrap truncate">
-                        Cant. (Menor)
-                      </label>
-                      <div className="flex gap-1.5 items-center h-[42px]">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={form.quantity || ''}
-                          onChange={(e) => {
-                            updateForm('quantity', e.target.value);
-                            updateForm('wholesaleQuantity', ''); // Limpiar 'por mayor' si editan manualmente
-                          }}
-                          className="w-full h-full min-w-0 px-3 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="w-full">
-                      <Input
-                        label="P. Unit. (Bs)"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={form.unitPrice}
-                        onChange={(e) => updateForm('unitPrice', e.target.value)}
-                        className="font-mono text-lg text-white [&>input]:h-[42px]"
-                      />
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                <div className="w-full">
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5 ml-1 whitespace-nowrap truncate">
+                    Cantidad
+                  </label>
+                  <div className="flex gap-1.5 items-center h-[42px]">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="1"
+                      value={form.quantity || ''}
+                      onChange={(e) => updateForm('quantity', e.target.value)}
+                      className="w-full h-full min-w-0 px-3 neu-pressed bg-transparent border-none rounded-xl font-mono text-sm text-on-surface text-center focus:ring-1 focus:ring-primary/50 outline-none"
+                    />
                   </div>
-                );
-              })()}
+                </div>
+
+                <div className="w-full">
+                  <Input
+                    label="P. Unit. (Bs)"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.unitPrice}
+                    onChange={(e) => updateForm('unitPrice', e.target.value)}
+                    className="font-mono text-lg text-white [&>input]:h-[42px]"
+                  />
+                </div>
+              </div>
 
               <div className="neu-pressed p-4 rounded-xl space-y-4 mt-2">
                 <Input
@@ -2409,54 +2318,6 @@ export default function ExpensesAndBudgetsPage() {
                   placeholder="¿Quién realizó esta compra?..."
                 />
               </div>
-
-              {['PRODUCCION', 'INSUMOS'].includes(form.categoryKey) ? (
-                <div className="space-y-3 pt-2 border-t border-outline-variant/30">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
-                    <span className="material-symbols-outlined text-[16px]">assignment_turned_in</span>
-                    <span>Asignación a Contrato / Almacén (Producción & Insumos)</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Select
-                      label="Asignar a Contrato o Pedido (Opcional)"
-                      options={[
-                        ...contracts.map(c => ({
-                          value: c.order_id || c.id,
-                          label: `📦 CONTRATO: ${c.contract_name} (${c.client_name || 'Sin cliente'})`
-                        })),
-                        ...orders.filter(o => o.status !== 'cancelado' && o.status !== 'entregado').map(o => ({
-                          value: o.id,
-                          label: `🛍️ PEDIDO #${o.order_number?.toString().padStart(4, '0')} - ${o.order_items?.[0]?.name || 'Producción'}`
-                        }))
-                      ]}
-                      value={form.orderId}
-                      onChange={(e) => updateForm('orderId', e.target.value)}
-                      placeholder="Ninguno (Ingreso general a Almacén)..."
-                    />
-                    <Select
-                      label="Vincular a Catálogo de Materiales (Almacén)"
-                      options={materials.map(m => ({
-                        value: m.id,
-                        label: `${m.name} (${m.category})`
-                      }))}
-                      value={form.materialId}
-                      onChange={(e) => updateForm('materialId', e.target.value)}
-                      placeholder="Ninguno (No es materia prima/insumo)..."
-                    />
-                  </div>
-                  {form.materialId && (
-                    <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
-                      <span className="material-symbols-outlined text-[16px]">inventory_2</span>
-                      <span>Al registrarse, este gasto sumará automáticamente el stock físico en la <strong>Hoja de Materiales</strong>.</span>
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-surface-container/50 border border-white/5 text-[11px] text-on-surface-variant flex items-center gap-2 mt-2">
-                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant/70 shrink-0">lock</span>
-                  <span>Los gastos generales y de caja chica no son imputables a contratos ni mueven inventario de producción.</span>
-                </div>
-              )}
             </div>
           )}
         </div>
