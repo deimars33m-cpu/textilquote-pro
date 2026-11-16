@@ -561,9 +561,6 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('todos')
   const [paymentFilter, setPaymentFilter] = useState('todos')
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('todos')
-  const [paymentMovementsFilter, setPaymentMovementsFilter] = useState('todos')
-  const [paymentMovementsSearch, setPaymentMovementsSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const [activeTab, setActiveTab] = useState('pedidos') // 'pedidos' | 'semanal' | 'analisis'
@@ -994,13 +991,8 @@ export default function OrdersPage() {
         const matchesType = typeFilter === 'todos' || o.order_type === typeFilter
         const matchesPayment = paymentFilter === 'todos' || o.payment_status === paymentFilter
         const matchesStatus = statusFilter === 'todos' || o.status === statusFilter
-        const matchesPaymentMethod = paymentMethodFilter === 'todos' || (o.payment_history || []).some(p => {
-          const m = (p.method || '').toLowerCase().trim()
-          const norm = (m === 'yape' || m === 'yape_plin' || m === 'plin' || m.includes('yape')) ? 'qr' : m
-          return norm === paymentMethodFilter
-        })
 
-        return matchesSearch && matchesType && matchesPayment && matchesStatus && matchesPaymentMethod
+        return matchesSearch && matchesType && matchesPayment && matchesStatus
       })
       .sort((a, b) => {
         const timeA = new Date(a.created_at || 0).getTime()
@@ -1008,7 +1000,7 @@ export default function OrdersPage() {
         if (timeA !== timeB) return timeB - timeA
         return (b.order_number || 0) - (a.order_number || 0)
       })
-  }, [orders, search, typeFilter, paymentFilter, statusFilter, paymentMethodFilter])
+  }, [orders, search, typeFilter, paymentFilter, statusFilter])
 
   // Estadísticas del día
   const stats = useMemo(() => {
@@ -1355,16 +1347,7 @@ export default function OrdersPage() {
     { value: 'pagado', label: 'Pagado' }
   ]
 
-  // Opciones de método de pago para filtro
-  const paymentMethodOptions = [
-    { value: 'todos', label: 'Cualquier Método' },
-    { value: 'efectivo', label: '💵 Solo Efectivo' },
-    { value: 'qr', label: '📱 Solo QR (inc. Yape)' },
-    { value: 'transferencia', label: '🏛️ Solo Transferencia' },
-    { value: 'tarjeta', label: '💳 Solo Tarjeta' }
-  ]
-
-  // Consolidado global de movimientos de pagos recibidos en pedidos
+  // Consolidado global de movimientos de cobros recibidos en pedidos
   const allPaymentMovements = useMemo(() => {
     const list = []
     orders.forEach(order => {
@@ -1389,34 +1372,120 @@ export default function OrdersPage() {
     return list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
   }, [orders])
 
-  const paymentMethodTotals = useMemo(() => {
-    const totals = {
-      efectivo: { amount: 0, count: 0 },
-      qr: { amount: 0, count: 0 },
-      transferencia: { amount: 0, count: 0 },
-      tarjeta: { amount: 0, count: 0 }
+  // --- CONTROL Y ARQUEO DE CAJA MENSUAL ---
+  const getCurrentMonthStr = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  const getLastDayOfMonth = (monthStr) => {
+    if (!monthStr) return ''
+    const [year, month] = monthStr.split('-').map(Number)
+    const lastDay = new Date(year, month, 0).getDate()
+    return `${lastDay}/${String(month).padStart(2, '0')}/${year}`
+  }
+
+  const [selectedAuditMonth, setSelectedAuditMonth] = useState(getCurrentMonthStr())
+  const [auditForm, setAuditForm] = useState({
+    realEfectivo: '',
+    realQR: '',
+    realTransferencia: '',
+    realTarjeta: '',
+    notes: ''
+  })
+  const [auditSuccessMsg, setAuditSuccessMsg] = useState(null)
+
+  const [savedAudits, setSavedAudits] = useState(() => {
+    try {
+      const stored = localStorage.getItem('textilquote_cash_audits')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
     }
+  })
+
+  // Movimientos e ingresos teóricos del mes seleccionado para el arqueo
+  const monthlySystemTotals = useMemo(() => {
+    const t = { efectivo: 0, qr: 0, transferencia: 0, tarjeta: 0, count: 0, total: 0 }
     allPaymentMovements.forEach(p => {
-      if (totals[p.method]) {
-        totals[p.method].amount += p.amount
-        totals[p.method].count += 1
+      if (!p.date) return
+      const pMonth = p.date.slice(0, 7)
+      if (pMonth === selectedAuditMonth) {
+        if (t[p.method] !== undefined) {
+          t[p.method] += p.amount
+        }
+        t.total += p.amount
+        t.count += 1
       }
     })
-    return totals
-  }, [allPaymentMovements])
+    return t
+  }, [allPaymentMovements, selectedAuditMonth])
 
-  const filteredPaymentMovements = useMemo(() => {
-    return allPaymentMovements.filter(m => {
-      const matchesMethod = paymentMovementsFilter === 'todos' || m.method === paymentMovementsFilter
-      const q = paymentMovementsSearch.toLowerCase().trim()
-      const matchesSearch = !q ||
-        m.clientName.toLowerCase().includes(q) ||
-        `#${m.orderNumber}`.includes(q) ||
-        (m.note || '').toLowerCase().includes(q) ||
-        m.method.toLowerCase().includes(q)
-      return matchesMethod && matchesSearch
-    })
-  }, [allPaymentMovements, paymentMovementsFilter, paymentMovementsSearch])
+  // Precargar arqueo guardado si ya existe para el mes seleccionado
+  useEffect(() => {
+    const existing = savedAudits.find(a => a.month === selectedAuditMonth)
+    if (existing && existing.realTotals) {
+      setAuditForm({
+        realEfectivo: existing.realTotals.efectivo !== undefined ? existing.realTotals.efectivo.toString() : '',
+        realQR: existing.realTotals.qr !== undefined ? existing.realTotals.qr.toString() : '',
+        realTransferencia: existing.realTotals.transferencia !== undefined ? existing.realTotals.transferencia.toString() : '',
+        realTarjeta: existing.realTotals.tarjeta !== undefined ? existing.realTotals.tarjeta.toString() : '',
+        notes: existing.notes || ''
+      })
+    } else {
+      setAuditForm({
+        realEfectivo: '',
+        realQR: '',
+        realTransferencia: '',
+        realTarjeta: '',
+        notes: ''
+      })
+    }
+  }, [selectedAuditMonth, savedAudits])
+
+  const handleSaveAudit = () => {
+    const realEf = auditForm.realEfectivo !== '' ? parseFloat(auditForm.realEfectivo) || 0 : (monthlySystemTotals.efectivo || 0)
+    const realQr = auditForm.realQR !== '' ? parseFloat(auditForm.realQR) || 0 : (monthlySystemTotals.qr || 0)
+    const realTr = auditForm.realTransferencia !== '' ? parseFloat(auditForm.realTransferencia) || 0 : (monthlySystemTotals.transferencia || 0)
+    const realTj = auditForm.realTarjeta !== '' ? parseFloat(auditForm.realTarjeta) || 0 : (monthlySystemTotals.tarjeta || 0)
+    const totalReal = realEf + realQr + realTr + realTj
+    const totalSystem = monthlySystemTotals.total
+    const diffTotal = totalReal - totalSystem
+
+    const auditRecord = {
+      id: crypto.randomUUID(),
+      month: selectedAuditMonth,
+      date: new Date().toISOString(),
+      lastDayStr: getLastDayOfMonth(selectedAuditMonth),
+      systemTotals: { ...monthlySystemTotals },
+      realTotals: {
+        efectivo: realEf,
+        qr: realQr,
+        transferencia: realTr,
+        tarjeta: realTj,
+        total: totalReal
+      },
+      differences: {
+        efectivo: realEf - (monthlySystemTotals.efectivo || 0),
+        qr: realQr - (monthlySystemTotals.qr || 0),
+        transferencia: realTr - (monthlySystemTotals.transferencia || 0),
+        tarjeta: realTj - (monthlySystemTotals.tarjeta || 0),
+        total: diffTotal
+      },
+      status: Math.abs(diffTotal) < 0.01 ? 'cuadrado' : diffTotal > 0 ? 'sobrante' : 'faltante',
+      notes: auditForm.notes.trim()
+    }
+
+    const updated = [auditRecord, ...savedAudits.filter(a => a.month !== selectedAuditMonth)]
+    setSavedAudits(updated)
+    try {
+      localStorage.setItem('textilquote_cash_audits', JSON.stringify(updated))
+    } catch (e) {
+      console.error('Error guardando arqueo:', e)
+    }
+    setAuditSuccessMsg(`Arqueo de caja del mes guardado exitosamente.`)
+    setTimeout(() => setAuditSuccessMsg(null), 4000)
+  }
 
   // Opciones de estado de producción
   const statusOptions = [
@@ -3451,13 +3520,6 @@ export default function OrdersPage() {
                     onChange={e => setStatusFilter(e.target.value)}
                   />
                 </div>
-                <div className="w-[120px] sm:w-[155px]">
-                  <Select
-                    options={paymentMethodOptions}
-                    value={paymentMethodFilter}
-                    onChange={e => setPaymentMethodFilter(e.target.value)}
-                  />
-                </div>
 
                 {/* Selector de Vista (Fichas / Tabla) */}
                 <div className="flex bg-surface-container-high/40 p-0.5 rounded-xl border border-outline-variant/30 select-none shrink-0">
@@ -3506,7 +3568,7 @@ export default function OrdersPage() {
                   message={
                     dbError === 'orders_table_missing'
                       ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                      : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos' || paymentMethodFilter !== 'todos'
+                      : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
                       ? 'No se encontraron pedidos con los filtros seleccionados.'
                       : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
                   }
@@ -3757,7 +3819,7 @@ export default function OrdersPage() {
                             message={
                               dbError === 'orders_table_missing'
                                 ? 'Debes crear las tablas en Supabase antes de poder registrar e ingresar pedidos.'
-                                : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos' || paymentMethodFilter !== 'todos'
+                                : search || typeFilter !== 'todos' || paymentFilter !== 'todos' || statusFilter !== 'todos'
                                 ? 'No se encontraron pedidos con los filtros seleccionados.'
                                 : 'Registra tu primer pedido de mostrador o servicio rápido en el panel lateral.'
                             }
@@ -4414,189 +4476,318 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Sección de Movimientos de Pagos Recibidos (Efectivo & QR) */}
-              <div className="pt-6 border-t border-white/5 space-y-4 relative z-10">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-[22px]">payments</span>
+              {/* Sección: Resumen de Movimientos y Arqueo de Caja Mensual */}
+              <div className="pt-6 border-t border-white/5 space-y-5 relative z-10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                      <span className="material-symbols-outlined text-[22px]">account_balance_wallet</span>
+                    </div>
                     <div>
-                      <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-                        Movimientos de Pagos Recibidos
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        Resumen y Arqueo de Caja Mensual
+                        {savedAudits.some(a => a.month === selectedAuditMonth) && (
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                            ✓ Arqueo Cerrado
+                          </span>
+                        )}
                       </h4>
                       <p className="text-[11px] text-on-surface-variant">
-                        Conciliación y balance de abonos recibidos en Efectivo, QR (incluye históricos migrados de Yape) y bancos.
+                        Conciliación al día 30/31 (o 28 de febrero) de saldos reales de efectivo, QR, traspasos y tarjeta.
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-on-surface-variant font-mono bg-surface-container-high/40 px-3 py-1.5 rounded-full border border-white/5">
-                      Total Recaudado: <strong className="text-emerald-400 font-bold">{formatCurrency(allPaymentMovements.reduce((sum, p) => sum + p.amount, 0))}</strong>
-                    </span>
-                  </div>
-                </div>
 
-                {/* 4 Tarjetas de resumen por método */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  {/* Efectivo */}
-                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-amber-400 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
-                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-amber-400">
-                          <span className="material-symbols-outlined text-[15px]">payments</span> Efectivo
-                        </span>
-                        <span className="text-[10px] font-mono bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded font-bold">
-                          {paymentMethodTotals.efectivo.count} pagos
-                        </span>
-                      </div>
-                      <h5 className="text-lg font-bold font-mono text-white mt-1">
-                        {formatCurrency(paymentMethodTotals.efectivo.amount)}
-                      </h5>
-                    </div>
-                  </div>
-
-                  {/* QR */}
-                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-emerald-400 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
-                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-emerald-400">
-                          <span className="material-symbols-outlined text-[15px]">qr_code_scanner</span> QR
-                        </span>
-                        <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 px-1.5 py-0.5 rounded font-bold">
-                          {paymentMethodTotals.qr.count} pagos
-                        </span>
-                      </div>
-                      <h5 className="text-lg font-bold font-mono text-white mt-1">
-                        {formatCurrency(paymentMethodTotals.qr.amount)}
-                      </h5>
-                    </div>
-                    <span className="text-[9px] text-emerald-400 font-mono mt-1 flex items-center gap-0.5">
-                      <span className="material-symbols-outlined text-[12px]">check_circle</span> Incluye Yape migrado
-                    </span>
-                  </div>
-
-                  {/* Transferencia */}
-                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-blue-400 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
-                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-blue-400">
-                          <span className="material-symbols-outlined text-[15px]">account_balance</span> Transf.
-                        </span>
-                        <span className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded font-bold">
-                          {paymentMethodTotals.transferencia.count} pagos
-                        </span>
-                      </div>
-                      <h5 className="text-lg font-bold font-mono text-white mt-1">
-                        {formatCurrency(paymentMethodTotals.transferencia.amount)}
-                      </h5>
-                    </div>
-                  </div>
-
-                  {/* Tarjeta */}
-                  <div className="neu-pressed p-3.5 rounded-xl border-l-2 border-purple-400 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between text-on-surface-variant mb-1">
-                        <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold text-purple-400">
-                          <span className="material-symbols-outlined text-[15px]">credit_card</span> Tarjeta
-                        </span>
-                        <span className="text-[10px] font-mono bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded font-bold">
-                          {paymentMethodTotals.tarjeta.count} pagos
-                        </span>
-                      </div>
-                      <h5 className="text-lg font-bold font-mono text-white mt-1">
-                        {formatCurrency(paymentMethodTotals.tarjeta.amount)}
-                      </h5>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Filtro y Tabla de Movimientos de Pagos */}
-                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
-                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
-                    <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-                      {[
-                        { id: 'todos', label: 'Todos' },
-                        { id: 'efectivo', label: '💵 Solo Efectivo' },
-                        { id: 'qr', label: '📱 Solo QR' },
-                        { id: 'transferencia', label: '🏛️ Solo Transferencia' },
-                        { id: 'tarjeta', label: '💳 Solo Tarjeta' }
-                      ].map(tab => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setPaymentMovementsFilter(tab.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                            paymentMovementsFilter === tab.id
-                              ? 'bg-primary text-black font-extrabold shadow-sm'
-                              : 'bg-surface-container-high/40 text-on-surface-variant hover:text-white'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="w-full sm:w-64">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-1.5 bg-surface-container-high/40 px-3 py-1.5 rounded-xl border border-white/5">
+                      <span className="text-[11px] text-on-surface-variant font-mono uppercase tracking-wider">Mes:</span>
                       <input
-                        type="text"
-                        placeholder="Filtrar por cliente, pedido o nota..."
-                        value={paymentMovementsSearch}
-                        onChange={e => setPaymentMovementsSearch(e.target.value)}
-                        className="w-full text-xs px-3 py-1.5 bg-surface-container-low border border-outline-variant/30 rounded-lg text-white focus:outline-none focus:border-primary"
+                        type="month"
+                        value={selectedAuditMonth}
+                        onChange={e => setSelectedAuditMonth(e.target.value)}
+                        className="bg-transparent text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
                       />
                     </div>
-                  </div>
-
-                  {/* Tabla cronológica */}
-                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar border border-white/5 rounded-lg">
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead className="bg-surface-container-high/60 text-on-surface-variant sticky top-0 uppercase tracking-wider text-[10px]">
-                        <tr>
-                          <th className="py-2 px-3">Fecha</th>
-                          <th className="py-2 px-3">Pedido</th>
-                          <th className="py-2 px-3">Cliente</th>
-                          <th className="py-2 px-3">Método</th>
-                          <th className="py-2 px-3">Nota</th>
-                          <th className="py-2 px-3 text-right">Monto (Bs)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5 text-on-surface">
-                        {filteredPaymentMovements.length === 0 ? (
-                          <tr>
-                            <td colSpan="6" className="py-6 text-center text-on-surface-variant italic font-sans">
-                              No hay movimientos registrados para este criterio
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredPaymentMovements.map(m => {
-                            const methodColors = {
-                              efectivo: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-                              qr: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-                              transferencia: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
-                              tarjeta: 'bg-purple-500/10 text-purple-300 border-purple-500/30'
-                            }
-                            return (
-                              <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
-                                <td className="py-2.5 px-3 text-on-surface-variant whitespace-nowrap">{formatDate(m.date)}</td>
-                                <td className="py-2.5 px-3 font-bold text-white whitespace-nowrap">#{m.orderNumber?.toString().padStart(4, '0')}</td>
-                                <td className="py-2.5 px-3 text-white font-sans truncate max-w-[150px]">{m.clientName}</td>
-                                <td className="py-2.5 px-3 whitespace-nowrap">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${methodColors[m.method] || 'bg-white/5 text-on-surface'}`}>
-                                    {m.method === 'efectivo' && <span className="material-symbols-outlined text-[12px]">payments</span>}
-                                    {m.method === 'qr' && <span className="material-symbols-outlined text-[12px]">qr_code_scanner</span>}
-                                    {m.method === 'transferencia' && <span className="material-symbols-outlined text-[12px]">account_balance</span>}
-                                    {m.method === 'tarjeta' && <span className="material-symbols-outlined text-[12px]">credit_card</span>}
-                                    {m.method}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-on-surface-variant font-sans truncate max-w-[180px]">{m.note || '—'}</td>
-                                <td className="py-2.5 px-3 text-right font-bold text-emerald-400 whitespace-nowrap">{formatCurrency(m.amount)}</td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                    <span className="text-[11px] text-primary font-mono bg-primary/10 border border-primary/20 px-2.5 py-1.5 rounded-xl whitespace-nowrap">
+                      Cierre: <strong>{getLastDayOfMonth(selectedAuditMonth)}</strong>
+                    </span>
                   </div>
                 </div>
+
+                {auditSuccessMsg && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs rounded-xl flex items-center gap-2 animate-fade-in font-medium">
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    {auditSuccessMsg}
+                  </div>
+                )}
+
+                {/* 4 Tarjetas de Conciliación y Arqueo por Método */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  {[
+                    {
+                      id: 'efectivo',
+                      label: 'Efectivo',
+                      icon: 'payments',
+                      color: 'border-amber-400 text-amber-400',
+                      bgBadge: 'bg-amber-500/10 text-amber-300',
+                      systemVal: monthlySystemTotals.efectivo,
+                      realVal: auditForm.realEfectivo,
+                      key: 'realEfectivo',
+                      placeholder: 'Conteo físico de billetes...'
+                    },
+                    {
+                      id: 'qr',
+                      label: 'QR (inc. Yape)',
+                      icon: 'qr_code_scanner',
+                      color: 'border-emerald-400 text-emerald-400',
+                      bgBadge: 'bg-emerald-500/10 text-emerald-300',
+                      systemVal: monthlySystemTotals.qr,
+                      realVal: auditForm.realQR,
+                      key: 'realQR',
+                      placeholder: 'Saldo en billetera/banco...'
+                    },
+                    {
+                      id: 'transferencia',
+                      label: 'Traspasos / Bancos',
+                      icon: 'account_balance',
+                      color: 'border-blue-400 text-blue-400',
+                      bgBadge: 'bg-blue-500/10 text-blue-300',
+                      systemVal: monthlySystemTotals.transferencia,
+                      realVal: auditForm.realTransferencia,
+                      key: 'realTransferencia',
+                      placeholder: 'Extracto bancario...'
+                    },
+                    {
+                      id: 'tarjeta',
+                      label: 'Tarjeta / POS',
+                      icon: 'credit_card',
+                      color: 'border-purple-400 text-purple-400',
+                      bgBadge: 'bg-purple-500/10 text-purple-300',
+                      systemVal: monthlySystemTotals.tarjeta,
+                      realVal: auditForm.realTarjeta,
+                      key: 'realTarjeta',
+                      placeholder: 'Cierre de terminal POS...'
+                    }
+                  ].map(m => {
+                    const hasInput = m.realVal !== ''
+                    const realNum = parseFloat(m.realVal) || 0
+                    const diff = realNum - m.systemVal
+                    const isExact = Math.abs(diff) < 0.01
+
+                    return (
+                      <div key={m.id} className={`neu-pressed p-4 rounded-xl border-l-2 ${m.color} flex flex-col justify-between space-y-3`}>
+                        <div>
+                          <div className="flex items-center justify-between text-on-surface-variant mb-1">
+                            <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold">
+                              <span className="material-symbols-outlined text-[15px]">{m.icon}</span> {m.label}
+                            </span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${m.bgBadge}`}>
+                              Sistema: {formatCurrency(m.systemVal)}
+                            </span>
+                          </div>
+
+                          <div className="mt-2.5 space-y-1">
+                            <label className="text-[9px] font-mono uppercase text-on-surface-variant tracking-wider block">
+                              Saldo Real Declarado (Bs)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder={m.placeholder}
+                              value={m.realVal}
+                              onChange={e => setAuditForm(prev => ({ ...prev, [m.key]: e.target.value }))}
+                              className="w-full text-xs font-mono font-bold px-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-white focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/5">
+                          {!hasInput ? (
+                            <span className="text-[10px] font-mono text-on-surface-variant italic">
+                              Pendiente de conteo
+                            </span>
+                          ) : isExact ? (
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[14px]">check_circle</span> Cuadrado (0.00 Bs)
+                            </span>
+                          ) : diff > 0 ? (
+                            <span className="text-[10px] font-mono text-cyan-400 font-bold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[14px]">trending_up</span> Sobrante: +{diff.toFixed(2)} Bs
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-red-400 font-bold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[14px]">warning</span> Faltante: {diff.toFixed(2)} Bs
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Panel de Resumen Global y Estado de Cierre */}
+                {(() => {
+                  const realEf = auditForm.realEfectivo !== '' ? parseFloat(auditForm.realEfectivo) || 0 : 0
+                  const realQr = auditForm.realQR !== '' ? parseFloat(auditForm.realQR) || 0 : 0
+                  const realTr = auditForm.realTransferencia !== '' ? parseFloat(auditForm.realTransferencia) || 0 : 0
+                  const realTj = auditForm.realTarjeta !== '' ? parseFloat(auditForm.realTarjeta) || 0 : 0
+                  const totalRealDeclared = realEf + realQr + realTr + realTj
+                  const totalSystem = monthlySystemTotals.total
+                  const diffTotal = totalRealDeclared - totalSystem
+                  const hasAnyInput = auditForm.realEfectivo !== '' || auditForm.realQR !== '' || auditForm.realTransferencia !== '' || auditForm.realTarjeta !== ''
+                  const isExact = Math.abs(diffTotal) < 0.01
+
+                  return (
+                    <div className="bg-white/[0.02] p-5 rounded-xl border border-white/5 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                        {/* Total Teórico Sistema */}
+                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-white/5">
+                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
+                            Total Registrado en Sistema
+                          </p>
+                          <h4 className="text-xl font-bold font-mono text-white mt-1">
+                            {formatCurrency(totalSystem)}
+                          </h4>
+                          <span className="text-[10px] font-mono text-on-surface-variant">
+                            {monthlySystemTotals.count} cobros en {selectedAuditMonth}
+                          </span>
+                        </div>
+
+                        {/* Total Físico / Real Declarado */}
+                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-white/5">
+                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
+                            Total Real Declarado
+                          </p>
+                          <h4 className="text-xl font-bold font-mono text-primary mt-1">
+                            {formatCurrency(totalRealDeclared)}
+                          </h4>
+                          <span className="text-[10px] font-mono text-on-surface-variant">
+                            Suma de efectivo + QR + bancos + POS
+                          </span>
+                        </div>
+
+                        {/* Estado y Diferencia Global */}
+                        <div className={`p-3.5 rounded-xl border flex flex-col justify-center ${
+                          !hasAnyInput
+                            ? 'bg-surface-container-low/30 border-white/5 text-on-surface-variant'
+                            : isExact
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                            : diffTotal > 0
+                            ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
+                            : 'bg-red-500/10 border-red-500/30 text-red-400'
+                        }`}>
+                          <p className="text-[10px] font-mono uppercase tracking-wider">
+                            Estado del Arqueo
+                          </p>
+                          <h4 className="text-lg font-bold font-mono mt-0.5 flex items-center gap-1.5">
+                            {!hasAnyInput ? (
+                              <span>Sin declarar</span>
+                            ) : isExact ? (
+                              <>
+                                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                                Caja Cuadrada
+                              </>
+                            ) : diffTotal > 0 ? (
+                              <>
+                                <span className="material-symbols-outlined text-[20px]">trending_up</span>
+                                Sobrante: +{diffTotal.toFixed(2)} Bs
+                              </>
+                            ) : (
+                              <>
+                                <span className="material-symbols-outlined text-[20px]">warning</span>
+                                Faltante: {diffTotal.toFixed(2)} Bs
+                              </>
+                            )}
+                          </h4>
+                          <span className="text-[10px] font-mono opacity-80">
+                            {!hasAnyInput ? 'Ingresa los saldos para conciliar' : isExact ? 'Sin diferencias de dinero' : 'Verifica comprobantes o gastos menores'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Observaciones y Botón Guardar */}
+                      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pt-2">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            placeholder="Observaciones de cierre (ej: Fondo fijo de caja chico, comprobante pendiente, etc.)..."
+                            value={auditForm.notes}
+                            onChange={e => setAuditForm(prev => ({ ...prev, notes: e.target.value }))}
+                            className="w-full text-xs px-3.5 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-xl text-white focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSaveAudit}
+                          className="px-5 py-2.5 bg-primary text-black font-extrabold rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-1.5 text-xs shadow-md cursor-pointer whitespace-nowrap"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">save</span>
+                          Guardar Arqueo del Mes
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Historial de Arqueos Guardados */}
+                {savedAudits.length > 0 && (
+                  <div className="bg-white/[0.015] p-4 rounded-xl border border-white/5 space-y-3">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <span className="material-symbols-outlined text-[16px] text-primary">history</span>
+                      Historial de Arqueos y Cierres Mensuales Guardados
+                    </h5>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead className="bg-surface-container-high/40 text-on-surface-variant uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="py-2 px-3">Mes Auditado</th>
+                            <th className="py-2 px-3">Fecha de Cierre</th>
+                            <th className="py-2 px-3 text-right">Sistema (Bs)</th>
+                            <th className="py-2 px-3 text-right">Real Declarado (Bs)</th>
+                            <th className="py-2 px-3 text-right">Diferencia</th>
+                            <th className="py-2 px-3 text-center">Estado</th>
+                            <th className="py-2 px-3">Observaciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {savedAudits.map(a => {
+                            const isExact = a.status === 'cuadrado'
+                            const isSurplus = a.status === 'sobrante'
+                            const diffVal = a.differences?.total || 0
+
+                            return (
+                              <tr key={a.id} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="py-2 px-3 font-bold text-white whitespace-nowrap">{a.month}</td>
+                                <td className="py-2 px-3 text-on-surface-variant whitespace-nowrap">{a.lastDayStr || formatDate(a.date)}</td>
+                                <td className="py-2 px-3 text-right whitespace-nowrap">{formatCurrency(a.systemTotals?.total || 0)}</td>
+                                <td className="py-2 px-3 text-right font-bold text-white whitespace-nowrap">{formatCurrency(a.realTotals?.total || 0)}</td>
+                                <td className={`py-2 px-3 text-right font-bold whitespace-nowrap ${
+                                  isExact ? 'text-emerald-400' : isSurplus ? 'text-cyan-400' : 'text-red-400'
+                                }`}>
+                                  {diffVal > 0 ? `+${diffVal.toFixed(2)}` : diffVal.toFixed(2)} Bs
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                    isExact
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                                      : isSurplus
+                                      ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                                      : 'bg-red-500/10 text-red-400 border border-red-500/30'
+                                  }`}>
+                                    {a.status}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-on-surface-variant truncate max-w-[200px] font-sans">
+                                  {a.notes || '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
         </div>
