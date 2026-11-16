@@ -553,6 +553,7 @@ export default function OrdersPage() {
 
   // Estado de datos
   const [orders, setOrders] = useState([])
+  const [expensesList, setExpensesList] = useState([])
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [dbError, setDbError] = useState(null)
@@ -826,20 +827,22 @@ export default function OrdersPage() {
         }
       }
 
-      // Fetch expenses with order_id to calculate real ROI
-      const { data: expensesData, error: expensesError } = await supabase
+      // Fetch all expenses to calculate real ROI and cash flow (Arqueo de Caja: Ingresos - Gastos)
+      const { data: allExpensesData, error: expensesError } = await supabase
         .from('expenses')
-        .select('order_id, amount')
-        .not('order_id', 'is', null)
+        .select('id, order_id, amount, advance_amount, payment_method, payment_history, date, specific_item, category_label')
+        .order('date', { ascending: false })
 
       if (expensesError) {
-        console.error("Error fetching order expenses:", expensesError)
+        console.error("Error fetching expenses for cash flow:", expensesError)
       }
 
-      // Map expenses to orders
+      setExpensesList(allExpensesData || [])
+
+      // Map expenses with order_id to calculate real ROI
       const expensesMap = {}
-      if (expensesData) {
-        expensesData.forEach(exp => {
+      if (allExpensesData) {
+        allExpensesData.forEach(exp => {
           if (exp.order_id) {
             expensesMap[exp.order_id] = (expensesMap[exp.order_id] || 0) + (parseFloat(exp.amount) || 0)
           }
@@ -1347,30 +1350,121 @@ export default function OrdersPage() {
     { value: 'pagado', label: 'Pagado' }
   ]
 
-  // Consolidado global de movimientos de cobros recibidos en pedidos
-  const allPaymentMovements = useMemo(() => {
+  // Helper para extraer clave de mes "YYYY-MM"
+  const getMonthKey = (dateVal) => {
+    if (!dateVal) return ''
+    if (typeof dateVal === 'string' && dateVal.length >= 7) {
+      const match = dateVal.match(/^(\d{4})-(\d{2})/)
+      if (match) return `${match[1]}-${match[2]}`
+    }
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return ''
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  // 1. Ingresos totales cobrados de pedidos (Historial de pagos + saldo inicial/adelanto)
+  const allOrderIncomes = useMemo(() => {
     const list = []
     orders.forEach(order => {
       if (order.status === 'cancelado') return
+      const totalPaid = parseFloat(order.paid_amount) || 0
       const history = Array.isArray(order.payment_history) ? order.payment_history : []
+      let historySum = 0
+
       history.forEach(p => {
+        const amt = parseFloat(p.amount) || 0
+        if (amt <= 0) return
+        historySum += amt
         const rawMethod = (p.method || 'efectivo').toLowerCase().trim()
         const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
         list.push({
-          id: p.id || `${order.id}-${p.date}-${p.amount}`,
+          id: p.id || `${order.id}-${p.date}-${amt}`,
           orderId: order.id,
           orderNumber: order.order_number,
           clientName: order.terceros?.name || 'Cliente general',
-          clientPhone: order.terceros?.phone || '',
-          date: p.date,
-          amount: parseFloat(p.amount) || 0,
-          method: method,
-          note: p.note || ''
+          date: p.date || order.created_at || getTodayStr(),
+          amount: amt,
+          method: ['efectivo', 'qr', 'transferencia', 'tarjeta'].includes(method) ? method : 'efectivo',
+          note: p.note || 'Cobro registrado'
         })
       })
+
+      // Si el pedido tiene un paid_amount superior a lo registrado en el historial (o historial vacío)
+      if (totalPaid > historySum + 0.01) {
+        const diff = totalPaid - historySum
+        const rawMethod = (order.payment_method || 'efectivo').toLowerCase().trim()
+        const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
+        list.push({
+          id: `${order.id}-base-paid`,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          clientName: order.terceros?.name || 'Cliente general',
+          date: order.created_at || getTodayStr(),
+          amount: diff,
+          method: ['efectivo', 'qr', 'transferencia', 'tarjeta'].includes(method) ? method : 'efectivo',
+          note: 'Cobro de pedido (Saldo adelantado/pagado)'
+        })
+      }
     })
-    return list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    return list
   }, [orders])
+
+  // 2. Egresos totales de gastos pagados (Hoja de Gastos)
+  const allExpenseMovements = useMemo(() => {
+    const list = []
+    expensesList.forEach(exp => {
+      const history = Array.isArray(exp.payment_history) && exp.payment_history.length > 0 ? exp.payment_history : null
+      
+      if (history) {
+        let historySum = 0
+        history.forEach(p => {
+          const amt = parseFloat(p.amount) || 0
+          if (amt <= 0) return
+          historySum += amt
+          const rawMethod = (p.method || exp.payment_method || 'efectivo').toLowerCase().trim()
+          const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
+          list.push({
+            id: p.id || `${exp.id}-${p.date}-${amt}`,
+            expenseId: exp.id,
+            description: exp.specific_item || exp.category_label || 'Gasto',
+            date: p.date || exp.date || getTodayStr(),
+            amount: amt,
+            method: ['efectivo', 'qr', 'transferencia', 'tarjeta'].includes(method) ? method : 'efectivo'
+          })
+        })
+
+        const totalExpPaid = parseFloat(exp.advance_amount) > 0 ? parseFloat(exp.advance_amount) : parseFloat(exp.amount) || 0
+        if (totalExpPaid > historySum + 0.01) {
+          const diff = totalExpPaid - historySum
+          const rawMethod = (exp.payment_method || 'efectivo').toLowerCase().trim()
+          const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
+          list.push({
+            id: `${exp.id}-diff-paid`,
+            expenseId: exp.id,
+            description: exp.specific_item || exp.category_label || 'Gasto',
+            date: exp.date || getTodayStr(),
+            amount: diff,
+            method: ['efectivo', 'qr', 'transferencia', 'tarjeta'].includes(method) ? method : 'efectivo'
+          })
+        }
+      } else {
+        const amt = parseFloat(exp.advance_amount) > 0 ? parseFloat(exp.advance_amount) : (parseFloat(exp.amount) || 0)
+        if (amt > 0) {
+          const rawMethod = (exp.payment_method || 'efectivo').toLowerCase().trim()
+          const method = (rawMethod === 'yape' || rawMethod === 'yape_plin' || rawMethod === 'plin' || rawMethod.includes('yape')) ? 'qr' : rawMethod
+          list.push({
+            id: `${exp.id}-full`,
+            expenseId: exp.id,
+            description: exp.specific_item || exp.category_label || 'Gasto',
+            date: exp.date || getTodayStr(),
+            amount: amt,
+            method: ['efectivo', 'qr', 'transferencia', 'tarjeta'].includes(method) ? method : 'efectivo'
+          })
+        }
+      }
+    })
+    return list
+  }, [expensesList])
 
   // --- CONTROL Y ARQUEO DE CAJA MENSUAL ---
   const getCurrentMonthStr = () => {
@@ -1404,22 +1498,48 @@ export default function OrdersPage() {
     }
   })
 
-  // Movimientos e ingresos teóricos del mes seleccionado para el arqueo
-  const monthlySystemTotals = useMemo(() => {
-    const t = { efectivo: 0, qr: 0, transferencia: 0, tarjeta: 0, count: 0, total: 0 }
-    allPaymentMovements.forEach(p => {
-      if (!p.date) return
-      const pMonth = p.date.slice(0, 7)
-      if (pMonth === selectedAuditMonth) {
-        if (t[p.method] !== undefined) {
-          t[p.method] += p.amount
-        }
-        t.total += p.amount
-        t.count += 1
+  // 3. Conciliación mensual: INGRESOS - GASTOS por método y global para el mes seleccionado
+  const monthlyCashReconciliation = useMemo(() => {
+    const res = {
+      efectivo: { income: 0, expense: 0, net: 0, incomeCount: 0, expenseCount: 0 },
+      qr: { income: 0, expense: 0, net: 0, incomeCount: 0, expenseCount: 0 },
+      transferencia: { income: 0, expense: 0, net: 0, incomeCount: 0, expenseCount: 0 },
+      tarjeta: { income: 0, expense: 0, net: 0, incomeCount: 0, expenseCount: 0 },
+      totals: { income: 0, expense: 0, net: 0, countIncome: 0, countExpense: 0 }
+    }
+
+    // Sumar ingresos del mes
+    allOrderIncomes.forEach(item => {
+      const mKey = getMonthKey(item.date)
+      if (mKey === selectedAuditMonth) {
+        const m = res[item.method] ? item.method : 'efectivo'
+        res[m].income += item.amount
+        res[m].incomeCount += 1
+        res.totals.income += item.amount
+        res.totals.countIncome += 1
       }
     })
-    return t
-  }, [allPaymentMovements, selectedAuditMonth])
+
+    // Restar gastos del mes
+    allExpenseMovements.forEach(item => {
+      const mKey = getMonthKey(item.date)
+      if (mKey === selectedAuditMonth) {
+        const m = res[item.method] ? item.method : 'efectivo'
+        res[m].expense += item.amount
+        res[m].expenseCount += 1
+        res.totals.expense += item.amount
+        res.totals.countExpense += 1
+      }
+    })
+
+    // Calcular saldos netos teóricos (INGRESOS - GASTOS)
+    ;['efectivo', 'qr', 'transferencia', 'tarjeta'].forEach(k => {
+      res[k].net = res[k].income - res[k].expense
+    })
+    res.totals.net = res.totals.income - res.totals.expense
+
+    return res
+  }, [allOrderIncomes, allExpenseMovements, selectedAuditMonth])
 
   // Precargar arqueo guardado si ya existe para el mes seleccionado
   useEffect(() => {
@@ -1444,12 +1564,12 @@ export default function OrdersPage() {
   }, [selectedAuditMonth, savedAudits])
 
   const handleSaveAudit = () => {
-    const realEf = auditForm.realEfectivo !== '' ? parseFloat(auditForm.realEfectivo) || 0 : (monthlySystemTotals.efectivo || 0)
-    const realQr = auditForm.realQR !== '' ? parseFloat(auditForm.realQR) || 0 : (monthlySystemTotals.qr || 0)
-    const realTr = auditForm.realTransferencia !== '' ? parseFloat(auditForm.realTransferencia) || 0 : (monthlySystemTotals.transferencia || 0)
-    const realTj = auditForm.realTarjeta !== '' ? parseFloat(auditForm.realTarjeta) || 0 : (monthlySystemTotals.tarjeta || 0)
+    const realEf = auditForm.realEfectivo !== '' ? parseFloat(auditForm.realEfectivo) || 0 : (monthlyCashReconciliation.efectivo.net || 0)
+    const realQr = auditForm.realQR !== '' ? parseFloat(auditForm.realQR) || 0 : (monthlyCashReconciliation.qr.net || 0)
+    const realTr = auditForm.realTransferencia !== '' ? parseFloat(auditForm.realTransferencia) || 0 : (monthlyCashReconciliation.transferencia.net || 0)
+    const realTj = auditForm.realTarjeta !== '' ? parseFloat(auditForm.realTarjeta) || 0 : (monthlyCashReconciliation.tarjeta.net || 0)
     const totalReal = realEf + realQr + realTr + realTj
-    const totalSystem = monthlySystemTotals.total
+    const totalSystem = monthlyCashReconciliation.totals.net
     const diffTotal = totalReal - totalSystem
 
     const auditRecord = {
@@ -1457,7 +1577,15 @@ export default function OrdersPage() {
       month: selectedAuditMonth,
       date: new Date().toISOString(),
       lastDayStr: getLastDayOfMonth(selectedAuditMonth),
-      systemTotals: { ...monthlySystemTotals },
+      systemTotals: {
+        efectivo: monthlyCashReconciliation.efectivo.net,
+        qr: monthlyCashReconciliation.qr.net,
+        transferencia: monthlyCashReconciliation.transferencia.net,
+        tarjeta: monthlyCashReconciliation.tarjeta.net,
+        total: monthlyCashReconciliation.totals.net,
+        incomeTotal: monthlyCashReconciliation.totals.income,
+        expenseTotal: monthlyCashReconciliation.totals.expense
+      },
       realTotals: {
         efectivo: realEf,
         qr: realQr,
@@ -1466,10 +1594,10 @@ export default function OrdersPage() {
         total: totalReal
       },
       differences: {
-        efectivo: realEf - (monthlySystemTotals.efectivo || 0),
-        qr: realQr - (monthlySystemTotals.qr || 0),
-        transferencia: realTr - (monthlySystemTotals.transferencia || 0),
-        tarjeta: realTj - (monthlySystemTotals.tarjeta || 0),
+        efectivo: realEf - (monthlyCashReconciliation.efectivo.net || 0),
+        qr: realQr - (monthlyCashReconciliation.qr.net || 0),
+        transferencia: realTr - (monthlyCashReconciliation.transferencia.net || 0),
+        tarjeta: realTj - (monthlyCashReconciliation.tarjeta.net || 0),
         total: diffTotal
       },
       status: Math.abs(diffTotal) < 0.01 ? 'cuadrado' : diffTotal > 0 ? 'sobrante' : 'faltante',
@@ -4530,7 +4658,7 @@ export default function OrdersPage() {
                       icon: 'payments',
                       color: 'border-amber-400 text-amber-400',
                       bgBadge: 'bg-amber-500/10 text-amber-300',
-                      systemVal: monthlySystemTotals.efectivo,
+                      data: monthlyCashReconciliation.efectivo,
                       realVal: auditForm.realEfectivo,
                       key: 'realEfectivo',
                       placeholder: 'Conteo físico de billetes...'
@@ -4541,7 +4669,7 @@ export default function OrdersPage() {
                       icon: 'qr_code_scanner',
                       color: 'border-emerald-400 text-emerald-400',
                       bgBadge: 'bg-emerald-500/10 text-emerald-300',
-                      systemVal: monthlySystemTotals.qr,
+                      data: monthlyCashReconciliation.qr,
                       realVal: auditForm.realQR,
                       key: 'realQR',
                       placeholder: 'Saldo en billetera/banco...'
@@ -4552,7 +4680,7 @@ export default function OrdersPage() {
                       icon: 'account_balance',
                       color: 'border-blue-400 text-blue-400',
                       bgBadge: 'bg-blue-500/10 text-blue-300',
-                      systemVal: monthlySystemTotals.transferencia,
+                      data: monthlyCashReconciliation.transferencia,
                       realVal: auditForm.realTransferencia,
                       key: 'realTransferencia',
                       placeholder: 'Extracto bancario...'
@@ -4563,7 +4691,7 @@ export default function OrdersPage() {
                       icon: 'credit_card',
                       color: 'border-purple-400 text-purple-400',
                       bgBadge: 'bg-purple-500/10 text-purple-300',
-                      systemVal: monthlySystemTotals.tarjeta,
+                      data: monthlyCashReconciliation.tarjeta,
                       realVal: auditForm.realTarjeta,
                       key: 'realTarjeta',
                       placeholder: 'Cierre de terminal POS...'
@@ -4571,19 +4699,39 @@ export default function OrdersPage() {
                   ].map(m => {
                     const hasInput = m.realVal !== ''
                     const realNum = parseFloat(m.realVal) || 0
-                    const diff = realNum - m.systemVal
+                    const diff = realNum - m.data.net
                     const isExact = Math.abs(diff) < 0.01
 
                     return (
                       <div key={m.id} className={`neu-pressed p-4 rounded-xl border-l-2 ${m.color} flex flex-col justify-between space-y-3`}>
                         <div>
-                          <div className="flex items-center justify-between text-on-surface-variant mb-1">
-                            <span className="text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 font-bold">
-                              <span className="material-symbols-outlined text-[15px]">{m.icon}</span> {m.label}
+                          <div className="flex items-center justify-between text-on-surface-variant mb-2">
+                            <span className="text-[11px] font-mono uppercase tracking-wider flex items-center gap-1.5 font-bold">
+                              <span className="material-symbols-outlined text-[16px]">{m.icon}</span> {m.label}
                             </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${m.bgBadge}`}>
-                              Sistema: {formatCurrency(m.systemVal)}
+                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${m.bgBadge}`}>
+                              Saldo: {formatCurrency(m.data.net)}
                             </span>
+                          </div>
+
+                          {/* Desglose Ingresos vs Gastos */}
+                          <div className="bg-surface-container-low/60 rounded-lg p-2.5 space-y-1.5 text-[10px] font-mono border border-white/5">
+                            <div className="flex justify-between items-center text-emerald-400">
+                              <span className="flex items-center gap-1 font-sans text-on-surface-variant">
+                                <span className="material-symbols-outlined text-[12px] text-emerald-400">arrow_downward</span> Ingresos (+):
+                              </span>
+                              <span className="font-bold">+{formatCurrency(m.data.income)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-red-400">
+                              <span className="flex items-center gap-1 font-sans text-on-surface-variant">
+                                <span className="material-symbols-outlined text-[12px] text-red-400">arrow_upward</span> Gastos (-):
+                              </span>
+                              <span className="font-bold">-{formatCurrency(m.data.expense)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-white pt-1 border-t border-white/5 font-bold">
+                              <span className="font-sans text-on-surface-variant">Saldo Teórico (=):</span>
+                              <span className="text-primary">{formatCurrency(m.data.net)}</span>
+                            </div>
                           </div>
 
                           <div className="mt-2.5 space-y-1">
@@ -4632,37 +4780,50 @@ export default function OrdersPage() {
                   const realTr = auditForm.realTransferencia !== '' ? parseFloat(auditForm.realTransferencia) || 0 : 0
                   const realTj = auditForm.realTarjeta !== '' ? parseFloat(auditForm.realTarjeta) || 0 : 0
                   const totalRealDeclared = realEf + realQr + realTr + realTj
-                  const totalSystem = monthlySystemTotals.total
-                  const diffTotal = totalRealDeclared - totalSystem
+                  const totalSystemNet = monthlyCashReconciliation.totals.net
+                  const diffTotal = totalRealDeclared - totalSystemNet
                   const hasAnyInput = auditForm.realEfectivo !== '' || auditForm.realQR !== '' || auditForm.realTransferencia !== '' || auditForm.realTarjeta !== ''
                   const isExact = Math.abs(diffTotal) < 0.01
 
                   return (
                     <div className="bg-white/[0.02] p-5 rounded-xl border border-white/5 space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                        {/* Total Teórico Sistema */}
-                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-white/5">
-                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
-                            Total Registrado en Sistema
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
+                        {/* Total Ingresos */}
+                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-emerald-500/20">
+                          <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px]">arrow_downward</span> Ingresos Totales (+)
                           </p>
-                          <h4 className="text-xl font-bold font-mono text-white mt-1">
-                            {formatCurrency(totalSystem)}
+                          <h4 className="text-xl font-bold font-mono text-emerald-400 mt-1">
+                            +{formatCurrency(monthlyCashReconciliation.totals.income)}
                           </h4>
                           <span className="text-[10px] font-mono text-on-surface-variant">
-                            {monthlySystemTotals.count} cobros en {selectedAuditMonth}
+                            {monthlyCashReconciliation.totals.countIncome} cobros en {selectedAuditMonth}
                           </span>
                         </div>
 
-                        {/* Total Físico / Real Declarado */}
-                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-white/5">
-                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
-                            Total Real Declarado
+                        {/* Total Gastos */}
+                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-red-500/20">
+                          <p className="text-[10px] font-mono text-red-400 uppercase tracking-wider flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px]">arrow_upward</span> Gastos Totales (-)
                           </p>
-                          <h4 className="text-xl font-bold font-mono text-primary mt-1">
-                            {formatCurrency(totalRealDeclared)}
+                          <h4 className="text-xl font-bold font-mono text-red-400 mt-1">
+                            -{formatCurrency(monthlyCashReconciliation.totals.expense)}
                           </h4>
                           <span className="text-[10px] font-mono text-on-surface-variant">
-                            Suma de efectivo + QR + bancos + POS
+                            {monthlyCashReconciliation.totals.countExpense} egresos en {selectedAuditMonth}
+                          </span>
+                        </div>
+
+                        {/* Saldo Neto Sistema */}
+                        <div className="p-3.5 rounded-xl bg-surface-container-low/50 border border-white/10">
+                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
+                            Saldo Neto Teórico (=)
+                          </p>
+                          <h4 className="text-xl font-bold font-mono text-white mt-1">
+                            {formatCurrency(totalSystemNet)}
+                          </h4>
+                          <span className="text-[10px] font-mono text-on-surface-variant">
+                            Ingresos - Gastos del mes
                           </span>
                         </div>
 
@@ -4700,7 +4861,7 @@ export default function OrdersPage() {
                             )}
                           </h4>
                           <span className="text-[10px] font-mono opacity-80">
-                            {!hasAnyInput ? 'Ingresa los saldos para conciliar' : isExact ? 'Sin diferencias de dinero' : 'Verifica comprobantes o gastos menores'}
+                            Real: <strong>{formatCurrency(totalRealDeclared)}</strong> ({!hasAnyInput ? 'Pendiente' : isExact ? 'Conciliación exacta' : 'Verificar caja física/cuentas'})
                           </span>
                         </div>
                       </div>
@@ -4710,7 +4871,7 @@ export default function OrdersPage() {
                         <div className="flex-1">
                           <input
                             type="text"
-                            placeholder="Observaciones de cierre (ej: Fondo fijo de caja chico, comprobante pendiente, etc.)..."
+                            placeholder="Observaciones de cierre (ej: Fondo fijo de caja chica, comprobante pendiente, etc.)..."
                             value={auditForm.notes}
                             onChange={e => setAuditForm(prev => ({ ...prev, notes: e.target.value }))}
                             className="w-full text-xs px-3.5 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-xl text-white focus:outline-none focus:border-primary"
@@ -4742,8 +4903,10 @@ export default function OrdersPage() {
                           <tr>
                             <th className="py-2 px-3">Mes Auditado</th>
                             <th className="py-2 px-3">Fecha de Cierre</th>
-                            <th className="py-2 px-3 text-right">Sistema (Bs)</th>
-                            <th className="py-2 px-3 text-right">Real Declarado (Bs)</th>
+                            <th className="py-2 px-3 text-right">Ingresos (+)</th>
+                            <th className="py-2 px-3 text-right">Gastos (-)</th>
+                            <th className="py-2 px-3 text-right">Saldo Neto Sistema</th>
+                            <th className="py-2 px-3 text-right">Real Declarado</th>
                             <th className="py-2 px-3 text-right">Diferencia</th>
                             <th className="py-2 px-3 text-center">Estado</th>
                             <th className="py-2 px-3">Observaciones</th>
@@ -4759,6 +4922,8 @@ export default function OrdersPage() {
                               <tr key={a.id} className="hover:bg-white/[0.02] transition-colors">
                                 <td className="py-2 px-3 font-bold text-white whitespace-nowrap">{a.month}</td>
                                 <td className="py-2 px-3 text-on-surface-variant whitespace-nowrap">{a.lastDayStr || formatDate(a.date)}</td>
+                                <td className="py-2 px-3 text-right text-emerald-400 whitespace-nowrap">{formatCurrency(a.systemTotals?.incomeTotal || 0)}</td>
+                                <td className="py-2 px-3 text-right text-red-400 whitespace-nowrap">{formatCurrency(a.systemTotals?.expenseTotal || 0)}</td>
                                 <td className="py-2 px-3 text-right whitespace-nowrap">{formatCurrency(a.systemTotals?.total || 0)}</td>
                                 <td className="py-2 px-3 text-right font-bold text-white whitespace-nowrap">{formatCurrency(a.realTotals?.total || 0)}</td>
                                 <td className={`py-2 px-3 text-right font-bold whitespace-nowrap ${
