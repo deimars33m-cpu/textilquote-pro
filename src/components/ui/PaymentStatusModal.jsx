@@ -13,6 +13,7 @@ export default function PaymentStatusModal({ isOpen, onClose, entityType, entity
     { value: 'efectivo', label: 'Efectivo / Caja' },
     { value: 'transferencia', label: 'Transferencia / Banco' },
     { value: 'qr', label: 'Código QR' },
+    { value: 'tarjeta', label: 'Tarjeta' },
     { value: 'cheque', label: 'Cheque' },
     { value: 'otro', label: 'Otro' }
   ]

@@ -14,6 +14,13 @@ const INFANTIL_SIZES = ['2', '4', '6', '8', '10', '12', '14', '16']
 const ADULTO_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL']
 const PANELS_LIST = ['1 PANEL', '2 PANELES', '3 PANELES', '4 PANELES', '5 PANELES', '6 PANELES']
 
+const PAYMENT_METHODS = [
+  { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
+  { id: 'transferencia', label: 'Transferencia', icon: 'account_balance' },
+  { id: 'qr', label: 'QR', icon: 'qr_code_scanner' },
+  { id: 'tarjeta', label: 'Tarjeta', icon: 'credit_card' }
+]
+
 const SIZE_FACTORS = {
   '4': { priceFactor: 0.52, m2: [0.17, 0.35, 0.52, 0.70, 0.87], panels: [0.44, 0.87, 1.31, 1.74, 2.18] },
   '6': { priceFactor: 0.54, m2: [0.19, 0.38, 0.57, 0.76, 0.95], panels: [0.48, 0.95, 1.43, 1.90, 2.38] },
@@ -2014,7 +2021,7 @@ export default function OrdersPage() {
         id: crypto.randomUUID(),
         date: new Date().toISOString(),
         amount: advance,
-        method: 'efectivo', // Por defecto efectivo al crear el pedido
+        method: orderForm.paymentMethod || 'efectivo',
         note: 'Adelanto inicial'
       }] : []
 
@@ -3107,12 +3114,7 @@ export default function OrdersPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono uppercase text-on-surface-variant tracking-wider">Método de Pago</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'efectivo', label: 'Efectivo', icon: 'payments' },
-                      { id: 'tarjeta', label: 'Tarjeta', icon: 'credit_card' },
-                      { id: 'transferencia', label: 'Transferencia', icon: 'account_balance' },
-                      { id: 'yape_plin', label: 'Yape / Plin', icon: 'qr_code_scanner' }
-                    ].map((method) => {
+                    {PAYMENT_METHODS.map((method) => {
                       const isActive = orderForm.paymentMethod === method.id
                       return (
                         <button
