@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { Card, Button, Input, Select, Textarea, Modal } from '@/components/ui/index.jsx'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, parseDependienteMeta, formatDependienteNotes } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -119,6 +119,7 @@ export default function GlobalSettingsPage() {
           { id: 'orders_structure', label: 'Estructura de Pedidos', icon: 'category' },
           { id: 'sizes', label: 'Precios Tallas (Textil)', icon: 'apparel' },
           { id: 'expenses_structure', label: 'Estructura de Gastos', icon: 'payments' },
+          { id: 'dependientes', label: 'Dependientes y Personal', icon: 'badge' },
           { id: 'budgets_goals', label: 'Metas y Presupuestos', icon: 'savings' },
           { id: 'fixed_expenses', label: 'Gastos Fijos Mensuales', icon: 'account_balance' },
           { id: 'quick_shortcuts', label: 'Accesos Rápidos Gastos', icon: 'flash_on' }
@@ -284,6 +285,11 @@ export default function GlobalSettingsPage() {
             showSavedIndicator={showSavedIndicator}
             savedStatus={savedStatus}
           />
+        )}
+
+        {/* --- TAB: DEPENDIENTES Y PERSONAL --- */}
+        {activeTab === 'dependientes' && (
+          <DependientesEditor />
         )}
 
         {/* --- TAB: GASTOS FIJOS MENSUALES --- */}
@@ -2593,6 +2599,500 @@ function QuickShortcutsEditor() {
               </Button>
               <Button type="submit" className="bg-primary text-on-primary font-bold">
                 {editingItem ? 'Guardar Cambios' : 'Crear Acceso Rápido'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function DependientesEditor() {
+  const { user } = useAuth()
+  const [dependientes, setDependientes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterModality, setFilterModality] = useState('todos') // 'todos', 'quincenal', 'mensual'
+
+  const [form, setForm] = useState({
+    name: '',
+    payment_modality: 'quincenal',
+    base_salary: '',
+    job_title: '',
+    phone: '',
+    email: '',
+    city: '',
+    notes: ''
+  })
+
+  const fetchDependientes = async () => {
+    if (!user) return
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('terceros')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('role', 'dependiente')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setDependientes(data || [])
+    } catch (err) {
+      console.error('Error cargando dependientes:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDependientes()
+  }, [user])
+
+  const openNew = () => {
+    setEditingItem(null)
+    setForm({
+      name: '',
+      payment_modality: 'quincenal',
+      base_salary: '',
+      job_title: '',
+      phone: '',
+      email: '',
+      city: '',
+      notes: ''
+    })
+    setShowModal(true)
+  }
+
+  const openEdit = (item) => {
+    setEditingItem(item)
+    const meta = parseDependienteMeta(item)
+    setForm({
+      name: item.name || '',
+      payment_modality: meta.modality || 'quincenal',
+      base_salary: meta.salary ? String(meta.salary) : '',
+      job_title: meta.jobTitle || '',
+      phone: item.phone || '',
+      email: item.email || '',
+      city: item.city || '',
+      notes: meta.rawNotes || (typeof item.notes === 'string' && !item.notes.startsWith('{') ? item.notes : '')
+    })
+    setShowModal(true)
+  }
+
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`¿Eliminar dependiente "${name}"? Esta acción desvinculará este dependiente de la lista de personal.`)) return
+    try {
+      await supabase.from('terceros').delete().eq('id', id)
+      setDependientes(prev => prev.filter(d => d.id !== id))
+    } catch (err) {
+      console.error('Error eliminando dependiente:', err)
+      alert('Error al eliminar dependiente: ' + err.message)
+    }
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    if (!form.name.trim()) return alert('Ingrese el nombre del dependiente.')
+    setSaving(true)
+    try {
+      const encodedNotes = formatDependienteNotes({
+        modality: form.payment_modality || 'quincenal',
+        salary: form.base_salary,
+        jobTitle: form.job_title,
+        rawNotes: form.notes
+      })
+
+      const basePayload = {
+        name: form.name.trim(),
+        role: 'dependiente',
+        client_type: 'dependiente',
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        city: form.city.trim() || null,
+        notes: encodedNotes,
+      }
+
+      const extendedPayload = {
+        ...basePayload,
+        payment_modality: form.payment_modality || 'quincenal',
+        base_salary: Number(form.base_salary) || 0,
+        job_title: form.job_title.trim() || null
+      }
+
+      if (editingItem) {
+        try {
+          const { error } = await supabase.from('terceros').update(extendedPayload).eq('id', editingItem.id)
+          if (error) throw error
+        } catch {
+          await supabase.from('terceros').update(basePayload).eq('id', editingItem.id)
+        }
+      } else {
+        try {
+          const { error } = await supabase.from('terceros').insert({ ...extendedPayload, user_id: user.id })
+          if (error) throw error
+        } catch {
+          await supabase.from('terceros').insert({ ...basePayload, user_id: user.id })
+        }
+      }
+
+      await fetchDependientes()
+      setShowModal(false)
+    } catch (err) {
+      console.error('Error guardando dependiente:', err)
+      alert('Error al guardar: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const parsedList = useMemo(() => {
+    return dependientes.map(d => ({
+      ...d,
+      meta: parseDependienteMeta(d)
+    }))
+  }, [dependientes])
+
+  const filteredList = useMemo(() => {
+    return parsedList.filter(d => {
+      const q = searchTerm.toLowerCase().trim()
+      const matchesSearch = !q || d.name.toLowerCase().includes(q) || (d.meta.jobTitle || '').toLowerCase().includes(q)
+      const matchesModality = filterModality === 'todos' || d.meta.modality === filterModality
+      return matchesSearch && matchesModality
+    })
+  }, [parsedList, searchTerm, filterModality])
+
+  const stats = useMemo(() => {
+    const total = parsedList.length
+    const quincenales = parsedList.filter(d => d.meta.modality === 'quincenal').length
+    const mensuales = parsedList.filter(d => d.meta.modality === 'mensual').length
+    const totalPayroll = parsedList.reduce((sum, d) => sum + (d.meta.salary || 0), 0)
+    return { total, quincenales, mensuales, totalPayroll }
+  }, [parsedList])
+
+  return (
+    <div className="space-y-6">
+      {/* Encabezado Principal */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-outline-variant">
+        <div>
+          <h3 className="text-lg font-bold text-on-surface flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-[22px]">badge</span>
+            Dependientes y Personal de la Empresa
+          </h3>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Gestión centralizada de empleados internos con modalidad de pago (Quincenal / Mensual), sueldos base y cargos. Sincronizado automáticamente con la lista de Terceros y el Registro de Gastos.
+          </p>
+        </div>
+        <Button onClick={openNew} className="bg-primary text-on-primary font-bold shrink-0 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">person_add</span>
+          Nuevo Dependiente
+        </Button>
+      </div>
+
+      {/* KPI Cards de Resumen */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+            <span className="material-symbols-outlined text-[20px]">group</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-mono uppercase text-on-surface-variant block tracking-wider">Total Personal</span>
+            <span className="text-lg font-black text-on-surface font-mono">{stats.total}</span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20">
+            <span className="material-symbols-outlined text-[20px]">timelapse</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-mono uppercase text-on-surface-variant block tracking-wider">Pago Quincenal</span>
+            <span className="text-lg font-black text-amber-500 font-mono">{stats.quincenales}</span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
+            <span className="material-symbols-outlined text-[20px]">calendar_month</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-mono uppercase text-on-surface-variant block tracking-wider">Pago Mensual</span>
+            <span className="text-lg font-black text-blue-400 font-mono">{stats.mensuales}</span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+            <span className="material-symbols-outlined text-[20px]">payments</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-mono uppercase text-on-surface-variant block tracking-wider">Nómina Base Ref.</span>
+            <span className="text-base font-black text-emerald-400 font-mono">{formatCurrency(stats.totalPayroll, 0)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Barra de Filtro y Búsqueda */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-2 bg-surface-container-low/60 rounded-xl border border-outline-variant/30">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <input
+              type="text"
+              placeholder="Buscar por nombre o cargo..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full bg-surface-container rounded-lg px-3 py-1.5 text-xs text-on-surface border border-outline-variant/40 outline-none focus:border-primary"
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface text-xs">
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 w-full sm:w-auto justify-end">
+          <span className="text-[11px] text-on-surface-variant mr-1 font-mono">Modalidad:</span>
+          {[
+            { id: 'todos', label: 'Todos' },
+            { id: 'quincenal', label: 'Quincenal' },
+            { id: 'mensual', label: 'Mensual' }
+          ].map(btn => (
+            <button
+              key={btn.id}
+              onClick={() => setFilterModality(btn.id)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                filterModality === btn.id
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabla de Dependientes */}
+      <div className="overflow-x-auto rounded-xl border border-outline-variant/40">
+        <table className="w-full text-left text-sm text-on-surface">
+          <thead className="bg-surface-container-low text-on-surface-variant text-xs uppercase font-mono tracking-wider border-b border-outline-variant/30">
+            <tr>
+              <th className="py-3 px-4 font-semibold">Dependiente</th>
+              <th className="py-3 px-4 font-semibold">Cargo / Función</th>
+              <th className="py-3 px-4 font-semibold text-center">Modalidad de Pago</th>
+              <th className="py-3 px-4 font-semibold text-right">Sueldo Base</th>
+              <th className="py-3 px-4 font-semibold">Contacto</th>
+              <th className="py-3 px-4 font-semibold text-center w-24">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-outline-variant/20 bg-surface">
+            {loading ? (
+              <tr>
+                <td colSpan="6" className="text-center py-10 text-on-surface-variant text-xs">
+                  Cargando dependientes...
+                </td>
+              </tr>
+            ) : filteredList.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="text-center py-12 text-on-surface-variant space-y-2">
+                  <span className="material-symbols-outlined text-4xl block opacity-40">badge</span>
+                  <p className="text-sm font-semibold">No se encontraron dependientes</p>
+                  <p className="text-xs text-on-surface-variant/70">Registra el primer empleado interno para asignarle modalidad de pago quincenal o mensual.</p>
+                </td>
+              </tr>
+            ) : (
+              filteredList.map(item => (
+                <tr key={item.id} className="hover:bg-surface-container-low/50 transition-colors">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 flex items-center justify-center font-bold text-xs font-mono shrink-0">
+                        {item.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="font-bold text-on-surface block text-sm">{item.name}</span>
+                        {item.contact_person && (
+                          <span className="text-[11px] text-on-surface-variant block">Ref: {item.contact_person}</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="py-3 px-4 text-xs font-medium">
+                    {item.meta.jobTitle ? (
+                      <span className="px-2 py-0.5 rounded-md bg-surface-container text-on-surface border border-outline-variant/30 font-medium">
+                        {item.meta.jobTitle}
+                      </span>
+                    ) : (
+                      <span className="text-on-surface-variant/50 italic">Sin cargo especificado</span>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-4 text-center">
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                      item.meta.modality === 'quincenal'
+                        ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+                        : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                    }`}>
+                      <span className="material-symbols-outlined text-[12px]">
+                        {item.meta.modality === 'quincenal' ? 'timelapse' : 'calendar_month'}
+                      </span>
+                      {item.meta.modality === 'quincenal' ? 'Quincenal' : 'Mensual'}
+                    </span>
+                  </td>
+
+                  <td className="py-3 px-4 text-right font-mono font-bold text-sm">
+                    {item.meta.salary > 0 ? (
+                      <span className="text-emerald-500 dark:text-emerald-400">{formatCurrency(item.meta.salary)}</span>
+                    ) : (
+                      <span className="text-on-surface-variant/40 font-normal text-xs">—</span>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-4 text-xs text-on-surface-variant font-mono">
+                    {item.phone || item.email ? (
+                      <div className="space-y-0.5">
+                        {item.phone && <p className="flex items-center gap-1 text-on-surface"><span className="material-symbols-outlined text-[13px] text-primary">phone</span> {item.phone}</p>}
+                        {item.email && <p className="truncate max-w-[150px]">{item.email}</p>}
+                      </div>
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-4 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => openEdit(item)}
+                        className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+                        title="Editar dependiente"
+                      >
+                        <span className="material-symbols-outlined text-[17px]">edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id, item.name)}
+                        className="p-1.5 rounded-lg hover:bg-error-container/20 text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                        title="Eliminar dependiente"
+                      >
+                        <span className="material-symbols-outlined text-[17px]">delete</span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal para Crear / Editar Dependiente */}
+      {showModal && (
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={editingItem ? 'Editar Dependiente' : 'Nuevo Dependiente de la Empresa'}
+          size="md"
+        >
+          <form onSubmit={handleSave} className="space-y-4 text-on-surface">
+            <div>
+              <label className="block text-xs font-bold uppercase text-on-surface-variant mb-1">
+                Nombre Completo *
+              </label>
+              <Input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="Ej: Carlos Ruiz Gómez"
+                required
+              />
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/40 space-y-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                <span className="material-symbols-outlined text-[16px]">payments</span>
+                <span>Modalidad Laboral & Remuneración</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">
+                    Modalidad de Pago *
+                  </label>
+                  <Select
+                    value={form.payment_modality}
+                    onChange={e => setForm({ ...form, payment_modality: e.target.value })}
+                    options={[
+                      { value: 'quincenal', label: '⏱️ Quincenal (cada 15 días)' },
+                      { value: 'mensual', label: '📅 Mensual (a fin de mes)' }
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Input
+                    label="Sueldo Base (Bs)"
+                    type="number"
+                    min="0"
+                    step="10"
+                    value={form.base_salary}
+                    onChange={e => setForm({ ...form, base_salary: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Input
+                  label="Cargo / Función en la Empresa"
+                  value={form.job_title}
+                  onChange={e => setForm({ ...form, job_title: e.target.value })}
+                  placeholder="Ej: Costura, Sublimación, Planchado, Corte, Diseñador"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Teléfono / Celular"
+                type="tel"
+                value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                placeholder="Ej: 70012345"
+              />
+              <Input
+                label="Correo Electrónico"
+                type="email"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                placeholder="correo@ejemplo.com"
+              />
+            </div>
+
+            <div>
+              <Input
+                label="Ciudad / Dirección"
+                value={form.city}
+                onChange={e => setForm({ ...form, city: e.target.value })}
+                placeholder="Ej: Santa Cruz de la Sierra"
+              />
+            </div>
+
+            <div>
+              <Textarea
+                label="Notas / Observaciones"
+                value={form.notes}
+                onChange={e => setForm({ ...form, notes: e.target.value })}
+                placeholder="CI, fecha de ingreso, especialidades o detalles..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant">
+              <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving} className="bg-primary text-on-primary font-bold">
+                {saving ? 'Guardando...' : (editingItem ? 'Guardar Cambios' : 'Registrar Dependiente')}
               </Button>
             </div>
           </form>

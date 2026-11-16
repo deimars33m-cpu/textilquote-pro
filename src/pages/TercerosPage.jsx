@@ -4,7 +4,7 @@ import {
   Modal, ConfirmDialog, Input, Select, Textarea, Button,
   Card, SearchInput, LoadingSpinner, EmptyState
 } from '@/components/ui/index.jsx'
-import { clientTypes, terceroTypes, formatCurrency, formatDate, getTodayStr } from '@/lib/formatters'
+import { clientTypes, terceroTypes, formatCurrency, formatDate, getTodayStr, parseDependienteMeta, formatDependienteNotes } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -992,6 +992,9 @@ const EMPTY_FORM = {
   email: '',
   city: '',
   notes: '',
+  payment_modality: 'quincenal',
+  base_salary: '',
+  job_title: ''
 }
 
 const clientTypeOptions = Object.entries(clientTypes).map(([value, label]) => ({ value, label }))
@@ -1053,7 +1056,10 @@ export default function TercerosPage() {
     setForm({
       ...EMPTY_FORM,
       role: roleFilter === 'todos' ? 'cliente' : roleFilter,
-      client_type: roleFilter === 'dependiente' ? 'dependiente' : roleFilter === 'acreedor' ? 'acreedor' : 'otro'
+      client_type: roleFilter === 'dependiente' ? 'dependiente' : roleFilter === 'acreedor' ? 'acreedor' : 'otro',
+      payment_modality: 'quincenal',
+      base_salary: '',
+      job_title: ''
     })
     setErrors({})
     setModalOpen(true)
@@ -1061,6 +1067,7 @@ export default function TercerosPage() {
 
   const openEdit = (item) => {
     setEditingItem(item)
+    const meta = parseDependienteMeta(item)
     setForm({
       name: item.name || '',
       role: item.role || 'cliente',
@@ -1069,7 +1076,10 @@ export default function TercerosPage() {
       phone: item.phone || '',
       email: item.email || '',
       city: item.city || '',
-      notes: item.notes || '',
+      notes: meta.rawNotes || (typeof item.notes === 'string' && !item.notes.startsWith('{') ? item.notes : ''),
+      payment_modality: meta.modality || 'quincenal',
+      base_salary: meta.salary ? String(meta.salary) : '',
+      job_title: meta.jobTitle || ''
     })
     setErrors({})
     setModalOpen(true)
@@ -1091,6 +1101,16 @@ export default function TercerosPage() {
     if (!validate()) return
     setSaving(true)
     try {
+      const isDependiente = form.role === 'dependiente'
+      const encodedNotes = isDependiente
+        ? formatDependienteNotes({
+            modality: form.payment_modality || 'quincenal',
+            salary: form.base_salary,
+            jobTitle: form.job_title,
+            rawNotes: form.notes
+          })
+        : (form.notes.trim() || null)
+
       const payload = {
         name: form.name.trim(),
         role: form.role,
@@ -1099,14 +1119,34 @@ export default function TercerosPage() {
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         city: form.city.trim() || null,
-        notes: form.notes.trim() || null,
+        notes: encodedNotes,
       }
 
-      if (editingItem) {
-        await update(editingItem.id, payload)
-      } else {
-        await create(payload)
+      const extendedPayload = {
+        ...payload,
+        ...(isDependiente ? {
+          payment_modality: form.payment_modality || 'quincenal',
+          base_salary: Number(form.base_salary) || 0,
+          job_title: form.job_title?.trim() || null
+        } : {})
       }
+
+      try {
+        if (editingItem) {
+          await update(editingItem.id, extendedPayload)
+        } else {
+          await create(extendedPayload)
+        }
+      } catch (colErr) {
+        // Si PostgreSQL aún no tiene las columnas adicionales, guardar con payload seguro
+        console.warn('Fallback a payload básico de terceros:', colErr.message)
+        if (editingItem) {
+          await update(editingItem.id, payload)
+        } else {
+          await create(payload)
+        }
+      }
+
       setModalOpen(false)
     } catch (err) {
       console.error('Error saving tercero:', err)
@@ -1256,20 +1296,43 @@ export default function TercerosPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
-                        c.role === 'proveedor' 
-                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
-                          : c.role === 'dependiente'
-                            ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                            : c.role === 'acreedor'
-                              ? 'bg-sky-500/10 text-sky-450 border-sky-500/20'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      }`}>
-                        <span className="material-symbols-outlined text-[12px]">
-                          {c.role === 'proveedor' ? 'local_shipping' : c.role === 'dependiente' ? 'badge' : c.role === 'acreedor' ? 'account_balance' : 'person'}
+                      <div className="space-y-1">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                          c.role === 'proveedor' 
+                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
+                            : c.role === 'dependiente'
+                              ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
+                              : c.role === 'acreedor'
+                                ? 'bg-sky-500/10 text-sky-450 border-sky-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        }`}>
+                          <span className="material-symbols-outlined text-[12px]">
+                            {c.role === 'proveedor' ? 'local_shipping' : c.role === 'dependiente' ? 'badge' : c.role === 'acreedor' ? 'account_balance' : 'person'}
+                          </span>
+                          {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : c.role === 'acreedor' ? 'Acreedor' : 'Cliente'}
                         </span>
-                        {c.role === 'proveedor' ? 'Proveedor' : c.role === 'dependiente' ? 'Dependiente' : c.role === 'acreedor' ? 'Acreedor' : 'Cliente'}
-                      </span>
+
+                        {c.role === 'dependiente' && (() => {
+                          const meta = parseDependienteMeta(c)
+                          return (
+                            <div className="flex flex-col gap-0.5 pt-0.5">
+                              <span className={`inline-block text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border w-fit ${
+                                meta.modality === 'quincenal'
+                                  ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                                  : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                              }`}>
+                                {meta.modality === 'quincenal' ? '⏱️ Quincenal' : '📅 Mensual'}
+                              </span>
+                              {meta.jobTitle && (
+                                <span className="text-[10px] text-on-surface-variant font-medium">{meta.jobTitle}</span>
+                              )}
+                              {meta.salary > 0 && (
+                                <span className="text-[10px] font-mono text-emerald-400 font-bold">{formatCurrency(meta.salary)}</span>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-on-surface-variant">
                       <div className="space-y-1">
@@ -1381,6 +1444,49 @@ export default function TercerosPage() {
               placeholder="Seleccionar..."
               error={errors.client_type}
             />
+
+            {form.role === 'dependiente' && (
+              <div className="sm:col-span-2 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/40 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                  <span className="material-symbols-outlined text-[16px]">badge</span>
+                  <span>Configuración de Dependiente / Personal de Planta</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">
+                      Modalidad de Pago *
+                    </label>
+                    <Select
+                      value={form.payment_modality || 'quincenal'}
+                      onChange={(e) => updateField('payment_modality', e.target.value)}
+                      options={[
+                        { value: 'quincenal', label: '⏱️ Quincenal (cada 15 días)' },
+                        { value: 'mensual', label: '📅 Mensual (a fin de mes)' }
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <Input
+                      label="Cargo / Función"
+                      value={form.job_title || ''}
+                      onChange={(e) => updateField('job_title', e.target.value)}
+                      placeholder="Ej: Costura, Sublimación, Corte"
+                    />
+                  </div>
+                  <div>
+                    <Input
+                      label="Sueldo Base (Bs)"
+                      type="number"
+                      min="0"
+                      step="10"
+                      value={form.base_salary || ''}
+                      onChange={(e) => updateField('base_salary', e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Input
               label="Persona de contacto"

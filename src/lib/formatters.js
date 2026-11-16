@@ -402,3 +402,53 @@ export function getCategoryColor(nameOrCode) {
   const index = Math.abs(hash) % colors.length
   return colors[index]
 }
+
+/**
+ * Parsea la metadata de un dependiente (modalidad de pago, sueldo base, cargo, notas)
+ */
+export function parseDependienteMeta(item) {
+  if (!item) return { modality: 'quincenal', salary: 0, jobTitle: '', rawNotes: '' }
+  let modality = item.payment_modality || item.modalidad_pago || 'quincenal'
+  let salary = item.base_salary !== undefined ? item.base_salary : ''
+  let jobTitle = item.job_title || ''
+  let rawNotes = item.notes || ''
+
+  if (rawNotes && typeof rawNotes === 'string') {
+    const trimmed = rawNotes.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (parsed.modality) modality = parsed.modality
+        if (parsed.salary !== undefined) salary = parsed.salary
+        if (parsed.jobTitle) jobTitle = parsed.jobTitle
+        rawNotes = parsed.rawNotes || ''
+      } catch {}
+    } else {
+      const matchMod = rawNotes.match(/\[Modalidad:\s*(quincenal|mensual)\]/i)
+      if (matchMod) modality = matchMod[1].toLowerCase()
+      const matchSal = rawNotes.match(/\[Salario:\s*([\d\.]+)\]/i)
+      if (matchSal) salary = matchSal[1]
+      const matchCargo = rawNotes.match(/\[Cargo:\s*([^\]]+)\]/i)
+      if (matchCargo) jobTitle = matchCargo[1]
+    }
+  }
+
+  return {
+    modality: modality === 'mensual' ? 'mensual' : 'quincenal',
+    salary: salary ? Number(salary) : 0,
+    jobTitle: jobTitle || '',
+    rawNotes: rawNotes || ''
+  }
+}
+
+/**
+ * Codifica las notas de un dependiente con su metadata
+ */
+export function formatDependienteNotes({ modality = 'quincenal', salary = 0, jobTitle = '', rawNotes = '' }) {
+  return JSON.stringify({
+    modality: modality === 'mensual' ? 'mensual' : 'quincenal',
+    salary: Number(salary) || 0,
+    jobTitle: (jobTitle || '').trim(),
+    rawNotes: (rawNotes || '').trim()
+  })
+}

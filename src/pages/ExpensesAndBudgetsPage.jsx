@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Card, Input, Button, AlertBanner, Modal, SearchInput, Select, PaymentStatusModal } from '@/components/ui/index.jsx'
-import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure, parseLocalDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, getTodayStr, expenseStructure as defaultExpenseStructure, parseLocalDate, parseDependienteMeta } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useGlobalSettings } from '@/context/GlobalSettingsContext'
 import { supabase } from '@/lib/supabase'
@@ -741,7 +741,8 @@ export default function ExpensesAndBudgetsPage() {
     advanceAmount: '',
     paymentMethod: 'efectivo',
     orderId: '',
-    materialId: ''
+    materialId: '',
+    responsible: ''
   })
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
@@ -928,13 +929,18 @@ export default function ExpensesAndBudgetsPage() {
       const unitPriceNum = Number(form.unitPrice) || 0
       const totalAmountNum = Number(form.amount) || (finalQuantity * unitPriceNum)
 
+      const descWithResp = form.responsible
+        ? (form.description ? `[Resp: ${form.responsible}] ${form.description}` : `[Resp: ${form.responsible}]`)
+        : (form.description || '')
+
       const payload = {
         date: form.date,
         category_key: form.categoryKey,
         category_label: expenseStructure[form.categoryKey]?.label || form.categoryKey,
         subcategory: form.subcategory,
         specific_item: form.specificItem,
-        description: form.description.trim() || null,
+        description: descWithResp.trim() || null,
+        responsible: form.responsible || null,
         provider: trimmedProvider,
         provider_id: providerId,
         quantity: finalQuantity,
@@ -953,7 +959,17 @@ export default function ExpensesAndBudgetsPage() {
         material_id: linkedMaterialId
       }
 
-      await createExpense(payload)
+      try {
+        await createExpense(payload)
+      } catch (errSave) {
+        if (errSave.message?.includes('responsible')) {
+          const safePayload = { ...payload }
+          delete safePayload.responsible
+          await createExpense(safePayload)
+        } else {
+          throw errSave
+        }
+      }
 
       // Si es PRODUCCIÓN o INSUMOS y está vinculado a un material del catálogo, reflejar en Inventario y Almacén
       if (isAssignableCat && linkedMaterialId) {
@@ -1008,7 +1024,8 @@ export default function ExpensesAndBudgetsPage() {
         advanceAmount: '',
         paymentMethod: 'efectivo',
         orderId: '',
-        materialId: ''
+        materialId: '',
+        responsible: ''
       })
       setTerceroType('proveedor')
       setCurrentStep(1)
@@ -1758,8 +1775,8 @@ export default function ExpensesAndBudgetsPage() {
   const renderQuickPanel = () => {
     const shortcuts = settings?.quickExpenseShortcuts || []
     return (
-      <div className="flex flex-col h-full bg-[#131b2e] dark:bg-[#0c121e] select-none text-on-surface overflow-hidden">
-        <div className="p-4 border-b border-outline-variant/60 shrink-0 bg-[#18233c] dark:bg-[#111827]">
+      <div className="flex flex-col h-full bg-surface dark:bg-surface-container-lowest select-none text-on-surface overflow-hidden">
+        <div className="p-4 border-b border-outline-variant/40 shrink-0 bg-surface-container/60 dark:bg-surface-container-low">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">flash_on</span>
@@ -1794,7 +1811,7 @@ export default function ExpensesAndBudgetsPage() {
                     className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all duration-200 cursor-pointer ${
                       quickSelectedShortcut?.id === sc.id
                         ? 'border-primary bg-primary/10 text-primary shadow-[0_0_12px_rgba(255,92,0,0.2)]'
-                        : 'border-outline-variant/50 bg-[#1a253f] dark:bg-[#141d30] hover:border-primary/50 hover:bg-primary/10 text-on-surface shadow-sm'
+                        : 'border-outline-variant/40 bg-surface-container-low hover:bg-surface-container hover:border-primary/50 text-on-surface shadow-xs'
                     }`}
                   >
                     <span className="text-2xl leading-none">{sc.icon || '\u26a1'}</span>
@@ -2362,6 +2379,37 @@ export default function ExpensesAndBudgetsPage() {
                 onChange={(e) => updateForm('description', e.target.value)}
               />
 
+              {/* Responsable de la Compra / Gasto (Importado de Dependientes) */}
+              <div className="space-y-1 pt-1 border-t border-white/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5 ml-1">
+                    <span className="material-symbols-outlined text-[15px] text-amber-500">badge</span>
+                    Responsable de la Compra / Gasto
+                  </label>
+                  {dependientes.length > 0 && (
+                    <span className="text-[9px] text-on-surface-variant/70 font-mono">
+                      {dependientes.length} en nómina
+                    </span>
+                  )}
+                </div>
+                <Select
+                  options={[
+                    { value: '', label: 'Seleccionar responsable de la empresa...' },
+                    ...dependientes.map(d => {
+                      const meta = parseDependienteMeta(d)
+                      const modLabel = meta.modality === 'quincenal' ? 'Quincenal' : 'Mensual'
+                      return {
+                        value: d.name,
+                        label: `👤 ${d.name} (${modLabel}${meta.jobTitle ? ` - ${meta.jobTitle}` : ''})`
+                      }
+                    })
+                  ]}
+                  value={form.responsible}
+                  onChange={(e) => updateForm('responsible', e.target.value)}
+                  placeholder="¿Quién realizó esta compra?..."
+                />
+              </div>
+
               {['PRODUCCION', 'INSUMOS'].includes(form.categoryKey) ? (
                 <div className="space-y-3 pt-2 border-t border-outline-variant/30">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
@@ -2738,11 +2786,28 @@ export default function ExpensesAndBudgetsPage() {
                               <p className="text-xs text-on-surface-variant font-medium truncate" title={item}>
                                 {item}
                               </p>
-                              {e.description && (
-                                <p className="text-[10px] text-primary/80 italic truncate" title={e.description}>
-                                  {e.description}
-                                </p>
-                              )}
+                              {e.description && (() => {
+                                const cleanDesc = e.description.replace(/\[Resp:\s*[^\]]+\]\s*/g, '').trim()
+                                if (!cleanDesc) return null
+                                return (
+                                  <p className="text-[10px] text-primary/80 italic truncate" title={cleanDesc}>
+                                    {cleanDesc}
+                                  </p>
+                                )
+                              })()}
+                              {(() => {
+                                const rawDesc = e.description || ''
+                                const respName = e.responsible || (rawDesc.includes('[Resp:') ? rawDesc.match(/\[Resp:\s*([^\]]+)\]/)?.[1] : null)
+                                if (!respName) return null
+                                return (
+                                  <div className="mt-1">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                      <span className="material-symbols-outlined text-[12px]">badge</span>
+                                      Resp: {respName}
+                                    </span>
+                                  </div>
+                                )
+                              })()}
                               {(e.orders || e.materials) && (
                                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                                   {e.orders && (
@@ -2863,11 +2928,28 @@ export default function ExpensesAndBudgetsPage() {
                                     <span className="text-xs text-on-surface-variant block mt-0.5 font-medium truncate max-w-[200px]" title={item}>
                                       {item}
                                     </span>
-                                    {e.description && (
-                                      <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={e.description}>
-                                        Detalle: {e.description}
-                                      </span>
-                                    )}
+                                    {e.description && (() => {
+                                      const cleanDesc = e.description.replace(/\[Resp:\s*[^\]]+\]\s*/g, '').trim()
+                                      if (!cleanDesc) return null
+                                      return (
+                                        <span className="text-[10px] text-primary/80 italic block mt-0.5 max-w-[220px] truncate" title={cleanDesc}>
+                                          Detalle: {cleanDesc}
+                                        </span>
+                                      )
+                                    })()}
+                                    {(() => {
+                                      const rawDesc = e.description || ''
+                                      const respName = e.responsible || (rawDesc.includes('[Resp:') ? rawDesc.match(/\[Resp:\s*([^\]]+)\]/)?.[1] : null)
+                                      if (!respName) return null
+                                      return (
+                                        <div className="mt-1">
+                                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                            <span className="material-symbols-outlined text-[12px]">badge</span>
+                                            Resp: {respName}
+                                          </span>
+                                        </div>
+                                      )
+                                    })()}
                                     {(e.orders || e.materials) && (
                                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                                         {e.orders && (
@@ -4111,7 +4193,7 @@ export default function ExpensesAndBudgetsPage() {
             />
             {/* Contenedor del Bottom Sheet: 100% opaco y aislado */}
             <div
-              className="relative z-10 w-full bg-[#131b2e] dark:bg-[#0c121e] border-t-2 border-primary/40 rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.9)] max-h-[85vh] flex flex-col overflow-hidden"
+              className="relative z-10 w-full bg-surface dark:bg-surface-container-lowest border-t-2 border-primary/40 rounded-t-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.3)] max-h-[85vh] flex flex-col overflow-hidden text-on-surface"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-5 pt-3 pb-1 border-b border-white/5 shrink-0">
