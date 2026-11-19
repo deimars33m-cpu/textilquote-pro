@@ -12,6 +12,8 @@ import MaterialCategoriesModal from '@/components/materials/MaterialCategoriesMo
 import {
   formatCurrency, formatDate, isPriceOutdated,
   usageUnits, purchaseUnits, getCategoryColor,
+  getMaterialPriceHistory, updatePriceHistory,
+  saveMaterialPriceHistoryLocal, calculatePriceVariation,
 } from '@/lib/formatters'
 
 const EMPTY_FORM = {
@@ -57,6 +59,15 @@ export default function MaterialsPage() {
   // Catálogo de Precios: vista cards vs tabla y control de colapso por categorías
   const [catalogViewMode, setCatalogViewMode] = useState('cards') // 'cards' | 'table'
   const [collapsedCategories, setCollapsedCategories] = useState({})
+
+  // Modal de Historial y Comparativa de Precios (hasta 5 fechas)
+  const [priceHistoryModalOpen, setPriceHistoryModalOpen] = useState(false)
+  const [selectedHistoryMaterial, setSelectedHistoryMaterial] = useState(null)
+
+  const openPriceHistory = (mat) => {
+    setSelectedHistoryMaterial(mat)
+    setPriceHistoryModalOpen(true)
+  }
 
   // Modal Compra / Ingreso a Almacén
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false)
@@ -339,14 +350,20 @@ export default function MaterialsPage() {
     if (!validate()) return
     setSaving(true)
     try {
+      const unitPriceVal = parseFloat(form.unit_price) || 0
+      const updateDateVal = form.price_updated_at || new Date().toISOString().split('T')[0]
+      const existingHistory = getMaterialPriceHistory(editingItem)
+      const newHistory = updatePriceHistory(existingHistory, unitPriceVal, updateDateVal)
+
       const payload = {
         name: form.name.trim(),
         category: form.category,
         usage_unit: form.usage_unit,
-        unit_price: parseFloat(form.unit_price) || 0,
+        unit_price: unitPriceVal,
         purchase_quantity: form.purchase_quantity ? parseFloat(form.purchase_quantity) : null,
         purchase_unit: form.purchase_unit || null,
-        price_updated_at: form.price_updated_at || new Date().toISOString().split('T')[0],
+        price_updated_at: updateDateVal,
+        price_history: newHistory,
         default_waste_pct: form.default_waste_pct ? parseFloat(form.default_waste_pct) : 0,
         current_stock: form.current_stock !== '' && form.current_stock !== null ? parseFloat(form.current_stock) : null,
         min_stock: form.min_stock !== '' && form.min_stock !== null ? parseFloat(form.min_stock) : null,
@@ -354,9 +371,31 @@ export default function MaterialsPage() {
       }
 
       if (editingItem) {
-        await update(editingItem.id, payload)
+        try {
+          await update(editingItem.id, payload)
+          saveMaterialPriceHistoryLocal(editingItem.id, newHistory)
+        } catch (err) {
+          if (err.message && (err.message.includes('price_history') || err.message.includes('column'))) {
+            saveMaterialPriceHistoryLocal(editingItem.id, newHistory)
+            delete payload.price_history
+            await update(editingItem.id, payload)
+          } else {
+            throw err
+          }
+        }
       } else {
-        await create(payload)
+        try {
+          const created = await create(payload)
+          if (created?.id) saveMaterialPriceHistoryLocal(created.id, newHistory)
+        } catch (err) {
+          if (err.message && (err.message.includes('price_history') || err.message.includes('column'))) {
+            delete payload.price_history
+            const created = await create(payload)
+            if (created?.id) saveMaterialPriceHistoryLocal(created.id, newHistory)
+          } else {
+            throw err
+          }
+        }
       }
       setModalOpen(false)
     } catch (err) {
@@ -437,15 +476,35 @@ export default function MaterialsPage() {
         if (errExp) console.warn('No se pudo guardar el gasto en expenses:', errExp)
       }
 
-      // 4. Actualizar stock en materials
+      // 4. Actualizar stock y registrar en historial de precios (hasta 5 fechas)
       const currentStock = Number(selectedMat?.current_stock) || 0
       const newStock = currentStock + qty
       const updateData = { current_stock: newStock }
       if (unitCost > 0) {
+        const purchaseDate = purchaseForm.date || new Date().toISOString().split('T')[0]
         updateData.unit_price = unitCost
-        updateData.price_updated_at = purchaseForm.date || new Date().toISOString().split('T')[0]
+        updateData.price_updated_at = purchaseDate
+
+        const existingHist = getMaterialPriceHistory(selectedMat)
+        const newHist = updatePriceHistory(existingHist, unitCost, purchaseDate)
+        updateData.price_history = newHist
       }
-      await supabase.from('materials').update(updateData).eq('id', purchaseForm.material_id)
+      try {
+        await supabase.from('materials').update(updateData).eq('id', purchaseForm.material_id)
+        if (updateData.price_history) {
+          saveMaterialPriceHistoryLocal(purchaseForm.material_id, updateData.price_history)
+        }
+      } catch (err) {
+        if (err.message && (err.message.includes('price_history') || err.message.includes('column'))) {
+          if (updateData.price_history) {
+            saveMaterialPriceHistoryLocal(purchaseForm.material_id, updateData.price_history)
+            delete updateData.price_history
+          }
+          await supabase.from('materials').update(updateData).eq('id', purchaseForm.material_id)
+        } else {
+          throw err
+        }
+      }
 
       // 5. Invalidar cachés para reflejo inmediato en Gastos y Materiales
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -1212,10 +1271,12 @@ export default function MaterialsPage() {
                     {!isCollapsed && (
                       <div className="p-2.5 sm:p-3">
                         {catalogViewMode === 'cards' ? (
-                          /* VISTA CARDS COMPACTAS: Reducción drástica de espacio respetando todos los datos */
+                          /* VISTA CARDS COMPACTAS: Reducción drástica de espacio respetando todos los datos e historial de precios */
                           <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
                             {group.items.map((m) => {
                               const outdated = isPriceOutdated(m.price_updated_at)
+                              const history = getMaterialPriceHistory(m)
+                              const variation = calculatePriceVariation(history)
                               const packText = m.purchase_quantity
                                 ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
                                 : 'Al por menor'
@@ -1246,6 +1307,14 @@ export default function MaterialsPage() {
                                       <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                                         <button
                                           type="button"
+                                          onClick={() => openPriceHistory(m)}
+                                          className="p-1 rounded-md text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                          title="Ver evolución e historial de precios (hasta 5 fechas)"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">timeline</span>
+                                        </button>
+                                        <button
+                                          type="button"
                                           onClick={() => openEdit(m)}
                                           className="p-1 rounded-md text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
                                           title="Editar precio y especificaciones"
@@ -1263,19 +1332,57 @@ export default function MaterialsPage() {
                                       </div>
                                     </div>
 
-                                    {/* Precio de Mercado (Bloque Destacado) */}
-                                    <div className="my-2 px-2 py-1.5 rounded-lg bg-surface-container-high/80 border border-outline-variant/25 flex items-baseline justify-between">
-                                      <span className="text-[9px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
-                                        Precio:
-                                      </span>
-                                      <div className="text-right">
-                                        <span className="text-sm font-bold font-mono text-emerald-400">
-                                          {formatCurrency(m.unit_price)}
+                                    {/* Precio de Mercado (Bloque Destacado) con Variación vs fecha anterior */}
+                                    <div className="my-2 px-2 py-1.5 rounded-lg bg-surface-container-high/80 border border-outline-variant/25">
+                                      <div className="flex items-baseline justify-between">
+                                        <span className="text-[9px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                                          Precio:
                                         </span>
-                                        <span className="text-[10px] font-mono text-on-surface-variant/80 ml-1">
-                                          / {usageUnits[m.usage_unit] || m.usage_unit}
-                                        </span>
+                                        <div className="text-right">
+                                          <span className="text-sm font-bold font-mono text-emerald-400">
+                                            {formatCurrency(m.unit_price)}
+                                          </span>
+                                          <span className="text-[10px] font-mono text-on-surface-variant/80 ml-1">
+                                            / {usageUnits[m.usage_unit] || m.usage_unit}
+                                          </span>
+                                        </div>
                                       </div>
+
+                                      {/* Comparativa vs fecha anterior (hasta 5 fechas almacenadas) */}
+                                      {variation.trend !== 'single' && (
+                                        <div className="flex items-center justify-between gap-1 mt-1 pt-1 border-t border-outline-variant/15 text-[9px]">
+                                          <span className="text-on-surface-variant/70 font-mono">Vs. anterior:</span>
+                                          <div className="flex items-center gap-1.5">
+                                            {variation.trend === 'up' && (
+                                              <span className="flex items-center font-bold font-mono text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20" title={`Subió Bs ${variation.diffVsPrevious.toFixed(2)} (+${variation.diffPctVsPrevious.toFixed(1)}%) vs fecha anterior`}>
+                                                <span className="material-symbols-outlined text-[11px]">trending_up</span>
+                                                +{variation.diffPctVsPrevious.toFixed(1)}%
+                                              </span>
+                                            )}
+                                            {variation.trend === 'down' && (
+                                              <span className="flex items-center font-bold font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20" title={`Bajó Bs ${Math.abs(variation.diffVsPrevious).toFixed(2)} (${variation.diffPctVsPrevious.toFixed(1)}%) vs fecha anterior`}>
+                                                <span className="material-symbols-outlined text-[11px]">trending_down</span>
+                                                {variation.diffPctVsPrevious.toFixed(1)}%
+                                              </span>
+                                            )}
+                                            {variation.trend === 'flat' && (
+                                              <span className="flex items-center font-mono text-on-surface-variant bg-white/5 px-1 py-0.2 rounded border border-white/10" title="Sin variación vs fecha anterior">
+                                                <span className="material-symbols-outlined text-[11px]">trending_flat</span>
+                                                0%
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => openPriceHistory(m)}
+                                              className="text-primary hover:underline font-mono font-bold flex items-center gap-0.5 cursor-pointer ml-0.5"
+                                              title="Ver comparativa completa de las 5 fechas"
+                                            >
+                                              <span>{variation.count}/5</span>
+                                              <span className="material-symbols-outlined text-[11px]">query_stats</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
 
@@ -1337,12 +1444,14 @@ export default function MaterialsPage() {
                                   <th className="text-right px-2.5 py-1.5 font-bold">Precio Unit. Mercado</th>
                                   <th className="text-center px-2.5 py-1.5 font-bold">% Merma</th>
                                   <th className="text-left px-2.5 py-1.5 font-bold">Última Revisión</th>
-                                  <th className="text-center px-2.5 py-1.5 font-bold w-20">Acciones</th>
+                                  <th className="text-center px-2.5 py-1.5 font-bold w-24">Acciones</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-outline-variant/15 font-sans">
                                 {group.items.map((m) => {
                                   const outdated = isPriceOutdated(m.price_updated_at)
+                                  const history = getMaterialPriceHistory(m)
+                                  const variation = calculatePriceVariation(history)
                                   const packText = m.purchase_quantity
                                     ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
                                     : 'Al por menor'
@@ -1365,8 +1474,29 @@ export default function MaterialsPage() {
                                       <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px] font-mono">
                                         {packText}
                                       </td>
-                                      <td className="px-2.5 py-1.5 text-right font-mono font-bold text-on-surface text-xs">
-                                        {formatCurrency(m.unit_price)}
+                                      <td className="px-2.5 py-1.5 text-right font-mono font-bold text-on-surface text-xs whitespace-nowrap">
+                                        <div>{formatCurrency(m.unit_price)}</div>
+                                        {variation.trend !== 'single' && (
+                                          <div className="flex items-center justify-end gap-1 mt-0.5">
+                                            {variation.trend === 'up' && (
+                                              <span className="text-[9px] text-amber-400 font-bold bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20 inline-flex items-center" title={`Subió vs anterior: +${variation.diffPctVsPrevious.toFixed(1)}%`}>
+                                                <span className="material-symbols-outlined text-[10px]">trending_up</span>
+                                                +{variation.diffPctVsPrevious.toFixed(1)}%
+                                              </span>
+                                            )}
+                                            {variation.trend === 'down' && (
+                                              <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20 inline-flex items-center" title={`Bajó vs anterior: ${variation.diffPctVsPrevious.toFixed(1)}%`}>
+                                                <span className="material-symbols-outlined text-[10px]">trending_down</span>
+                                                {variation.diffPctVsPrevious.toFixed(1)}%
+                                              </span>
+                                            )}
+                                            {variation.trend === 'flat' && (
+                                              <span className="text-[9px] text-on-surface-variant bg-white/5 px-1 py-0.2 rounded border border-white/10" title="Sin cambio vs anterior">
+                                                0%
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
                                       </td>
                                       <td className="px-2.5 py-1.5 text-center font-mono text-on-surface-variant text-[11px]">
                                         {m.default_waste_pct ?? 0}%
@@ -1385,6 +1515,13 @@ export default function MaterialsPage() {
                                       </td>
                                       <td className="px-2.5 py-1.5 text-center">
                                         <div className="flex items-center justify-center gap-1">
+                                          <button
+                                            onClick={() => openPriceHistory(m)}
+                                            className="p-1 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+                                            title="Ver historial y comparativa de precios"
+                                          >
+                                            <span className="material-symbols-outlined text-[15px]">timeline</span>
+                                          </button>
                                           <button
                                             onClick={() => openEdit(m)}
                                             className="p-1 rounded hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
@@ -1871,6 +2008,50 @@ export default function MaterialsPage() {
               suffix="%"
             />
 
+            {/* Previsualización del Historial de Precios al Editar */}
+            {editingItem && (
+              <div className="sm:col-span-2 -mt-1 p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/30 text-xs">
+                {(() => {
+                  const hist = getMaterialPriceHistory(editingItem)
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-[10px] uppercase font-bold text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px] text-primary">timeline</span>
+                          Historial de Precios ({hist.length} de máx 5 fechas guardadas)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openPriceHistory(editingItem)}
+                          className="text-primary hover:underline text-[10px] font-mono font-bold flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span>Ver evolución y comparativa</span>
+                          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {hist.map((h, i) => (
+                          <span
+                            key={h.date + i}
+                            className={`px-2 py-1 rounded-lg font-mono text-[11px] flex items-center gap-1.5 ${
+                              i === 0
+                                ? 'bg-primary/10 text-primary border border-primary/20 font-bold'
+                                : 'bg-surface-container-high/80 text-on-surface-variant border border-outline-variant/20'
+                            }`}
+                          >
+                            <span className="text-[10px] opacity-75">{formatDate(h.date)}:</span>
+                            <span className="font-bold">{formatCurrency(h.price)}</span>
+                            {i === 0 && <span className="text-[9px] px-1 rounded bg-primary/20 text-primary">Vigente</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
             <Input
               label="Fecha de actualización"
               type="date"
@@ -1927,6 +2108,292 @@ export default function MaterialsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: Historial y Comparativa de Precios (Máx 5 fechas) */}
+      <Modal
+        isOpen={priceHistoryModalOpen}
+        onClose={() => {
+          setPriceHistoryModalOpen(false)
+          setSelectedHistoryMaterial(null)
+        }}
+        title={`Evolución de Precios: ${selectedHistoryMaterial?.name || 'Material'}`}
+        size="lg"
+      >
+        {(() => {
+          if (!selectedHistoryMaterial) return null
+          const history = getMaterialPriceHistory(selectedHistoryMaterial)
+          const variation = calculatePriceVariation(history)
+          const catColor = getCategoryColor(selectedHistoryMaterial.categoryName || categoryMap[selectedHistoryMaterial.category] || selectedHistoryMaterial.category)
+          const unitLabel = usageUnits[selectedHistoryMaterial.usage_unit] || selectedHistoryMaterial.usage_unit || 'unidad'
+
+          return (
+            <div className="space-y-4">
+              {/* Cabecera / Identificación del Material */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-surface-container-high/60 border border-outline-variant/30">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: catColor.hex }}></span>
+                    <span className="text-xs font-bold font-mono uppercase text-on-surface">
+                      {categoryMap[selectedHistoryMaterial.category] || selectedHistoryMaterial.category}
+                    </span>
+                    <span className="text-xs text-on-surface-variant font-mono">
+                      • Unidad Base: <strong className="text-white">{unitLabel}</strong>
+                    </span>
+                  </div>
+                  {selectedHistoryMaterial.notes && (
+                    <p className="text-xs text-on-surface-variant/80 italic mt-0.5">
+                      {selectedHistoryMaterial.notes}
+                    </p>
+                  )}
+                </div>
+
+                <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
+                  {history.length} de 5 fechas guardadas
+                </span>
+              </div>
+
+              {/* Grid de Métricas Comparativas (KPIs) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {/* Precio Actual */}
+                <div className="p-3 rounded-xl neu-pressed bg-surface-container/50 border border-outline-variant/30">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                    Precio Actual
+                  </p>
+                  <p className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                    {formatCurrency(variation.currentPrice)}
+                  </p>
+                  <span className="text-[10px] font-mono text-on-surface-variant/80">
+                    {history[0] ? formatDate(history[0].date) : 'Sin fecha'}
+                  </span>
+                </div>
+
+                {/* Variación vs Anterior */}
+                <div className="p-3 rounded-xl neu-pressed bg-surface-container/50 border border-outline-variant/30">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                    Vs. Fecha Anterior
+                  </p>
+                  {variation.previousPrice !== null ? (
+                    <>
+                      <p className={`text-lg font-bold font-mono mt-0.5 flex items-center gap-0.5 ${
+                        variation.trend === 'up' ? 'text-amber-400' : variation.trend === 'down' ? 'text-emerald-400' : 'text-on-surface'
+                      }`}>
+                        <span className="material-symbols-outlined text-base">
+                          {variation.trend === 'up' ? 'trending_up' : variation.trend === 'down' ? 'trending_down' : 'trending_flat'}
+                        </span>
+                        {variation.diffVsPrevious > 0 ? `+${variation.diffVsPrevious.toFixed(2)}` : variation.diffVsPrevious.toFixed(2)} Bs
+                      </p>
+                      <span className={`text-[10px] font-mono font-bold ${
+                        variation.trend === 'up' ? 'text-amber-400' : variation.trend === 'down' ? 'text-emerald-400' : 'text-on-surface-variant'
+                      }`}>
+                        {variation.diffPctVsPrevious > 0 ? `+${variation.diffPctVsPrevious.toFixed(1)}%` : `${variation.diffPctVsPrevious.toFixed(1)}%`}
+                      </span>
+                    </>
+                  ) : (
+                    <p className="text-xs text-on-surface-variant italic mt-1.5">Primer registro</p>
+                  )}
+                </div>
+
+                {/* Variación Histórica Total (hasta 5 fechas) */}
+                <div className="p-3 rounded-xl neu-pressed bg-surface-container/50 border border-outline-variant/30">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                    Cambio en el Tiempo
+                  </p>
+                  {history.length >= 2 ? (
+                    <>
+                      <p className={`text-lg font-bold font-mono mt-0.5 flex items-center gap-0.5 ${
+                        variation.diffTotal > 0 ? 'text-amber-400' : variation.diffTotal < 0 ? 'text-emerald-400' : 'text-on-surface'
+                      }`}>
+                        <span className="material-symbols-outlined text-base">
+                          {variation.diffTotal > 0 ? 'trending_up' : variation.diffTotal < 0 ? 'trending_down' : 'trending_flat'}
+                        </span>
+                        {variation.diffTotal > 0 ? `+${variation.diffTotal.toFixed(2)}` : variation.diffTotal.toFixed(2)} Bs
+                      </p>
+                      <span className={`text-[10px] font-mono font-bold ${
+                        variation.diffPctTotal > 0 ? 'text-amber-400' : variation.diffPctTotal < 0 ? 'text-emerald-400' : 'text-on-surface-variant'
+                      }`}>
+                        {variation.diffPctTotal > 0 ? `+${variation.diffPctTotal.toFixed(1)}%` : `${variation.diffPctTotal.toFixed(1)}%`} acumulado
+                      </span>
+                    </>
+                  ) : (
+                    <p className="text-xs text-on-surface-variant italic mt-1.5">1 sola muestra</p>
+                  )}
+                </div>
+
+                {/* Rango Min / Max */}
+                <div className="p-3 rounded-xl neu-pressed bg-surface-container/50 border border-outline-variant/30">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                    Rango (Mín / Máx)
+                  </p>
+                  <p className="text-sm font-bold font-mono text-white mt-1">
+                    <span className="text-emerald-400">{formatCurrency(variation.minPrice)}</span>
+                    <span className="text-on-surface-variant mx-1">-</span>
+                    <span className="text-amber-400">{formatCurrency(variation.maxPrice)}</span>
+                  </p>
+                  <span className="text-[10px] font-mono text-on-surface-variant/80">
+                    Diferencia: {formatCurrency(variation.maxPrice - variation.minPrice)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Gráfica / Barras de Evolución Temporal */}
+              {history.length > 1 && (
+                <div className="p-3 rounded-xl bg-surface-container-low/50 border border-outline-variant/30 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono font-bold text-on-surface-variant">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm text-primary">analytics</span>
+                      Línea de Evolución de Fechas (Más Antigua → Más Reciente)
+                    </span>
+                    <span className="text-[10px] opacity-75">Escala relativa de precio</span>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    {[...history].reverse().map((entry, idx) => {
+                      const pct = variation.maxPrice > 0 ? Math.max(18, Math.round((entry.price / variation.maxPrice) * 100)) : 100
+                      const isLatest = idx === history.length - 1
+
+                      return (
+                        <div key={entry.date + idx} className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-mono">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full ${isLatest ? 'bg-primary ring-2 ring-primary/30' : 'bg-outline-variant'}`} />
+                              <span className={isLatest ? 'font-bold text-white' : 'text-on-surface-variant'}>
+                                {formatDate(entry.date)} {isLatest ? '(Actual / Vigente)' : ''}
+                              </span>
+                            </span>
+                            <span className={`font-bold ${isLatest ? 'text-primary' : 'text-on-surface'}`}>
+                              {formatCurrency(entry.price)} / {unitLabel}
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 rounded-full bg-surface-container-high/60 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isLatest
+                                  ? 'bg-gradient-to-r from-primary/80 to-primary'
+                                  : 'bg-gradient-to-r from-blue-500/50 to-blue-500'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tabla Detallada con las hasta 5 fechas */}
+              <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-surface-container-high/60 text-on-surface-variant font-mono uppercase tracking-wider text-[10px] border-b border-outline-variant/30">
+                      <th className="py-2 px-3 text-left">#</th>
+                      <th className="py-2 px-3 text-left">Fecha de Registro</th>
+                      <th className="py-2 px-3 text-right">Precio Unitario</th>
+                      <th className="py-2 px-3 text-right">Variación vs Siguiente</th>
+                      <th className="py-2 px-3 text-center">Tendencia</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/15 font-sans">
+                    {history.map((entry, idx) => {
+                      const isCurrent = idx === 0
+                      const olderEntry = history[idx + 1] || null
+                      const diffVsOlder = olderEntry ? entry.price - olderEntry.price : null
+                      const diffPctVsOlder = olderEntry ? ((entry.price - olderEntry.price) / olderEntry.price) * 100 : null
+
+                      return (
+                        <tr key={entry.date + idx} className={`hover:bg-white/[0.02] transition-colors ${isCurrent ? 'bg-primary/5' : ''}`}>
+                          <td className="py-2 px-3 font-mono font-bold">
+                            {isCurrent ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary text-white">
+                                Actual
+                              </span>
+                            ) : (
+                              <span className="text-on-surface-variant text-[10px]">
+                                #{idx + 1}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-mono whitespace-nowrap">
+                            <div className="font-bold text-on-surface">{formatDate(entry.date)}</div>
+                            <div className="text-[10px] text-on-surface-variant/70">{entry.date}</div>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-white whitespace-nowrap">
+                            {formatCurrency(entry.price)}
+                            <span className="text-[10px] text-on-surface-variant font-normal ml-1">/ {unitLabel}</span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono whitespace-nowrap">
+                            {diffVsOlder !== null ? (
+                              <div className={diffVsOlder > 0 ? 'text-amber-400 font-bold' : diffVsOlder < 0 ? 'text-emerald-400 font-bold' : 'text-on-surface-variant'}>
+                                <span>{diffVsOlder > 0 ? `+${diffVsOlder.toFixed(2)}` : diffVsOlder.toFixed(2)} Bs</span>
+                                <span className="text-[10px] ml-1">({diffPctVsOlder > 0 ? `+${diffPctVsOlder.toFixed(1)}%` : `${diffPctVsOlder.toFixed(1)}%`})</span>
+                              </div>
+                            ) : (
+                              <span className="text-on-surface-variant/50 text-[10px] italic">Base inicial</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            {diffVsOlder !== null ? (
+                              diffVsOlder > 0 ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                  Subió
+                                </span>
+                              ) : diffVsOlder < 0 ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <span className="material-symbols-outlined text-[12px]">trending_down</span>
+                                  Bajó
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-on-surface-variant border border-white/10">
+                                  <span className="material-symbols-outlined text-[12px]">trending_flat</span>
+                                  Sin cambio
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-on-surface-variant/40 text-[10px]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Botones de Pie de Modal */}
+              <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20">
+                <span className="text-[11px] text-on-surface-variant font-mono">
+                  * Se conservan automáticamente las últimas 5 actualizaciones de precio.
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setPriceHistoryModalOpen(false)
+                      setSelectedHistoryMaterial(null)
+                    }}
+                    className="text-xs py-1.5"
+                  >
+                    Cerrar
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const mat = selectedHistoryMaterial
+                      setPriceHistoryModalOpen(false)
+                      setSelectedHistoryMaterial(null)
+                      openEdit(mat)
+                    }}
+                    className="text-xs py-1.5"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">edit</span>
+                    Actualizar Precio
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </Modal>
 
       {/* Diálogo Eliminar */}

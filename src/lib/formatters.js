@@ -452,3 +452,167 @@ export function formatDependienteNotes({ modality = 'quincenal', salary = 0, job
     rawNotes: (rawNotes || '').trim()
   })
 }
+
+/**
+ * Normaliza y limita un array de historial a un máximo estricto de 5 registros ordenados de reciente a antiguo
+ */
+export function normalizeAndCapPriceHistory(rawList) {
+  if (!Array.isArray(rawList)) return []
+  const valid = rawList
+    .map(item => ({
+      date: item.date ? String(item.date).split('T')[0] : '',
+      price: parseFloat(item.price) || 0
+    }))
+    .filter(item => item.date && item.price > 0)
+
+  // Ordenar por fecha descendente (más reciente primero)
+  valid.sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  // Eliminar duplicados de fecha dejando el precio más reciente
+  const uniqueByDate = []
+  const seenDates = new Set()
+  for (const item of valid) {
+    if (!seenDates.has(item.date)) {
+      seenDates.add(item.date)
+      uniqueByDate.push(item)
+    }
+  }
+
+  return uniqueByDate.slice(0, 5)
+}
+
+/**
+ * Obtiene el historial de precios de un material (máximo 5 registros)
+ * Soporta campo en base de datos (array/json) y fallback en localStorage
+ */
+export function getMaterialPriceHistory(material) {
+  if (!material) return []
+
+  // 1. Verificar en el objeto material de Supabase
+  if (Array.isArray(material.price_history) && material.price_history.length > 0) {
+    return normalizeAndCapPriceHistory(material.price_history)
+  }
+  if (typeof material.price_history === 'string' && material.price_history.trim()) {
+    try {
+      const parsed = JSON.parse(material.price_history)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return normalizeAndCapPriceHistory(parsed)
+      }
+    } catch (_) {}
+  }
+
+  // 2. Verificar fallback en localStorage
+  if (material.id && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const stored = localStorage.getItem(`mat_price_hist_${material.id}`)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return normalizeAndCapPriceHistory(parsed)
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. Fallback con el precio actual si no hay historial previo
+  const curPrice = parseFloat(material.unit_price) || 0
+  if (curPrice > 0) {
+    const curDate = (material.price_updated_at || material.created_at || new Date().toISOString()).split('T')[0]
+    return [{ date: curDate, price: curPrice }]
+  }
+
+  return []
+}
+
+/**
+ * Agrega o actualiza un registro de precio en el historial respetando un máximo estricto de 5 fechas
+ */
+export function updatePriceHistory(existingHistory, newPrice, dateStr) {
+  const price = parseFloat(newPrice)
+  if (isNaN(price) || price <= 0) return normalizeAndCapPriceHistory(existingHistory)
+
+  const date = dateStr ? String(dateStr).split('T')[0] : new Date().toISOString().split('T')[0]
+  const currentHistory = normalizeAndCapPriceHistory(existingHistory)
+
+  // Si ya existe la fecha, actualiza; si no, añade al inicio
+  const existingIdx = currentHistory.findIndex(h => h.date === date)
+  let updated
+  if (existingIdx >= 0) {
+    updated = [...currentHistory]
+    updated[existingIdx] = { date, price }
+  } else {
+    updated = [{ date, price }, ...currentHistory]
+  }
+
+  return normalizeAndCapPriceHistory(updated)
+}
+
+/**
+ * Guarda en localStorage el historial de precios como fallback
+ */
+export function saveMaterialPriceHistoryLocal(materialId, history) {
+  if (!materialId || typeof window === 'undefined' || !window.localStorage) return
+  try {
+    const capped = normalizeAndCapPriceHistory(history)
+    localStorage.setItem(`mat_price_hist_${materialId}`, JSON.stringify(capped))
+  } catch (_) {}
+}
+
+/**
+ * Calcula las variaciones y comparativa de cambio de precio en el tiempo (hasta 5 fechas)
+ */
+export function calculatePriceVariation(history) {
+  const list = normalizeAndCapPriceHistory(history)
+  if (list.length === 0) {
+    return {
+      currentPrice: 0,
+      previousPrice: null,
+      diffVsPrevious: 0,
+      diffPctVsPrevious: 0,
+      oldestPrice: 0,
+      diffTotal: 0,
+      diffPctTotal: 0,
+      minPrice: 0,
+      maxPrice: 0,
+      trend: 'single',
+      count: 0,
+      list: []
+    }
+  }
+
+  const currentPrice = list[0].price
+  const previousPrice = list.length >= 2 ? list[1].price : null
+  const oldestPrice = list[list.length - 1].price
+
+  const diffVsPrevious = previousPrice !== null ? currentPrice - previousPrice : 0
+  const diffPctVsPrevious = previousPrice ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0
+
+  const diffTotal = currentPrice - oldestPrice
+  const diffPctTotal = oldestPrice ? ((currentPrice - oldestPrice) / oldestPrice) * 100 : 0
+
+  const prices = list.map(h => h.price)
+  const minPrice = Math.min(...prices)
+  const maxPrice = Math.max(...prices)
+
+  let trend = 'single'
+  if (previousPrice !== null) {
+    if (Math.abs(diffVsPrevious) < 0.001) trend = 'flat'
+    else if (diffVsPrevious > 0) trend = 'up'
+    else trend = 'down'
+  }
+
+  return {
+    currentPrice,
+    previousPrice,
+    diffVsPrevious,
+    diffPctVsPrevious,
+    oldestPrice,
+    diffTotal,
+    diffPctTotal,
+    minPrice,
+    maxPrice,
+    trend,
+    count: list.length,
+    list
+  }
+}
