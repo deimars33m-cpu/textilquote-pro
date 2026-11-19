@@ -54,6 +54,10 @@ export default function MaterialsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [errors, setErrors] = useState({})
 
+  // Catálogo de Precios: vista cards vs tabla y control de colapso por categorías
+  const [catalogViewMode, setCatalogViewMode] = useState('cards') // 'cards' | 'table'
+  const [collapsedCategories, setCollapsedCategories] = useState({})
+
   // Modal Compra / Ingreso a Almacén
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false)
   const [purchaseForm, setPurchaseForm] = useState({
@@ -190,6 +194,29 @@ export default function MaterialsPage() {
       items: groups[cat]
     }))
   }, [filtered, categoryMap])
+
+  // Helpers para colapsar / expandir categorías en el catálogo
+  const toggleCategoryCollapse = (cat) => {
+    setCollapsedCategories(prev => ({
+      ...prev,
+      [cat]: !prev[cat]
+    }))
+  }
+
+  const allCategoriesCollapsed = useMemo(() => {
+    if (groupedMaterials.length === 0) return false
+    return groupedMaterials.every(g => !!collapsedCategories[g.category])
+  }, [groupedMaterials, collapsedCategories])
+
+  const toggleAllCategories = () => {
+    if (allCategoriesCollapsed) {
+      setCollapsedCategories({})
+    } else {
+      const next = {}
+      groupedMaterials.forEach(g => { next[g.category] = true })
+      setCollapsedCategories(next)
+    }
+  }
 
   // Resumen de Métricas de Almacén (Pestaña Existencias)
   const inventoryMetrics = useMemo(() => {
@@ -1069,20 +1096,67 @@ export default function MaterialsPage() {
       ) : (
         /* VISTA 2: CATÁLOGO Y PRECIOS (Base de datos global con espacios estrechos y compactos, sin existencias ni asignación) */
         <>
-          {/* Filtros */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Buscar en catálogo de precios..."
-            />
-            <Select
-              options={categoryOptions}
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              placeholder="Todas las categorías"
-              className="w-full sm:w-48"
-            />
+          {/* Filtros y Controles de Vista */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row gap-2.5 flex-1 max-w-xl">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar en catálogo de precios..."
+              />
+              <Select
+                options={categoryOptions}
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                placeholder="Todas las categorías"
+                className="w-full sm:w-48"
+              />
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+              {/* Botón Contraer / Expandir todas */}
+              <button
+                type="button"
+                onClick={toggleAllCategories}
+                className="px-2.5 py-1.5 text-[11px] font-bold text-on-surface-variant hover:text-on-surface bg-surface-container/60 hover:bg-surface-container rounded-xl border border-outline-variant/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                title={allCategoriesCollapsed ? "Expandir todas las categorías" : "Contraer todas las categorías"}
+              >
+                <span className="material-symbols-outlined text-[15px]">
+                  {allCategoriesCollapsed ? 'unfold_more' : 'unfold_less'}
+                </span>
+                <span>{allCategoriesCollapsed ? 'Expandir todo' : 'Contraer todo'}</span>
+              </button>
+
+              {/* Selector de Vista: Cards vs Tabla */}
+              <div className="flex items-center gap-1 p-1 bg-surface-container rounded-xl border border-outline-variant/30 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setCatalogViewMode('cards')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    catalogViewMode === 'cards'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                  title="Vista en Cards compactas (ahorro de espacio)"
+                >
+                  <span className="material-symbols-outlined text-[15px]">grid_view</span>
+                  <span>Cards</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogViewMode('table')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    catalogViewMode === 'table'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                  title="Vista en Tabla"
+                >
+                  <span className="material-symbols-outlined text-[15px]">view_list</span>
+                  <span>Tabla</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {filtered.length === 0 ? (
@@ -1104,103 +1178,238 @@ export default function MaterialsPage() {
               }
             />
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3.5">
               {groupedMaterials.map((group) => {
                 const color = getCategoryColor(group.categoryName)
+                const isCollapsed = !!collapsedCategories[group.category]
+
                 return (
                   <Card key={group.category} className="p-0 overflow-hidden border border-outline-variant/30">
-                    {/* Header compacto de categoría */}
-                    <div className={`px-3 py-1.5 font-bold flex items-center justify-between border-b ${color.bg} ${color.border}`}>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color.hex }}></span>
-                        <span className="text-xs uppercase tracking-wider font-mono font-bold">{group.categoryName}</span>
+                    {/* Header compacto de categoría con botón de colapso */}
+                    <button
+                      type="button"
+                      onClick={() => toggleCategoryCollapse(group.category)}
+                      className={`w-full px-3.5 py-2 font-bold flex items-center justify-between border-b transition-colors cursor-pointer text-left ${color.bg} ${color.border}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color.hex }}></span>
+                        <span className="text-xs uppercase tracking-wider font-mono font-bold truncate">{group.categoryName}</span>
+                        <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono font-bold shrink-0 ${color.badge}`}>
+                          {group.items.length} {group.items.length !== 1 ? 'ítems' : 'ítem'}
+                        </span>
                       </div>
-                      <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono font-bold ${color.badge}`}>
-                        {group.items.length} ítem{group.items.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
 
-                    <div className="overflow-x-auto">
-                      {/* Tabla estrecha / densa para catálogo de precios */}
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-surface-container-high/60 border-b border-outline-variant/30 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant">
-                            <th className="text-left px-3 py-1.5 font-bold">Material / Insumo</th>
-                            <th className="text-left px-2.5 py-1.5 font-bold">Unidad Base</th>
-                            <th className="text-left px-2.5 py-1.5 font-bold">Presentación de Compra</th>
-                            <th className="text-right px-2.5 py-1.5 font-bold">Precio Unit. Mercado</th>
-                            <th className="text-center px-2.5 py-1.5 font-bold">% Merma</th>
-                            <th className="text-left px-2.5 py-1.5 font-bold">Última Revisión</th>
-                            <th className="text-center px-2.5 py-1.5 font-bold w-20">Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-outline-variant/15 font-sans">
-                          {group.items.map((m) => {
-                            const outdated = isPriceOutdated(m.price_updated_at)
-                            const packText = m.purchase_quantity
-                              ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
-                              : 'Al por menor'
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-mono text-on-surface-variant/70 hidden sm:inline">
+                          {isCollapsed ? 'Clic para ver ítems' : 'Clic para contraer'}
+                        </span>
+                        <span className="material-symbols-outlined text-base text-on-surface-variant transition-transform duration-200">
+                          {isCollapsed ? 'expand_more' : 'expand_less'}
+                        </span>
+                      </div>
+                    </button>
 
-                            return (
-                              <tr key={m.id} className="hover:bg-white/[0.03] transition-colors">
-                                <td className="px-3 py-1.5 font-medium text-on-surface">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-xs">{m.name}</span>
-                                    {m.notes && (
-                                      <span className="text-[10px] text-on-surface-variant/70 truncate max-w-[150px] italic">
-                                        ({m.notes})
+                    {!isCollapsed && (
+                      <div className="p-2.5 sm:p-3">
+                        {catalogViewMode === 'cards' ? (
+                          /* VISTA CARDS COMPACTAS: Reducción drástica de espacio respetando todos los datos */
+                          <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                            {group.items.map((m) => {
+                              const outdated = isPriceOutdated(m.price_updated_at)
+                              const packText = m.purchase_quantity
+                                ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
+                                : 'Al por menor'
+
+                              return (
+                                <div
+                                  key={m.id}
+                                  className="neu-pressed rounded-xl p-2.5 bg-surface-container/40 border border-outline-variant/30 hover:border-primary/40 hover:bg-surface-container-high/60 transition-all flex flex-col justify-between group shadow-xs"
+                                >
+                                  {/* Cabecera de la Card: Nombre, notas y botones de acción */}
+                                  <div>
+                                    <div className="flex items-start justify-between gap-1.5">
+                                      <div className="min-w-0 flex-1">
+                                        <h4 className="font-bold text-xs text-on-surface truncate" title={m.name}>
+                                          {m.name}
+                                        </h4>
+                                        {m.notes ? (
+                                          <p className="text-[10px] text-on-surface-variant/75 truncate italic" title={m.notes}>
+                                            {m.notes}
+                                          </p>
+                                        ) : (
+                                          <p className="text-[10px] text-on-surface-variant/35 italic">
+                                            Sin notas
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                          type="button"
+                                          onClick={() => openEdit(m)}
+                                          className="p-1 rounded-md text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                          title="Editar precio y especificaciones"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">edit</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setDeleteTarget(m)}
+                                          className="p-1 rounded-md text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors cursor-pointer"
+                                          title="Eliminar del catálogo"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">delete</span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Precio de Mercado (Bloque Destacado) */}
+                                    <div className="my-2 px-2 py-1.5 rounded-lg bg-surface-container-high/80 border border-outline-variant/25 flex items-baseline justify-between">
+                                      <span className="text-[9px] font-mono uppercase tracking-wider text-on-surface-variant font-bold">
+                                        Precio:
                                       </span>
-                                    )}
+                                      <div className="text-right">
+                                        <span className="text-sm font-bold font-mono text-emerald-400">
+                                          {formatCurrency(m.unit_price)}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-on-surface-variant/80 ml-1">
+                                          / {usageUnits[m.usage_unit] || m.usage_unit}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
-                                </td>
-                                <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px]">
-                                  {usageUnits[m.usage_unit] || m.usage_unit}
-                                </td>
-                                <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px] font-mono">
-                                  {packText}
-                                </td>
-                                <td className="px-2.5 py-1.5 text-right font-mono font-bold text-on-surface text-xs">
-                                  {formatCurrency(m.unit_price)}
-                                </td>
-                                <td className="px-2.5 py-1.5 text-center font-mono text-on-surface-variant text-[11px]">
-                                  {m.default_waste_pct ?? 0}%
-                                </td>
-                                <td className="px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap">
-                                  <div className="flex items-center gap-1">
-                                    <span className={outdated ? 'text-amber-400 font-medium' : 'text-on-surface-variant'}>
-                                      {formatDate(m.price_updated_at)}
-                                    </span>
-                                    {outdated && (
-                                      <span className="material-symbols-outlined text-amber-400 text-[14px]" title="Precio desactualizado (>30 días)">
-                                        schedule
+
+                                  {/* Ficha técnica compacta */}
+                                  <div className="space-y-1 pt-1 border-t border-outline-variant/20 text-[10px]">
+                                    {/* Presentación de Compra */}
+                                    <div className="flex items-center justify-between text-on-surface-variant">
+                                      <span className="flex items-center gap-1 text-[10px] text-on-surface-variant/80">
+                                        <span className="material-symbols-outlined text-[12px] opacity-70">inventory_2</span>
+                                        Compra:
                                       </span>
-                                    )}
+                                      <span className="font-mono font-medium text-on-surface text-[10px] truncate max-w-[120px]" title={packText}>
+                                        {packText}
+                                      </span>
+                                    </div>
+
+                                    {/* Merma */}
+                                    <div className="flex items-center justify-between text-on-surface-variant">
+                                      <span className="flex items-center gap-1 text-[10px] text-on-surface-variant/80">
+                                        <span className="material-symbols-outlined text-[12px] opacity-70">percent</span>
+                                        Merma:
+                                      </span>
+                                      <span className="font-mono font-bold text-on-surface text-[10px]">
+                                        {m.default_waste_pct ?? 0}%
+                                      </span>
+                                    </div>
+
+                                    {/* Revisión y Estado */}
+                                    <div className="flex items-center justify-between pt-0.5">
+                                      <span className="flex items-center gap-1 text-[9px] text-on-surface-variant/70">
+                                        <span className="material-symbols-outlined text-[11px] opacity-70">history</span>
+                                        Revisado:
+                                      </span>
+                                      <div className="flex items-center gap-1">
+                                        <span className={`font-mono text-[10px] ${outdated ? 'text-amber-400 font-bold' : 'text-on-surface-variant'}`}>
+                                          {formatDate(m.price_updated_at)}
+                                        </span>
+                                        {outdated && (
+                                          <span className="material-symbols-outlined text-amber-400 text-[12px]" title="Precio desactualizado (>30 días)">
+                                            schedule
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                </td>
-                                <td className="px-2.5 py-1.5 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={() => openEdit(m)}
-                                      className="p-1 rounded hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-                                      title="Editar precio de mercado y especificaciones"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">edit</span>
-                                    </button>
-                                    <button
-                                      onClick={() => setDeleteTarget(m)}
-                                      className="p-1 rounded hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors cursor-pointer"
-                                      title="Eliminar del catálogo"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">delete</span>
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          /* VISTA TABLA CONDENSADA (Para usuarios que prefieran tabla) */
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-surface-container-high/60 border-b border-outline-variant/30 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant">
+                                  <th className="text-left px-3 py-1.5 font-bold">Material / Insumo</th>
+                                  <th className="text-left px-2.5 py-1.5 font-bold">Unidad Base</th>
+                                  <th className="text-left px-2.5 py-1.5 font-bold">Presentación de Compra</th>
+                                  <th className="text-right px-2.5 py-1.5 font-bold">Precio Unit. Mercado</th>
+                                  <th className="text-center px-2.5 py-1.5 font-bold">% Merma</th>
+                                  <th className="text-left px-2.5 py-1.5 font-bold">Última Revisión</th>
+                                  <th className="text-center px-2.5 py-1.5 font-bold w-20">Acciones</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/15 font-sans">
+                                {group.items.map((m) => {
+                                  const outdated = isPriceOutdated(m.price_updated_at)
+                                  const packText = m.purchase_quantity
+                                    ? `${m.purchase_quantity} ${purchaseUnits[m.purchase_unit] || m.purchase_unit || m.usage_unit}`
+                                    : 'Al por menor'
+
+                                  return (
+                                    <tr key={m.id} className="hover:bg-white/[0.03] transition-colors">
+                                      <td className="px-3 py-1.5 font-medium text-on-surface">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-semibold text-xs">{m.name}</span>
+                                          {m.notes && (
+                                            <span className="text-[10px] text-on-surface-variant/70 truncate max-w-[150px] italic">
+                                              ({m.notes})
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px]">
+                                        {usageUnits[m.usage_unit] || m.usage_unit}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-on-surface-variant text-[11px] font-mono">
+                                        {packText}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-right font-mono font-bold text-on-surface text-xs">
+                                        {formatCurrency(m.unit_price)}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-center font-mono text-on-surface-variant text-[11px]">
+                                        {m.default_waste_pct ?? 0}%
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap">
+                                        <div className="flex items-center gap-1">
+                                          <span className={outdated ? 'text-amber-400 font-medium' : 'text-on-surface-variant'}>
+                                            {formatDate(m.price_updated_at)}
+                                          </span>
+                                          {outdated && (
+                                            <span className="material-symbols-outlined text-amber-400 text-[14px]" title="Precio desactualizado (>30 días)">
+                                              schedule
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                          <button
+                                            onClick={() => openEdit(m)}
+                                            className="p-1 rounded hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                            title="Editar precio de mercado y especificaciones"
+                                          >
+                                            <span className="material-symbols-outlined text-[15px]">edit</span>
+                                          </button>
+                                          <button
+                                            onClick={() => setDeleteTarget(m)}
+                                            className="p-1 rounded hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                                            title="Eliminar del catálogo"
+                                          >
+                                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 )
               })}
