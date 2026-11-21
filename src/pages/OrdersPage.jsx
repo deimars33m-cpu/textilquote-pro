@@ -2661,66 +2661,63 @@ export default function OrdersPage() {
                 {formErrors.subcategory && (
                   <AlertBanner type="error">{formErrors.subcategory}</AlertBanner>
                 )}
-                {(() => {
-                  const isProduccionTextil = orderForm.category === 'produccion_textil';
-                  return (
-                    <div className={`grid ${isProduccionTextil ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3 max-w-md mx-auto`}>
-                      {(settings.subcategories[orderForm.category] || []).map((sub) => {
-                        const isActive = orderForm.subcategory === sub.id
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            onClick={() => {
-                              updateForm('subcategory', sub.id)
-                              const usesSizes = sub.unit === 'tallas' || (!sub.unit && orderForm.category === 'produccion_textil')
-                              
-                              if (!usesSizes && sub.id !== 'sublimacion_localizada') {
-                                 const price = sub.unitPrice || getServicePrice(orderForm.category, sub.id) || 50
-                                 updateForm('flatUnitPrice', price)
-                                 updateForm('productName', sub.label)
-                              } else if (sub.id === 'sublimacion_localizada') {
-                                 const basePanelPrice = sub.unitPrice || 20
-                                 const calculatedPanelPrices = PANELS_LIST.reduce((acc, panel, idx) => {
-                                   acc[panel] = basePanelPrice * (idx + 1)
-                                   return acc
-                                 }, {})
-                                 updateForm('sizePrices', calculatedPanelPrices)
-                              } else if (usesSizes) {
-                                 const specificPrices = settings.sizesBySubcategory?.[sub.id];
-                                 const chosenPrices = (specificPrices && Object.keys(specificPrices).length > 0)
-                                   ? specificPrices
-                                   : settings.sizes;
-                                 updateForm('sizePrices', chosenPrices);
-                                 const baseL = chosenPrices?.['L'] || 130;
-                                 updateForm('baseGarmentPrice', baseL);
-                              }
-                              setCurrentStep(4)
-                            }}
-                            className={`btn-3d-raised rounded-xl p-3 flex items-center gap-3 cursor-pointer text-left ${
-                              isActive ? 'btn-3d-active' : 'hover:bg-white/[0.02]'
-                            }`}
-                          >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-[#ff5c00]/10' : 'bg-white/5'}`}>
-                              <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
-                                {sub.icon}
-                              </span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={isProduccionTextil ? "text-[11px] font-bold text-on-surface tracking-wide truncate" : "text-[12px] font-bold text-on-surface tracking-wide leading-tight"}>
-                                {sub.label}
-                              </p>
-                              <p className={isProduccionTextil ? "text-[9px] text-on-surface-variant truncate" : "text-[10px] text-on-surface-variant leading-tight mt-0.5"}>
-                                {sub.description}
-                              </p>
-                            </div>
-                            <div className={`w-2 h-2 rounded-full ${isActive ? 'led-glow-active' : 'bg-white/10'}`} />
-                          </button>
-                        )
-                      })}
-                    </div>
-                  );
-                })()}
+                <div className="grid grid-cols-1 gap-2.5 max-w-md mx-auto">
+                  {(settings.subcategories[orderForm.category] || []).map((sub) => {
+                    const isActive = orderForm.subcategory === sub.id
+                    return (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        onClick={() => {
+                          updateForm('subcategory', sub.id)
+                          const usesSizes = sub.unit === 'tallas' || (!sub.unit && orderForm.category === 'produccion_textil')
+                          
+                          if (!usesSizes && sub.id !== 'sublimacion_localizada') {
+                             const price = sub.unitPrice || getServicePrice(orderForm.category, sub.id) || 50
+                             updateForm('flatUnitPrice', price)
+                             updateForm('productName', sub.label)
+                          } else if (sub.id === 'sublimacion_localizada') {
+                             const basePanelPrice = sub.unitPrice || 20
+                             const calculatedPanelPrices = PANELS_LIST.reduce((acc, panel, idx) => {
+                               acc[panel] = basePanelPrice * (idx + 1)
+                               return acc
+                             }, {})
+                             updateForm('sizePrices', calculatedPanelPrices)
+                          } else if (usesSizes) {
+                             const specificPrices = settings.sizesBySubcategory?.[sub.id];
+                             const chosenPrices = (specificPrices && Object.keys(specificPrices).length > 0)
+                               ? specificPrices
+                               : settings.sizes;
+                             updateForm('sizePrices', chosenPrices);
+                             const baseL = chosenPrices?.['L'] || 130;
+                             updateForm('baseGarmentPrice', baseL);
+                          }
+                          setCurrentStep(4)
+                        }}
+                        className={`btn-3d-raised rounded-xl p-3 flex items-center gap-3 cursor-pointer text-left transition-all ${
+                          isActive ? 'btn-3d-active' : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive ? 'bg-[#ff5c00]/10' : 'bg-white/5'}`}>
+                          <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-[#ff5c00]' : 'text-on-surface-variant'}`}>
+                            {sub.icon}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs sm:text-sm font-bold text-on-surface tracking-wide leading-snug whitespace-normal break-words">
+                            {sub.label}
+                          </p>
+                          {sub.description && (
+                            <p className="text-[10px] text-on-surface-variant leading-tight mt-0.5 whitespace-normal break-words">
+                              {sub.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'led-glow-active' : 'bg-white/10'}`} />
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
